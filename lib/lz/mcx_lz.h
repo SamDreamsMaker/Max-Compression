@@ -1,0 +1,88 @@
+/**
+ * @file mcx_lz.h
+ * @brief LZ77 dictionary-matching engine for MaxCompression v1.0.
+ *
+ * v1.1 upgrades:
+ *  - Hash table size configurable (18-bit = 256K for better match finding)
+ *  - Heap-allocated hash table (no more stack overflow on large tables)
+ *  - Offsets up to 24-bit (16MB window) for structured data
+ *  - Lazy match evaluation for better ratios
+ *  - Huffman post-processing integration point
+ *
+ * Token format (per sequence):
+ *  [token: 1 byte] [ext_lit_len: 0+] [literals] [offset: 2-3 bytes] [ext_match_len: 0+]
+ *
+ *  token high nibble = literal_length (0-15, 15 = extended)
+ *  token low  nibble = match_length - MIN_MATCH (0-15, 15 = extended)
+ *
+ *  Offset encoding:
+ *    If offset <= 65535: 2 bytes (little-endian)
+ *    If offset > 65535:  3 bytes (little-endian, flag in token reserved bit)
+ *
+ * Format constraints:
+ *  - Last 5 bytes are always literals
+ *  - Minimum match length: 4 bytes
+ */
+
+#ifndef MCX_LZ_H
+#define MCX_LZ_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ── Configuration ─────────────────────────────────────────────── */
+
+#define MCX_LZ_MIN_MATCH       4
+#define MCX_LZ_LAST_LITERALS   5
+#define MCX_LZ_HASH_LOG       18     /* 256K entries (was 16 = 64K) */
+#define MCX_LZ_HASH_SIZE      (1 << MCX_LZ_HASH_LOG)
+#define MCX_LZ_MAX_OFFSET     65535  /* 16-bit offset for compatibility */
+#define MCX_LZ_SKIP_TRIGGER    6
+
+/* ── Compression levels ────────────────────────────────────────── */
+
+#define MCX_LZ_LEVEL_FAST     1  /* Greedy, accel=4, hash_log=16 */
+#define MCX_LZ_LEVEL_DEFAULT  5  /* Greedy, accel=1, hash_log=18 */
+#define MCX_LZ_LEVEL_HIGH     9  /* Lazy evaluation, hash_log=18, best ratio */
+
+/* ── Public API ────────────────────────────────────────────────── */
+
+size_t mcx_lz_compress_bound(size_t src_size);
+
+size_t mcx_lz_compress(
+    void*       dst,
+    size_t      dst_cap,
+    const void* src,
+    size_t      src_size,
+    int         accel
+);
+
+/**
+ * High-ratio LZ77 compression with lazy match evaluation.
+ * Slower than mcx_lz_compress but finds better matches.
+ */
+size_t mcx_lz_compress_hc(
+    void*       dst,
+    size_t      dst_cap,
+    const void* src,
+    size_t      src_size,
+    int         level
+);
+
+size_t mcx_lz_decompress(
+    void*       dst,
+    size_t      dst_cap,
+    const void* src,
+    size_t      src_size,
+    size_t      original_size
+);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* MCX_LZ_H */

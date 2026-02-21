@@ -1,0 +1,43 @@
+# Build artifacts
+build/
+target/
+*.exe
+*.dll
+*.so
+*.dylib
+*.lib
+*.a
+*.pdb
+*.exp
+
+# Rust Cargo
+Cargo.lock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDEs / OS
+.vscode/
+.vs/
+.idea/
+*.suo
+*.user
+.DS_Store
+Thumbs.db
+
+# Test/Benchmark temp files
+*.mcx
+*.gz
+*.bz2
+*.xz
+*.tar.gz
+*.bin
+*.out
+*.log
+corpus/
+corpus_adv/
+adv_bench_*.md
+canterbury_results*.md
+cargo_err.txt
