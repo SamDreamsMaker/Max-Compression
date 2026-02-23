@@ -49,6 +49,56 @@ if os.path.exists(DLL_PATH):
 else:
     mcx_lib = None
 
+# ─── CTYPES BINDING FOR MCX_LZ_FAST (SIMD/AVX2 Experimental) ────────
+if mcx_lib:
+    # void mcx_lz_fast_init(mcx_lz_fast_ctx* ctx)  -- ctx is uint32_t[32768]
+    mcx_lz_fast_ctx_t = ctypes.c_uint32 * 32768
+    mcx_lib.mcx_lz_fast_init.argtypes = [ctypes.POINTER(mcx_lz_fast_ctx_t)]
+    mcx_lib.mcx_lz_fast_init.restype = None
+
+    mcx_lib.mcx_lz_fast_compress.argtypes = [
+        ctypes.c_void_p, ctypes.c_size_t,
+        ctypes.c_void_p, ctypes.c_size_t,
+        ctypes.POINTER(mcx_lz_fast_ctx_t)
+    ]
+    mcx_lib.mcx_lz_fast_compress.restype = ctypes.c_size_t
+
+    mcx_lib.mcx_lz_fast_decompress.argtypes = [
+        ctypes.c_void_p, ctypes.c_size_t,
+        ctypes.c_void_p, ctypes.c_size_t
+    ]
+    mcx_lib.mcx_lz_fast_decompress.restype = ctypes.c_size_t
+
+    # Pre-allocate a single context (re-init before each compress call)
+    _fast_ctx = mcx_lz_fast_ctx_t()
+
+def mcx_fast_compress_in_memory(data_bytes):
+    if not mcx_lib: return None
+    src_size = len(data_bytes)
+    dst_cap = max(src_size + src_size // 4 + 32, 256)
+    src_buf = ctypes.create_string_buffer(data_bytes, src_size)
+    dst_buf = ctypes.create_string_buffer(dst_cap)
+    mcx_lib.mcx_lz_fast_init(ctypes.byref(_fast_ctx))
+    comp_size = mcx_lib.mcx_lz_fast_compress(dst_buf, dst_cap, src_buf, src_size, ctypes.byref(_fast_ctx))
+    if comp_size == 0: return None
+    # Prepend original size (8 bytes) so decompressor knows output capacity
+    import struct
+    return struct.pack('<Q', src_size) + dst_buf.raw[:comp_size]
+
+def mcx_fast_decompress_in_memory(comp_bytes):
+    if not mcx_lib: return None
+    import struct
+    if len(comp_bytes) < 8: return None
+    orig_size = struct.unpack('<Q', comp_bytes[:8])[0]
+    payload = comp_bytes[8:]
+    src_size = len(payload)
+    src_buf = ctypes.create_string_buffer(payload, src_size)
+    dst_buf = ctypes.create_string_buffer(orig_size + 64)  # +64 for wild-copy padding
+    dec_size = mcx_lib.mcx_lz_fast_decompress(dst_buf, orig_size + 64, src_buf, src_size)
+    if dec_size != orig_size: return None
+    return dst_buf.raw[:dec_size]
+
+
 def mcx_compress_in_memory(data_bytes, level=3):
     if not mcx_lib: return None
     src_size = len(data_bytes)
@@ -114,6 +164,10 @@ def get_algorithms(threads=1):
         "mcx-12": (
             lambda d: mcx_compress_in_memory(d, 12),
             lambda d: mcx_decompress_in_memory(d)
+        ),
+        "mcx-fast": (
+            lambda d: mcx_fast_compress_in_memory(d),
+            lambda d: mcx_fast_decompress_in_memory(d)
         )
     }
 

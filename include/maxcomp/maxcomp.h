@@ -202,6 +202,21 @@ MCXAPI size_t mcx_decompress_stream(
 /** Magic number at the start of every .mcx file: "MCX\x01" */
 #define MCX_MAGIC  0x0158434D
 
+/* ═══════════════════════════════════════════════════════════════════════
+ *  Experimental: Ultra-Speed Mathematical LZ Prototype (mcx_lz_fast)
+ *  AVX2 parallel hashing + branchless SIMD decompression.
+ *  WARNING: Own token format — NOT compatible with standard .mcx frames.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+typedef struct { uint32_t dict[32768]; } mcx_lz_fast_ctx;
+
+MCXAPI void   mcx_lz_fast_init      (mcx_lz_fast_ctx* ctx);
+MCXAPI size_t mcx_lz_fast_compress  (uint8_t* dst, size_t dst_cap,
+                                     const uint8_t* src, size_t src_size,
+                                     mcx_lz_fast_ctx* ctx);
+MCXAPI size_t mcx_lz_fast_decompress(uint8_t* dst, size_t dst_cap,
+                                     const uint8_t* src, size_t src_size);
+
 #ifdef __cplusplus
 }
 #endif
