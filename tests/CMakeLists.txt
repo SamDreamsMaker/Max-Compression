@@ -26,6 +26,8 @@ add_test(NAME cmrans COMMAND test_cmrans)
 add_executable(test_lz test_lz.c
     ${CMAKE_SOURCE_DIR}/lib/lz/lz_compress.c
     ${CMAKE_SOURCE_DIR}/lib/lz/lz_decompress.c
+    ${CMAKE_SOURCE_DIR}/lib/lz_fast/mcx_lz_fast_compress.c
+    ${CMAKE_SOURCE_DIR}/lib/lz_fast/mcx_lz_fast_decompress.c
 )
 target_include_directories(test_lz PRIVATE ${CMAKE_SOURCE_DIR}/lib)
 add_test(NAME lz77 COMMAND test_lz)

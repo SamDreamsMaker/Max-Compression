@@ -14,6 +14,8 @@ set(MCX_LIB_SOURCES
     optimizer/genetic.c
     lz/lz_compress.c
     lz/lz_decompress.c
+    lz_fast/mcx_lz_fast_compress.c
+    lz_fast/mcx_lz_fast_decompress.c
 )
 
 # ─── Static library (always built) ──────────────────────────────────
