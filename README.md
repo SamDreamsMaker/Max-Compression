@@ -41,34 +41,49 @@ cd build && ctest --output-on-failure
 The block analyser automatically routes incompressible data (entropy > 7.5 bits)
 to STORE mode at BWT levels. LZ levels always attempt compression first.
 
-## Benchmarks (v1.1.0 baseline)
+## Benchmarks (v1.1.0)
 
-> Measured on Intel Raptor Lake, Windows 11, single-threaded, in-memory.
-> Results from the `benchmarks/pro_bench.py` evaluation suite.
+> Intel Raptor Lake, Windows 11, single-threaded, in-memory.
+> `benchmarks/pro_bench.py --iter 5 --threads 1`
 
 ### Calgary Corpus (3.0 MB)
 | Algorithm | Ratio | Comp (MB/s) | Decomp (MB/s) |
 |-----------|-------|-------------|---------------|
-| **MCX L3** | 2.36x | 186 | 292 |
-| **MCX L9** | 2.47x | 188 | 297 |
-| LZ4 fast | 1.94x | 673 | 1999 |
-| zstd-3 | 3.10x | 290 | 1069 |
+| **MCX L3** | 2.28x | 112 | **479** |
+| **MCX L9** | 2.38x | 112 | **494** |
+| **MCX-fast** | 1.82x | 262 | 798 |
+| LZ4 fast | 1.91x | 664 | 2189 |
+| zstd-3 | 2.99x | 288 | 1150 |
 
-### Canterbury Corpus (2.8 MB)
+### Canterbury Corpus (2.7 MB)
 | Algorithm | Ratio | Comp (MB/s) | Decomp (MB/s) |
 |-----------|-------|-------------|---------------|
-| **MCX L3** | 2.87x | 208 | 344 |
-| **MCX L9** | 2.99x | 206 | 349 |
-| LZ4 fast | 2.29x | 712 | 1837 |
-| zstd-3 | 4.45x | 207 | 1180 |
+| **MCX L3** | 2.86x | 139 | **570** |
+| **MCX L9** | 2.98x | 137 | **577** |
+| **MCX-fast** | 2.10x | 366 | 847 |
+| LZ4 fast | 2.29x | 727 | 2324 |
+| zstd-3 | 4.45x | 345 | 1188 |
 
-### Silesia Corpus (211 MB)
+### Silesia Corpus (202 MB)
 | Algorithm | Ratio | Comp (MB/s) | Decomp (MB/s) |
 |-----------|-------|-------------|---------------|
-| **MCX L3** | 2.54x | 224 | 324 |
-| **MCX L9** | 2.62x | 218 | 334 |
-| LZ4 fast | 2.10x | 806 | 2022 |
-| zstd-3 | 3.21x | 384 | 1176 |
+| **MCX L3** | 2.53x | 129 | **538** |
+| **MCX L9** | 2.60x | 130 | **543** |
+| **MCX-fast** | 2.03x | 274 | 822 |
+| LZ4 fast | 2.10x | 789 | 1937 |
+| zstd-3 | 3.20x | 373 | 1117 |
+
+### Enwik8 (95 MB — natural language)
+| Algorithm | Ratio | Comp (MB/s) | Decomp (MB/s) |
+|-----------|-------|-------------|---------------|
+| **MCX L3** | 2.12x | 106 | **427** |
+| **MCX L9** | 2.22x | 105 | **447** |
+| **MCX L12** | 2.76x | 18 | 35 |
+| LZ4 fast | 1.75x | 597 | 1931 |
+| zstd-3 | 2.82x | 273 | 1009 |
+
+**v1.1 vs v1.0 highlights:** decompression speed +64% (tANS 4-stream ILP),
+MCX-fast ratio +28% (ctypes struct fix), MCX L12 enwik8 +0.19x (fitness fix).
 
 Run the full suite yourself:
 
