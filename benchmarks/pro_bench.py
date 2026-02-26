@@ -51,8 +51,9 @@ else:
 
 # ─── CTYPES BINDING FOR MCX_LZ_FAST (SIMD/AVX2 Experimental) ────────
 if mcx_lib:
-    # void mcx_lz_fast_init(mcx_lz_fast_ctx* ctx)  -- ctx is uint32_t[32768]
-    mcx_lz_fast_ctx_t = ctypes.c_uint32 * 32768
+    # void mcx_lz_fast_init(mcx_lz_fast_ctx* ctx)
+    # struct mcx_lz_fast_ctx { uint32_t dict[2][65536]; }  →  2*65536 = 131072 uint32_t
+    mcx_lz_fast_ctx_t = ctypes.c_uint32 * 131072
     mcx_lib.mcx_lz_fast_init.argtypes = [ctypes.POINTER(mcx_lz_fast_ctx_t)]
     mcx_lib.mcx_lz_fast_init.restype = None
 

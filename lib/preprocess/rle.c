@@ -32,8 +32,12 @@ size_t mcx_rle_encode(uint8_t* dst, size_t dst_cap,
             run++;
         }
 
-        if (run >= RLE_MIN_RUN) {
-            /* Encode run: ESCAPE, byte, (run - RLE_MIN_RUN) */
+        if (run >= RLE_MIN_RUN && byte != RLE_ESCAPE) {
+            /* Encode run: ESCAPE, byte, (run - RLE_MIN_RUN).
+             * NOTE: byte == RLE_ESCAPE (0xFF) is excluded here because
+             * the decoder reads ESCAPE+ESCAPE as a literal 0xFF, making
+             * it impossible to distinguish a 0xFF run from a literal 0xFF.
+             * 0xFF bytes are always emitted as individual ESCAPE+ESCAPE pairs. */
             if (di + 3 > dst_cap) return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
             dst[di++] = RLE_ESCAPE;
             dst[di++] = byte;
