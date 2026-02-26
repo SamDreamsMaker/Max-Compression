@@ -35,7 +35,7 @@ unsigned mcx_version_number(void)
 
 const char* mcx_version_string(void)
 {
-    return "0.1.0";
+    return "1.1.0";
 }
 
 int mcx_is_error(size_t result)
@@ -143,13 +143,16 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     /* ── Stage 0: Analyze ── */
     analysis = mcx_analyze(in, src_size);
 
-    /* ── Choose strategy based on analysis and level ── */
-    if (analysis.type == MCX_DTYPE_HIGH_ENTROPY) {
-        strategy = MCX_STRATEGY_STORE;
-    } else if (level <= 3) {
-        strategy = MCX_STRATEGY_LZ_FAST; /* v1.0: Fast LZ77 + Huffman */
+    /* ── Choose strategy based on level (and analysis for BWT levels) ── */
+    if (level <= 3) {
+        strategy = MCX_STRATEGY_LZ_FAST; /* v1.0: Fast LZ77 — always try, fall back in block loop */
     } else if (level <= 9) {
-        strategy = MCX_STRATEGY_LZ_HC;   /* v1.0: Lazy LZ77 + Huffman */
+        strategy = MCX_STRATEGY_LZ_HC;   /* v1.0: Lazy LZ77 — always try, fall back in block loop */
+    } else if (analysis.type == MCX_DTYPE_HIGH_ENTROPY) {
+        /* BWT is useless on already-compressed/encrypted data: skip directly to STORE.
+         * For LZ levels we still try (LZ77 can exploit long-range patterns even in
+         * max-entropy byte histograms, e.g. a cyclic counter i&0xFF). */
+        strategy = MCX_STRATEGY_STORE;
     } else if (level <= 14) {
         strategy = MCX_STRATEGY_DEFAULT; /* v0.2: BWT + MTF + RLE + ANS */
     } else {
@@ -264,16 +267,26 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     continue;
                 }
 
-                /* Entropy Pass */
-                fse_buf[0] = 0xAA; /* Magic byte for LZ77+FSE block type */
+                /* Entropy Pass: try FSE on LZ output, then fall back gracefully */
                 size_t fse_size = mcx_fse_compress(fse_buf + 1, fse_cap, lz_buf, lz_size);
-                free(lz_buf);
 
-                if (fse_size == 0 || fse_size >= block_src_size) {
-                    /* Incompressible block fallback */
-                    fse_buf[0] = 0x00; /* Magic byte for STORE block type */
+                if (fse_size > 0 && fse_size < block_src_size) {
+                    /* LZ77 + FSE: best case */
+                    fse_buf[0] = 0xAA;
+                    free(lz_buf);
+                } else if (lz_size < block_src_size) {
+                    /* FSE didn't improve on LZ output (or output was still larger than src).
+                     * LZ77 alone DID compress — store LZ raw. fse_cap >= lz_size. */
+                    fse_buf[0] = 0xAB;
+                    memcpy(fse_buf + 1, lz_buf, lz_size);
+                    fse_size = lz_size;
+                    free(lz_buf);
+                } else {
+                    /* Neither LZ nor FSE compressed — store original */
+                    fse_buf[0] = 0x00;
                     memcpy(fse_buf + 1, in + src_offset, block_src_size);
                     fse_size = block_src_size;
+                    free(lz_buf);
                 }
 
                 block_sizes[b] = fse_size + 1;
@@ -518,8 +531,8 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                         continue;
                     }
                     memcpy(out + dst_offset, in + chunk_src_offset + 1, block_dst_size);
-                } else if (block_type == 0xAA) {
-                    /* LZ77 + FSE */
+                } else if (block_type == 0xAA || block_type == 0xAB) {
+                    /* 0xAA = LZ77 + FSE, 0xAB = LZ77 raw (FSE didn't compress further) */
                     size_t lz_cap = mcx_lz_compress_bound(block_dst_size);
                     uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
                     if (!lz_buf) {
@@ -528,8 +541,18 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                         continue;
                     }
 
-                    size_t lz_size = mcx_fse_decompress(lz_buf, lz_cap, 
-                                            in + chunk_src_offset + 1, chunk_comp_size - 1);
+                    size_t lz_size;
+                    if (block_type == 0xAA) {
+                        lz_size = mcx_fse_decompress(lz_buf, lz_cap,
+                                                     in + chunk_src_offset + 1,
+                                                     chunk_comp_size - 1);
+                    } else {
+                        /* 0xAB: LZ77 output stored raw */
+                        lz_size = chunk_comp_size - 1;
+                        if (lz_size > lz_cap) lz_size = 0;
+                        else memcpy(lz_buf, in + chunk_src_offset + 1, lz_size);
+                    }
+
                     if (lz_size == 0) {
                         #pragma omp critical
                         { omp_err = 1; }
@@ -537,8 +560,8 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                         continue;
                     }
 
-                    size_t decomp = mcx_lz_decompress(out + dst_offset, block_dst_size, 
-                                          lz_buf, lz_size, block_dst_size);
+                    size_t decomp = mcx_lz_decompress(out + dst_offset, block_dst_size,
+                                                      lz_buf, lz_size, block_dst_size);
                     free(lz_buf);
 
                     if (decomp != block_dst_size) {

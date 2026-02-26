@@ -1,90 +1,120 @@
+/**
+ * @file mcx_lz_fast_decompress.c
+ * @brief Phase J — LZ4-Compatible Token Format Decompressor
+ *
+ * Parses the same [u4+u4 | u16 offset | varint* | literals] token stream
+ * produced by mcx_lz_fast_compress. Uses SSE2 16-byte wild-copy loops for
+ * maximum literal throughput, and handles overlapping matches safely.
+ */
+
 #include "mcx_lz_fast.h"
 #include <string.h>
 
 #if defined(__x86_64__) || defined(_M_X64)
-#include <immintrin.h>
-#define HAS_AVX2 1
+#  include <immintrin.h>
+#  define HAS_SSE2 1
 #else
-#define HAS_AVX2 0
+#  define HAS_SSE2 0
 #endif
 
-/**
- * SIMD 32-byte branchless copy — only safe if src+32 and dst+32 are in bounds.
- * Used for over-copy with exact advance-by-n semantics (wild-copy pattern).
- */
-static inline void wild_copy_32(uint8_t* dst, const uint8_t* src, size_t len) {
-#if HAS_AVX2
-    /* Branchless strategy: process 32-byte chunks, then handle tail with memcpy.
-       The over-read is harmless when the caller reserved 32 extra bytes. */
-    size_t i = 0;
-    for (; i + 32 <= len; i += 32) {
-        __m256i v = _mm256_loadu_si256((const __m256i*)(src + i));
-        _mm256_storeu_si256((__m256i*)(dst + i), v);
-    }
-    if (i < len) memcpy(dst + i, src + i, len - i);
+/* ── SIMD 16-byte literal wild-copy ─────────────────────────────────── */
+static inline void wild_copy16(uint8_t* dst, const uint8_t* src, uint8_t* end) {
+    do {
+#if HAS_SSE2
+        __m128i v = _mm_loadu_si128((const __m128i*)src);
+        _mm_storeu_si128((__m128i*)dst, v);
 #else
-    memcpy(dst, src, len);
+        memcpy(dst, src, 16);
 #endif
+        src += 16; dst += 16;
+    } while (dst < end);
 }
 
-/**
- * Branchless match copy supporting overlapping offsets.
- * For offset >= 16, uses SIMD chunked copy.
- * For offset < 16, falls back to byte-by-byte (safe for RLE-like patterns).
- */
-static inline void match_copy(uint8_t* op, const uint8_t* match, size_t len, uint16_t offset) {
+/* ── SIMD 16-byte match copy — offset-safe ──────────────────────────── */
+static inline void match_copy16(uint8_t* dst, const uint8_t* src, uint8_t* end, uint16_t offset) {
     if (offset >= 16) {
-#if HAS_AVX2
-        size_t i = 0;
-        for (; i + 16 <= len; i += 16) {
-            __m128i v = _mm_loadu_si128((const __m128i*)(match + i));
-            _mm_storeu_si128((__m128i*)(op + i), v);
-        }
-        if (i < len) memcpy(op + i, match + i, len - i);
+        /* Non-overlapping or safely strided — bulk copy */
+        do {
+#if HAS_SSE2
+            __m128i v = _mm_loadu_si128((const __m128i*)src);
+            _mm_storeu_si128((__m128i*)dst, v);
 #else
-        memcpy(op, match, len);
+            memcpy(dst, src, 16);
 #endif
+            src += 16; dst += 16;
+        } while (dst < end);
     } else {
-        /* Short offset: overlapping copy, must be byte-by-byte */
-        for (size_t i = 0; i < len; i++) op[i] = match[i];
+        /* Short offset (RLE-like): must go byte by byte */
+        while (dst < end) { *dst++ = *src++; }
     }
 }
 
+/* ── Main Decompressor ───────────────────────────────────────────────── */
 size_t mcx_lz_fast_decompress(uint8_t* dst, size_t dst_cap,
                               const uint8_t* src, size_t src_size) {
     if (src_size == 0) return 0;
 
-    const uint8_t* ip = src;
-    const uint8_t* const iend = src + src_size;
+    const uint8_t* ip  = src;
+    const uint8_t* iend = src + src_size;
 
-    uint8_t* op = dst;
-    uint8_t* const oend = dst + dst_cap - 32; /* Reserve for wild-copy padding */
+    uint8_t* op    = dst;
+    uint8_t* oend  = dst + dst_cap;
+    /* Reserve padding for SIMD over-read/over-write */
+    uint8_t* olimit = (dst_cap >= 16) ? oend - 16 : oend;
 
     while (ip < iend) {
-        if (op > oend) return 0; /* Output overflow */
-        if (ip + 4 > iend) return 0; /* Token truncated */
+        /* ── Parse token byte ───────────────────────────────────────── */
+        uint8_t token = *ip++;
 
-        /* Token Format: [lit_len:u8] [match_len:u8] [offset:u16] */
-        uint8_t  lit_len   = *ip++;
-        uint8_t  match_len = *ip++;
-        uint16_t offset    = 0;
+        /* Literal length */
+        uint32_t lit_len = token >> 4;
+        if (lit_len == 15) {
+            uint8_t s;
+            do { if (ip >= iend) return 0; s = *ip++; lit_len += s; } while (s == 255);
+        }
+
+        /* Copy literals */
+        if (op + lit_len > oend) return 0;
+        if (ip + lit_len > iend) return 0;
+
+        if (op < olimit && lit_len >= 8) {
+            wild_copy16(op, ip, op + lit_len);
+        } else {
+            memcpy(op, ip, lit_len);
+        }
+        ip += lit_len;
+        op += lit_len;
+
+        /* End of block: last token can have no match (lower nibble = 0 with no offset) */
+        if (ip >= iend) break;
+
+        /* ── Parse offset ────────────────────────────────────────────── */
+        if (ip + 2 > iend) return 0;
+        uint16_t offset;
         memcpy(&offset, ip, 2);
         ip += 2;
+        if (offset == 0) return 0;  /* Offset 0 is invalid */
 
-        /* Literal copy — exact, no over-copy corruption */
-        if (lit_len > 0) {
-            if (ip + lit_len > iend) return 0;
-            wild_copy_32(op, ip, lit_len);
-            ip += lit_len;
-            op += lit_len;
+        const uint8_t* match = op - offset;
+        if (match < dst) return 0;  /* Bad offset */
+
+        /* Match length */
+        uint32_t match_len = (token & 0x0F) + FAST_MIN_MATCH;
+        if ((token & 0x0F) == 15) {
+            uint8_t s;
+            do { if (ip >= iend) return 0; s = *ip++; match_len += s; } while (s == 255);
         }
 
-        /* Match copy */
-        if (match_len > 0) {
-            if (offset == 0 || op - dst < offset) return 0; /* Bad offset */
-            match_copy(op, op - offset, match_len, offset);
-            op += match_len;
+        /* Copy match */
+        if (op + match_len > oend) return 0;
+        uint8_t* mend = op + match_len;
+
+        if (op < olimit) {
+            match_copy16(op, match, mend, offset);
+        } else {
+            for (uint32_t i = 0; i < match_len; i++) op[i] = match[i];
         }
+        op += match_len;
     }
 
     return (size_t)(op - dst);

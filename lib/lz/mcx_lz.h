@@ -81,6 +81,30 @@ size_t mcx_lz_decompress(
     size_t      original_size
 );
 
+/**
+ * Multi-stream LZ77 + FSE compressor (Phase 3).
+ * Encodes literals, lit-lengths, match-lengths, and offsets into
+ * separate FSE-compressed streams for better entropy modeling.
+ * @return compressed size, or 0 on failure
+ */
+size_t mcx_lzfse_compress(
+    void*       dst,
+    size_t      dst_cap,
+    const void* src,
+    size_t      src_size
+);
+
+/**
+ * Multi-stream LZ77 + FSE decompressor (Phase 3).
+ * @return decompressed size, or 0 on failure
+ */
+size_t mcx_lzfse_decompress(
+    void*       dst,
+    size_t      dst_cap,
+    const void* src,
+    size_t      src_size
+);
+
 #ifdef __cplusplus
 }
 #endif

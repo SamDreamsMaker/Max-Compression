@@ -2,14 +2,11 @@
  * @file mcx_simd.h
  * @brief Portable SIMD acceleration layer for MaxCompression v1.0.
  *
- * Provides optimized memory operations for the decompression hot path:
+ * Provides:
  *  - Wild-copy (16-byte chunks): for literal and non-overlapping match copies
  *  - Match-copy with overlap handling (offset < 16)
- *
- * Compile-time detection:
- *  - x86-64 with AVX2/SSE2: use _mm_loadu/_mm_storeu intrinsics
- *  - ARM with NEON: use vld1q/vst1q intrinsics
- *  - Fallback: portable memcpy-based implementation
+ *  - Dual-hash computation (SSE4.1): compute h1 and h2 in one vector multiply
+ *  - Cache-line prefetch macro for match-finder lookahead
  */
 
 #ifndef MCX_SIMD_H
@@ -32,7 +29,44 @@
     #include <arm_neon.h>
 #endif
 
-/* ── Wild-copy: copy ≥ len bytes in 16-byte chunks ─────────────── */
+/* SSE4.1: MSVC x64 allows _mm_mullo_epi32 without extra compiler flags;
+ * GCC/Clang require -msse4.1 (detected via __SSE4_1__). */
+#if defined(MCX_SIMD_SSE2) && (defined(_MSC_VER) || defined(__SSE4_1__))
+    #define MCX_SIMD_SSE41 1
+    #include <smmintrin.h>
+#endif
+
+/* ── Cache-line prefetch (read, T0 = L1 hint) ─────────────────── */
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_AMD64))
+    #include <xmmintrin.h>
+    #define MCX_PREFETCH(addr) _mm_prefetch((const char*)(addr), _MM_HINT_T0)
+#elif defined(__GNUC__) || defined(__clang__)
+    #define MCX_PREFETCH(addr) __builtin_prefetch((const void*)(addr), 0, 1)
+#else
+    #define MCX_PREFETCH(addr) ((void)(addr))
+#endif
+
+/* ── Dual hash: compute h1=(v*mul1)>>s and h2=(v*mul2)>>s together ──
+ * Uses one SSE4.1 mullo_epi32 when available, otherwise scalar.
+ * mul1 = 2654435761 (Knuth golden ratio), mul2 = 2246822519 (FNV-adj). */
+static inline void mcx_simd_hash_dual(uint32_t v, int log,
+                                       uint32_t* h1, uint32_t* h2)
+{
+#if defined(MCX_SIMD_SSE41)
+    /* Lane 0 = mul1, lane 1 = mul2 */
+    __m128i muls = _mm_set_epi32(0, 0, (int)2246822519u, (int)2654435761u);
+    __m128i vv   = _mm_set1_epi32((int)v);
+    __m128i r    = _mm_mullo_epi32(vv, muls);
+    r = _mm_srli_epi32(r, 32 - log);
+    *h1 = (uint32_t)_mm_extract_epi32(r, 0);
+    *h2 = (uint32_t)_mm_extract_epi32(r, 1);
+#else
+    *h1 = (v * 2654435761u) >> (32 - log);
+    *h2 = (v * 2246822519u) >> (32 - log);
+#endif
+}
+
+/* ── Wild-copy: copy >= len bytes in 16-byte chunks ─────────────── */
 
 static inline void mcx_simd_copy16(uint8_t* dst, const uint8_t* src, size_t len)
 {
@@ -51,7 +85,6 @@ static inline void mcx_simd_copy16(uint8_t* dst, const uint8_t* src, size_t len)
         i += 16;
     }
 #else
-    /* Portable fallback */
     size_t i = 0;
     while (i < len) {
         memcpy(dst + i, src + i, 16);
@@ -67,26 +100,20 @@ static inline void mcx_simd_match_copy(uint8_t* dst, size_t offset, size_t lengt
     const uint8_t* src = dst - offset;
 
     if (offset >= 16) {
-        /* Non-overlapping: fast SIMD copy */
         mcx_simd_copy16(dst, src, length);
     } else if (offset == 1) {
-        /* RLE: repeat single byte */
         memset(dst, *src, length);
     } else if (offset == 0) {
-        return; /* invalid, but don't crash */
+        return;
     } else {
-        /* Overlapping: repeat the offset pattern until we have 16+ bytes,
-         * then switch to SIMD wild-copy for the rest */
         size_t i;
-        /* Build up at least `offset` bytes to create the repeating pattern */
         for (i = 0; i < length && i < offset; i++) {
             dst[i] = src[i];
         }
-        /* Now dst[0..offset-1] contains the pattern; copy in offset-sized chunks */
         while (i < length) {
             size_t chunk = length - i;
-            if (chunk > i) chunk = i;  /* can't copy more than what we've built */
-            memcpy(dst + i, dst, chunk); /* copies from already-written output */
+            if (chunk > i) chunk = i;
+            memcpy(dst + i, dst, chunk);
             i += chunk;
         }
     }

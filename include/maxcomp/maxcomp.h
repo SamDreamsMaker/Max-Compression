@@ -15,7 +15,7 @@
  *   Functions returning size_t use the top bit to signal errors.
  *   Always check with mcx_is_error() before using the result.
  *
- * @copyright MIT License
+ * @copyright GNU General Public License v3.0 (GPL-3.0)
  */
 
 #ifndef MAXCOMP_H
@@ -48,14 +48,14 @@ extern "C" {
  *  Version
  * ═══════════════════════════════════════════════════════════════════════ */
 
-#define MCX_VERSION_MAJOR  0
+#define MCX_VERSION_MAJOR  1
 #define MCX_VERSION_MINOR  1
 #define MCX_VERSION_PATCH  0
 
 /** Returns version as a packed integer: (major*10000 + minor*100 + patch) */
 MCXAPI unsigned mcx_version_number(void);
 
-/** Returns version as a human-readable string, e.g. "0.1.0" */
+/** Returns version as a human-readable string, e.g. "1.1.0" */
 MCXAPI const char* mcx_version_string(void);
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -208,7 +208,7 @@ MCXAPI size_t mcx_decompress_stream(
  *  WARNING: Own token format — NOT compatible with standard .mcx frames.
  * ═══════════════════════════════════════════════════════════════════════ */
 
-typedef struct { uint32_t dict[32768]; } mcx_lz_fast_ctx;
+typedef struct { uint32_t dict[2][65536]; } mcx_lz_fast_ctx;
 
 MCXAPI void   mcx_lz_fast_init      (mcx_lz_fast_ctx* ctx);
 MCXAPI size_t mcx_lz_fast_compress  (uint8_t* dst, size_t dst_cap,
