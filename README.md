@@ -1,11 +1,11 @@
-# MaxCompression 🗜️
+# MaxCompression
 
-> **A revolutionary file compression library for humanity.**
+> A high-performance, lossless compression library written in C99.
 
-MaxCompression is a cross-platform, lossless compression library written in C99.
-It aims to push compression ratios beyond the current state of the art by fusing
-techniques from information theory, nature-inspired algorithms, fractal mathematics,
-and predictive coding.
+MaxCompression is a cross-platform compression library that combines classical
+information-theory techniques (LZ77, tANS/FSE, BWT) with modern CPU optimisations
+(SIMD SSE4.1, cache prefetching, instruction-level parallelism) to deliver strong
+compression ratios at practical speeds.
 
 ## Quick Start
 
@@ -13,18 +13,13 @@ and predictive coding.
 
 ```bash
 cmake -S . -B build
-cmake --build build
+cmake --build build --config Release
 ```
 
-### Compress a file
+### Compress / Decompress
 
 ```bash
 ./build/bin/mcx compress -l 6 myfile.txt
-```
-
-### Decompress
-
-```bash
 ./build/bin/mcx decompress myfile.txt.mcx
 ```
 
@@ -34,113 +29,130 @@ cmake --build build
 cd build && ctest --output-on-failure
 ```
 
-## Benchmarks (v1.0.0)
+## Compression Levels
 
-MaxCompression `v1.0.0` features a industry-standard **Professional Evaluation Suite** with multi-threading support and automated visualization.
+| Level | Strategy | Notes |
+|-------|----------|-------|
+| 1–3   | LZ77 greedy + tANS | Fastest; good for real-time |
+| 4–9   | LZ77 lazy HC + tANS | Better ratio, still fast |
+| 10–14 | BWT + MTF + RLE + rANS | High ratio; ~10× slower than L9 |
+| 15–22 | BWT + MTF + RLE + CM-rANS | Maximum ratio; archival use |
 
-### Benchmark Methodology & Protocol
+The block analyser automatically routes incompressible data (entropy > 7.5 bits)
+to STORE mode at BWT levels. LZ levels always attempt compression first.
 
-To guarantee a professional and reproducible evaluation, all benchmarks are subject to the following strict constraints:
+## Benchmarks (v1.1.0 baseline)
 
-1. **In-Memory Loading (Zero Disk I/O)**: Strict memory-to-memory throughput measurement via `ctypes`.
-2. **Memory Isolation (Peak RSS)**: Precise tracking of peak memory usage and leak detection via `psutil`.
-3. **Weissman Score Integration**: Unified performance metric comparing ratio and speed against industry baselines.
-4. **Multi-Thread Scaling**: Native OpenMP benchmarks for MCX and threaded Zstd comparison (1 to N cores).
-5. **Automation & Reporting**: Auto-download of corpora, JSON/CSV/MD exports, and automatic PNG plotting.
+> Measured on Intel Raptor Lake, Windows 11, single-threaded, in-memory.
+> Results from the `benchmarks/pro_bench.py` evaluation suite.
 
-### Running the Full Suite
+### Calgary Corpus (3.0 MB)
+| Algorithm | Ratio | Comp (MB/s) | Decomp (MB/s) |
+|-----------|-------|-------------|---------------|
+| **MCX L3** | 2.36x | 186 | 292 |
+| **MCX L9** | 2.47x | 188 | 297 |
+| LZ4 fast | 1.94x | 673 | 1999 |
+| zstd-3 | 3.10x | 290 | 1069 |
 
-Run the fully automated evaluation (including corpus download and plotting):
+### Canterbury Corpus (2.8 MB)
+| Algorithm | Ratio | Comp (MB/s) | Decomp (MB/s) |
+|-----------|-------|-------------|---------------|
+| **MCX L3** | 2.87x | 208 | 344 |
+| **MCX L9** | 2.99x | 206 | 349 |
+| LZ4 fast | 2.29x | 712 | 1837 |
+| zstd-3 | 4.45x | 207 | 1180 |
 
-```powershell
-python benchmarks/pro_bench.py --iter 5 --threads 1,4 --plot --export-md benchmark_results.md
+### Silesia Corpus (211 MB)
+| Algorithm | Ratio | Comp (MB/s) | Decomp (MB/s) |
+|-----------|-------|-------------|---------------|
+| **MCX L3** | 2.54x | 224 | 324 |
+| **MCX L9** | 2.62x | 218 | 334 |
+| LZ4 fast | 2.10x | 806 | 2022 |
+| zstd-3 | 3.21x | 384 | 1176 |
+
+Run the full suite yourself:
+
+```bash
+python benchmarks/pro_bench.py --iter 5 --threads 1 --export-md benchmark_results.md
 ```
-
-The results include **Calgary**, **Canterbury**, **Silesia**, and the massive **Enwik9 (1GB)** corpora.
-
-### Visualization Example
-The suite generates efficiency curves (Ratio vs Speed) and Scaling graphs in the `./plots/` directory, allowing for immediate visual analysis of algorithmic behavior.
-
-### Dataset: Calgary Corpus (3.0 MB - Structured & Text)
-| Algorithm | Ratio | Comp Speed | Decomp Speed | Peak RAM |
-|-----------|-------|------------|--------------|----------|
-| **MCX Level 3**      |  **2.36x** |  186 MB/s | 292 MB/s | 1.3 MB |
-| **MCX Level 9**      |  **2.47x** |  188 MB/s | 297 MB/s | 1.2 MB |
-| LZ4 (Fast)           |   1.94x | 673 MB/s  | 1999 MB/s | 1.6 MB |
-| Zstd (Level 3)       |   3.10x | 290 MB/s  | 1069 MB/s | 1.0 MB |
-
-> MaxCompression's custom LZ77 Hash-Chain match finder consistently delivers robust compression ratios outperforming standard LZ4 pipelines, while easily handling multiple hundreds of megabytes per second natively in memory.
-
-### Dataset: Canterbury Corpus (2.8 MB)
-| Algorithm | Ratio | Comp Speed | Decomp Speed | Peak RAM |
-|-----------|-------|------------|--------------|----------|
-| **MCX Level 3**      | **2.87x** | 208 MB/s  | 344 MB/s | 0.9 MB |
-| **MCX Level 9**      | **2.99x** | 206 MB/s | 349 MB/s | 0.9 MB |
-| LZ4 (Fast)           |  2.29x | 712 MB/s | 1837 MB/s | 1.2 MB |
-| Zstd (Level 3)       |  4.44x | 346 MB/s | 1180 MB/s | 0.6 MB |
-
-> With continuous native bounds-safeguards added to our SIMD 16-byte wild-copy loops, our unrolled C decompressor ensures enterprise-ready stability at top speeds.
-
-### Dataset: Enwik8 (100 MB - Natural Language / XML)
-| Algorithm | Ratio | Comp Speed | Decomp Speed | Peak RAM |
-|-----------|-------|------------|--------------|----------|
-| **MCX Level 3**      | **2.13x** | 189 MB/s | 266 MB/s | 44.7 MB |
-| **MCX Level 9**      | **2.23x** | 185 MB/s | 278 MB/s | 42.7 MB |
-| LZ4 (Fast)           |  1.75x | 587 MB/s | 2161 MB/s | 54.6 MB |
-| Zstd (Level 3)       |  2.82x | 271 MB/s | 984 MB/s | 33.8 MB |
-
-### Dataset: Silesia Corpus (211 MB - Mixed Use)
-| Algorithm | Ratio | Comp Speed | Decomp Speed | Peak RAM |
-|-----------|-------|------------|--------------|----------|
-| **MCX Level 3**      | **2.54x** | 224 MB/s | 324 MB/s | 79.5 MB |
-| **MCX Level 9**      | **2.62x** | 218 MB/s | 334 MB/s | 77.2 MB |
-| LZ4 (Fast)           |  2.10x | 806 MB/s | 2022 MB/s | 96.2 MB |
-| Zstd (Level 3)       |  3.21x | 384 MB/s | 1176 MB/s | 63.1 MB |
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MCX v1.0 Pipeline                      │
+│                   MCX v1.1 Pipeline                         │
 ├─────────────────────────────────────────────────────────────┤
-│   Stage 0: Block Analyzer (entropy + structure profiling)   │
-│            → Routes each block to optimal pipeline          │
-├──────────────────────┬──────────────────────────────────────┤
-│   FAST PATH (LZ)     │   BEST PATH (BWT+CM)                 │
-│ ┌──────────────────┐ │ ┌──────────────────────────────────┐ │
-│ │ Hash Match Find  │ │ │ BWT (SA-IS) → MTF → RLE          │ │
-│ │ (4-byte hash,    │ │ │ → CM-rANS entropy                │ │
-│ │  lazy parsing)   │ │ │ (Deep contextual probability)    │ │
-│ ├──────────────────┤ │ └──────────────────────────────────┘ │
-│ │ tANS/FSE Encoder │ │                                      │
-│ ├──────────────────┤ │                                      │
-│ │ SIMD Copy Loops  │ │                                      │
-│ └──────────────────┘ │                                      │
-├──────────────────────┴──────────────────────────────────────┤
-│   Stage N: Frame/Block Multiplexor (constant-memory stream) │
+│  Stage 0: Block Analyser (entropy + structure profiling)    │
+│           → Routes each block to optimal pipeline           │
+├──────────────────────────┬──────────────────────────────────┤
+│  LZ PATH (L1-9)          │  BWT PATH (L10-22)               │
+│  ┌──────────────────┐    │  ┌──────────────────────────────┐ │
+│  │ SSE4.1 dual-hash │    │  │ BWT (SA-IS) → MTF → RLE      │ │
+│  │ match finder     │    │  │ → rANS / CM-rANS entropy     │ │
+│  │ + repcode stack  │    │  │   (genetic pipeline select)  │ │
+│  ├──────────────────┤    │  └──────────────────────────────┘ │
+│  │ 4-stream tANS/   │    │                                   │
+│  │ FSE entropy      │    │                                   │
+│  │ (interleaved 4x) │    │                                   │
+│  └──────────────────┘    │                                   │
+├──────────────────────────┴──────────────────────────────────┤
+│  Frame/Block Multiplexor · OpenMP block parallelism         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### Key Algorithms (v1.1)
+
+- **tANS (Asymmetric Numeral Systems)**: table-based entropy coder approaching
+  Shannon entropy; 4-stream interleaved variant exploits instruction-level
+  parallelism for high decompression throughput.
+- **Multi-stream LZ77**: separates literals, literal-lengths, match-lengths, and
+  offsets into independent FSE streams for better per-stream entropy modelling.
+  Available via `mcx_lzfse_compress` / `mcx_lzfse_decompress`.
+- **Repcode stack**: caches the 3 most recent match offsets; repeated-offset
+  matches cost 1 byte instead of 2-3.
+- **SIMD SSE4.1 dual hash**: two Knuth hashes computed in a single `_mm_mullo_epi32`
+  pass; cache-line prefetch 16 positions ahead hides L2 latency.
+- **BWT (SA-IS)**: suffix-array Burrows-Wheeler transform at O(n) time/space.
+- **Genetic pipeline optimizer**: evolves the BWT-path genome (delta, MTF, RLE,
+  entropy stage) per block.
+
 ## Project Structure
 
-| Directory  | Purpose                                  |
-|------------|------------------------------------------|
-| `include/` | Public API header (`maxcomp/maxcomp.h`)  |
-| `lib/`     | Library source (all modules)             |
-| `cli/`     | Command-line tool (`mcx`)                |
-| `tests/`   | Unit and round-trip tests                |
-| `benchmarks/` | Performance benchmarks                |
-| `docs/`    | Research and design documents            |
+| Directory | Purpose |
+|-----------|---------|
+| `include/maxcomp/` | Public API header |
+| `lib/` | Library source (all modules) |
+| `lib/entropy/` | tANS/FSE, Huffman, rANS, CM-rANS |
+| `lib/lz/` | LZ77 engines (greedy, lazy, multi-stream) |
+| `lib/preprocess/` | BWT, MTF, RLE, delta |
+| `lib/optimizer/` | Genetic algorithm for pipeline selection |
+| `lib/simd/` | SSE4.1 / AVX2 helpers |
+| `cli/` | `mcx` command-line tool |
+| `tests/` | Unit, round-trip, and level-validation tests |
+| `benchmarks/` | Professional benchmark suite (Python) |
+| `docs/` | Research and design documents |
 
 ## API
 
 ```c
 #include <maxcomp/maxcomp.h>
 
-size_t mcx_compress(dst, dst_cap, src, src_size, level);
-size_t mcx_decompress(dst, dst_cap, src, src_size);
+/* One-shot compression / decompression */
+size_t mcx_compress  (void* dst, size_t dst_cap, const void* src, size_t src_size, int level);
+size_t mcx_decompress(void* dst, size_t dst_cap, const void* src, size_t src_size);
+
+/* Multi-stream LZ77+FSE (experimental) */
+size_t mcx_lzfse_compress  (void* dst, size_t dst_cap, const void* src, size_t src_size);
+size_t mcx_lzfse_decompress(void* dst, size_t dst_cap, const void* src, size_t src_size);
+
+/* Error checking */
+int mcx_is_error(size_t result);
+const char* mcx_get_error_name(size_t result);
 ```
 
 ## License
 
-GNU General Public License v3.0 (GPL-3.0) — Free for everyone, forever. Prevents proprietary lock-in and abuse by larger corporate entities.
+GNU General Public License v3.0 (GPL-3.0) — free for everyone, forever.
+Prevents proprietary lock-in and abuse by larger corporate entities.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.

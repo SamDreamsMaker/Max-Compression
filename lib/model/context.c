@@ -211,7 +211,6 @@ size_t mcx_cmrans_compress(uint8_t* dst, size_t dst_cap,
         uint32_t sanity_sum = 0;
         for (k = 0; k < 256; k++) sanity_sum += tables->freq[c][k];
         if (sanity_sum != MCX_RANS_SCALE) {
-            printf("CM-RANS COMPRESS NORM BUG: ctx %d sum %u != %d\n", c, sanity_sum, MCX_RANS_SCALE);
             free(tables);
             return MCX_ERROR(MCX_ERR_GENERIC);
         }
@@ -259,12 +258,6 @@ size_t mcx_cmrans_compress(uint8_t* dst, size_t dst_cap,
             return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
         }
 
-        if (src_size > 1150 && src_size < 1250 && src[0] == 255 && src[1] == 0 && src[2] == 255) {
-            FILE* dump = fopen("c:\\MaxCompression\\good_tables.bin", "wb");
-            if (dump) { fwrite(tables->freq, 1, 131072, dump); fclose(dump); }
-            FILE* srcdump = fopen("c:\\MaxCompression\\good_src.bin", "wb");
-            if (srcdump) { fwrite(src, 1, src_size, srcdump); fclose(srcdump); }
-        }
         /* Compress the frequency tables using the DEFAULT strategy (Level 10) */
         comp_hdr_size = mcx_compress(dst + 8, dst_cap - 8,
                                      tables->freq, 256 * 256 * 2, 10);
@@ -366,11 +359,6 @@ size_t mcx_cmrans_decompress(uint8_t* dst, size_t dst_cap,
         for (k = 0; k < 256; k++) {
             f = tables->freq[c][k];
             if (base + f > MCX_RANS_SCALE) {
-                printf("CM-RANS DECOMPRESS ERR: ctx %d k %d base %d + f %d > %d\n", c, k, base, f, MCX_RANS_SCALE);
-                if (orig_size > 1150 && orig_size < 1250) {
-                    FILE* dump = fopen("c:\\MaxCompression\\bad_tables.bin", "wb");
-                    if (dump) { fwrite(tables->freq, 1, 131072, dump); fclose(dump); }
-                }
                 free(tables); free(lut);
                 return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
             }
@@ -383,11 +371,6 @@ size_t mcx_cmrans_decompress(uint8_t* dst, size_t dst_cap,
             base += f;
         }
         if (base != MCX_RANS_SCALE) {
-            printf("CM-RANS DECOMPRESS ERR: ctx %d total %d != %d\n", c, base, MCX_RANS_SCALE);
-            if (orig_size > 1150 && orig_size < 1250 && src_size > 20000) {
-                FILE* dump = fopen("c:\\MaxCompression\\bad_tables.bin", "wb");
-                if (dump) { fwrite(tables->freq, 1, 131072, dump); fclose(dump); }
-            }
             free(tables); free(lut);
             return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
         }

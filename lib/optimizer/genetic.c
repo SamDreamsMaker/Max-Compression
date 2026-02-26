@@ -7,6 +7,7 @@
 #include <internal.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 /* ─── Genome Serialization ────────────────────────────────────────────────── */
 
@@ -92,11 +93,11 @@ static size_t evaluate_fitness(const mcx_genome* g, const uint8_t* sample, size_
         if (counts[i] > 0) {
             double p = (double)counts[i] / (double)in_size;
             /* Approximate log2(1/p) */
-            entropy += p * (1.0 / p); /* Simple proxy for fitness, less distinct values = better */
+            entropy += p * log2(1.0 / p); /* Shannon entropy: bits per symbol */
         }
     }
 
-    size_t estimated_size = (size_t)((double)in_size * (entropy / 256.0)) + penalty;
+    size_t estimated_size = (size_t)((double)in_size * (entropy / 8.0)) + penalty;
 
     /* Adjust for coder strength */
     if (g->entropy_coder == 2) estimated_size = (estimated_size * 8) / 10; /* CM-rANS is ~20% better */

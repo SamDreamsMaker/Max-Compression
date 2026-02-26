@@ -1,395 +1,564 @@
 /**
  * @file fse.c
- * @brief Entropy coder for MaxCompression v1.0 — canonical Huffman with
- *        frequency-optimal code lengths derived from normalized distributions.
+ * @brief Finite State Entropy (tANS) coder — MaxCompression v1.0.
  *
- * This replaces the problematic tANS implementation with a well-understood
- * canonical Huffman coder. Canonical Huffman achieves near-Shannon-entropy
- * compression while being trivially verifiable for correctness.
+ * Algorithm: table-based ANS (FSE) by Yann Collet / Jarosław Duda.
  *
- * Format: [0xFE magic] [max_sym:1] [code_lengths: max_sym+1 bytes] [orig_size:4] [bitstream]
+ * State domains:
+ *   Encoder state  : [L, 2L)   where L = TABLE_SIZE = 1024
+ *   Decoder state  : [0, L-1]  (dec_table index)
+ *
+ * Bit-stream layout (standard FSE):
+ *   - Symbols are encoded BACKWARD (sym[n-1] first, sym[0] last).
+ *   - Bits are written FORWARD (LSB-first, bytes left→right).
+ *   - A sentinel bit (=1) is appended at the end before flushing.
+ *   - The decoder reads bytes from the RIGHT end, bits MSB-first.
+ *   - brd_init() locates the sentinel and skips it.
+ *
+ * Magic bytes:
+ *   0xFF  RLE (single symbol)
+ *   0xFE  legacy Huffman (decode-only, old format)
+ *   0xFD  tANS 1-stream (single state, used for very small inputs)
+ *   0xFC  tANS 4-stream interleaved (default for n >= 4)
+ *
+ * 4-stream header (0xFC):
+ *   [1]  0xFC
+ *   [1]  max_symbol
+ *   [2*(max_symbol+1)] norm_freq LE uint16
+ *   [4]  orig_size uint32 LE
+ *   [16] dec_init[0..3] uint32 LE each  (final_enc_state[l] − L)
+ *   [N]  bitstream with sentinel
+ *
+ * 4-stream encoding: sym[i] → state[i % 4] (round-robin).
+ * 4-stream decoding: issue 4 independent table lookups simultaneously
+ *   → overlaps memory latency via ILP, giving 2-4x speedup over 1-stream.
  */
 
 #include "mcx_fse.h"
 #include <string.h>
 #include <stdlib.h>
 
-#define MAX_CODE_LEN 15
+#define TS   MCX_FSE_TABLE_SIZE   /* 1024 */
+#define RLOG MCX_FSE_LOG          /* 10   */
 
-/* ═══════════════════════════════════════════════════════════════════
- *  Code length assignment (package-merge / length-limited Huffman)
- * ═══════════════════════════════════════════════════════════════════ */
-
-typedef struct { uint32_t freq; int symbol; } sym_freq;
-
-static int freq_cmp(const void* a, const void* b) {
-    const sym_freq* sa = (const sym_freq*)a;
-    const sym_freq* sb = (const sym_freq*)b;
-    if (sa->freq != sb->freq) return (sa->freq < sb->freq) ? -1 : 1;
-    return sa->symbol - sb->symbol;
+/* ─── floor(log2(v)), v > 0 ──────────────────────────────────── */
+static inline int highbit32(uint32_t v) {
+    int b = 0;
+    while (v > 1) { v >>= 1; b++; }
+    return b;
 }
 
-/**
- * Assign code lengths using a simple Huffman tree construction.
- * Returns: number of active symbols, or 0 on error.
- */
-static int assign_code_lengths(const uint32_t* counts, int num_syms,
-                                uint8_t* code_lens, int max_code_len)
+/* Position of highest set bit counting from 0 = LSB. Returns -1 if v == 0. */
+static inline int highbit64(uint64_t v) {
+    if (v == 0) return -1;
+    int b = 0; uint64_t u = v;
+    while (u > 1) { u >>= 1; b++; }
+    return b;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  1.  Normalize frequencies → sum = TABLE_SIZE
+ * ═══════════════════════════════════════════════════════════════ */
+int mcx_fse_normalize_freq(uint16_t* nf, int* ms_out,
+                            const uint32_t* counts, int nsym, int tlog)
 {
-    /* Collect non-zero symbols */
-    sym_freq syms[MCX_FSE_MAX_SYMBOLS];
-    int n = 0;
-    for (int i = 0; i < num_syms; i++) {
-        code_lens[i] = 0;
-        if (counts[i] > 0) {
-            syms[n].freq = counts[i];
-            syms[n].symbol = i;
-            n++;
-        }
+    const int tsz = 1 << tlog;
+    uint64_t total = 0;
+    int max_sym = -1;
+
+    for (int i = 0; i < nsym; i++) {
+        total += counts[i];
+        if (counts[i] > 0) max_sym = i;
     }
-    if (n == 0) return 0;
-    if (n == 1) { code_lens[syms[0].symbol] = 1; return 1; }
+    if (total == 0 || max_sym < 0) return -1;
 
-    /* Sort by frequency */
-    qsort(syms, n, sizeof(sym_freq), freq_cmp);
+    uint32_t sum = 0;
+    int largest = -1; uint32_t lc = 0;
 
-    /* Build Huffman tree using an array-based approach.
-     * We track internal node frequencies and use two queues. */
-    uint32_t* leaf_q = (uint32_t*)malloc(n * sizeof(uint32_t));
-    uint32_t* node_q = (uint32_t*)malloc(n * sizeof(uint32_t));
-    uint8_t*  depths = (uint8_t*)calloc(2 * n, sizeof(uint8_t));
-    int*      node_children = (int*)malloc(2 * n * 2 * sizeof(int));
-    if (!leaf_q || !node_q || !depths || !node_children) {
-        free(leaf_q); free(node_q); free(depths); free(node_children);
-        return 0;
+    for (int i = 0; i <= max_sym; i++) {
+        nf[i] = 0;
+        if (!counts[i]) continue;
+        uint32_t f = (uint32_t)(((uint64_t)counts[i] * tsz) / total);
+        if (f == 0) f = 1;
+        nf[i] = (uint16_t)f;
+        sum += f;
+        if (counts[i] > lc) { lc = counts[i]; largest = i; }
     }
 
-    for (int i = 0; i < n; i++) leaf_q[i] = syms[i].freq;
-    int l_head = 0, l_tail = n;
-    int n_head = 0, n_tail = 0;
-    int next_node = n;
-
-    /* Build tree bottom-up */
-    while ((l_tail - l_head) + (n_tail - n_head) > 1) {
-        /* Pick two smallest from either queue */
-        uint32_t f1, f2;
-        int c1, c2;
-
-        /* First child */
-        if (n_head < n_tail &&
-            (l_head >= l_tail || node_q[n_head] <= leaf_q[l_head])) {
-            f1 = node_q[n_head]; c1 = n + n_head; n_head++;
-        } else {
-            f1 = leaf_q[l_head]; c1 = l_head; l_head++;
-        }
-
-        /* Second child */
-        if (n_head < n_tail &&
-            (l_head >= l_tail || node_q[n_head] <= leaf_q[l_head])) {
-            f2 = node_q[n_head]; c2 = n + n_head; n_head++;
-        } else if (l_head < l_tail) {
-            f2 = leaf_q[l_head]; c2 = l_head; l_head++;
-        } else {
-            f2 = node_q[n_head]; c2 = n + n_head; n_head++;
-        }
-
-        node_q[n_tail] = f1 + f2;
-        node_children[n_tail * 2] = c1;
-        node_children[n_tail * 2 + 1] = c2;
-        n_tail++;
+    if (largest < 0) return -1;
+    if (sum <= (uint32_t)tsz)
+        nf[largest] += (uint16_t)(tsz - sum);
+    else {
+        uint32_t ex = sum - (uint32_t)tsz;
+        nf[largest] = (nf[largest] > ex + 1) ? nf[largest] - (uint16_t)ex : 1;
     }
 
-    /* Compute depths via BFS from root */
-    int root_node = n + n_tail - 1;
-    depths[root_node] = 0;
-    for (int i = n_tail - 1; i >= 0; i--) {
-        uint8_t d = depths[n + i];
-        int ch1 = node_children[i * 2];
-        int ch2 = node_children[i * 2 + 1];
-        if (ch1 < n) code_lens[syms[ch1].symbol] = d + 1;
-        else depths[ch1] = d + 1;
-        if (ch2 < n) code_lens[syms[ch2].symbol] = d + 1;
-        else depths[ch2] = d + 1;
-    }
+    /* Verify */
+    sum = 0;
+    for (int i = 0; i <= max_sym; i++) sum += nf[i];
+    if (sum != (uint32_t)tsz) return -1;
 
-    (void)root_node;
-
-    /* Clamp to max_code_len */
-    for (int i = 0; i < num_syms; i++)
-        if (code_lens[i] > max_code_len) code_lens[i] = (uint8_t)max_code_len;
-
-    free(leaf_q); free(node_q); free(depths); free(node_children);
-    return n;
+    if (ms_out) *ms_out = max_sym;
+    return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- *  Canonical Huffman code generation
- * ═══════════════════════════════════════════════════════════════════ */
-
-static void make_canonical_codes(const uint8_t* code_lens, int num_syms,
-                                  uint16_t* codes)
+/* ═══════════════════════════════════════════════════════════════
+ *  2.  Spread function (same for enc and dec)
+ * ═══════════════════════════════════════════════════════════════ */
+static void build_spread(uint8_t* spread, const uint16_t* nf,
+                          int max_sym, int tlog)
 {
-    /* Count code lengths */
-    int len_count[MAX_CODE_LEN + 1];
-    memset(len_count, 0, sizeof(len_count));
-    for (int i = 0; i < num_syms; i++)
-        if (code_lens[i] > 0) len_count[code_lens[i]]++;
-
-    /* Compute first code for each length */
-    uint16_t next_code[MAX_CODE_LEN + 1];
-    next_code[0] = 0;
-    uint16_t code = 0;
-    for (int bits = 1; bits <= MAX_CODE_LEN; bits++) {
-        code = (code + (uint16_t)len_count[bits - 1]) << 1;
-        next_code[bits] = code;
-    }
-
-    /* Assign codes */
-    memset(codes, 0, num_syms * sizeof(uint16_t));
-    for (int i = 0; i < num_syms; i++)
-        if (code_lens[i] > 0)
-            codes[i] = next_code[code_lens[i]]++;
+    const int tsz  = 1 << tlog;
+    const int step = (tsz >> 1) + (tsz >> 3) + 3;   /* 643 for tsz=1024 */
+    const int mask = tsz - 1;
+    int pos = 0;
+    for (int s = 0; s <= max_sym; s++)
+        for (int j = 0; j < (int)nf[s]; j++) {
+            spread[pos] = (uint8_t)s;
+            pos = (pos + step) & mask;
+        }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- *  Bitstream writer/reader (forward, MSB packing for Huffman)
- * ═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════
+ *  3.  Decode table
+ *   dec_table[x] → { symbol, nb_bits, new_state_base }
+ *   full new state = new_state_base + bits_from_stream
+ * ═══════════════════════════════════════════════════════════════ */
+int mcx_fse_build_dec_table(mcx_fse_dec_table* dt, const uint16_t* nf,
+                             int max_sym, int tlog)
+{
+    const int tsz = 1 << tlog;
+    uint8_t spread[TS];
+    build_spread(spread, nf, max_sym, tlog);
 
+    int rank[MCX_FSE_MAX_SYMBOLS] = {0};
+    for (int x = 0; x < tsz; x++) {
+        int s = spread[x];
+        int k = rank[s]++;
+        uint32_t e = (uint32_t)(k + nf[s]);          /* e ∈ [nf[s], 2·nf[s]) */
+        int nb = tlog - highbit32(e);
+        dt->table[x].symbol    = (uint8_t)s;
+        dt->table[x].nb_bits   = (uint8_t)nb;
+        dt->table[x].new_state = (uint16_t)((e << nb) - tsz);
+    }
+    dt->max_symbol = max_sym;
+    dt->table_log  = tlog;
+    for (int i = 0; i <= max_sym; i++) dt->norm_freq[i] = nf[i];
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  4.  Encode table
+ *   stateTable[cumul[s]+rank_k] = spread_pos_k + L   (stored in .base)
+ * ═══════════════════════════════════════════════════════════════ */
+int mcx_fse_build_enc_table(mcx_fse_enc_table* ct, const uint16_t* nf,
+                             int max_sym, int tlog)
+{
+    const int tsz = 1 << tlog;
+    uint8_t spread[TS];
+    build_spread(spread, nf, max_sym, tlog);
+
+    uint32_t cumul[MCX_FSE_MAX_SYMBOLS + 1];
+    cumul[0] = 0;
+    for (int i = 0; i <= max_sym; i++) cumul[i+1] = cumul[i] + nf[i];
+
+    int rank[MCX_FSE_MAX_SYMBOLS] = {0};
+    for (int x = 0; x < tsz; x++) {
+        int s = spread[x];
+        int k = rank[s]++;
+        ct->table[cumul[s] + k].base = (uint32_t)(x + tsz);
+    }
+    ct->max_symbol = max_sym;
+    ct->table_log  = tlog;
+    for (int i = 0; i <= max_sym; i++) ct->norm_freq[i] = nf[i];
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ *  Forward bit writer  (LSB-first, bytes left→right)
+ * ═══════════════════════════════════════════════════════════════ */
 typedef struct {
-    uint8_t* buf;
-    size_t cap;
-    size_t byte_pos;
-    uint32_t acc;
-    int acc_bits;
-} huff_writer;
+    uint8_t* p;
+    uint8_t* end;
+    uint64_t acc;
+    int      bits;
+} bwx_t;
 
-static void hw_init(huff_writer* w, uint8_t* buf, size_t cap) {
-    w->buf = buf; w->cap = cap; w->byte_pos = 0; w->acc = 0; w->acc_bits = 0;
+static inline void bwx_init(bwx_t* w, uint8_t* buf, size_t cap) {
+    w->p = buf; w->end = buf + cap; w->acc = 0; w->bits = 0;
 }
-
-static void hw_write(huff_writer* w, uint16_t code, int nbits) {
-    /* Write MSB-first: shift code into accumulator from the top */
-    w->acc = (w->acc << nbits) | code;
-    w->acc_bits += nbits;
-    while (w->acc_bits >= 8 && w->byte_pos < w->cap) {
-        w->acc_bits -= 8;
-        w->buf[w->byte_pos++] = (uint8_t)((w->acc >> w->acc_bits) & 0xFF);
+static inline int bwx_put(bwx_t* w, uint32_t val, int nb) {
+    if (!nb) return 0;
+    w->acc |= (uint64_t)(val & ((1u << nb) - 1)) << w->bits;
+    w->bits += nb;
+    while (w->bits >= 8) {
+        if (w->p >= w->end) return -1;
+        *w->p++ = (uint8_t)(w->acc & 0xFF);
+        w->acc >>= 8; w->bits -= 8;
     }
+    return 0;
+}
+static inline size_t bwx_done(bwx_t* w, uint8_t* base) {
+    if (w->bits > 0 && w->p < w->end)
+        *w->p++ = (uint8_t)(w->acc & 0xFF);
+    return (size_t)(w->p - base);
 }
 
-static size_t hw_flush(huff_writer* w) {
-    if (w->acc_bits > 0 && w->byte_pos < w->cap) {
-        w->buf[w->byte_pos++] = (uint8_t)((w->acc << (8 - w->acc_bits)) & 0xFF);
-        w->acc_bits = 0;
-    }
-    return w->byte_pos;
-}
-
+/* ═══════════════════════════════════════════════════════════════
+ *  Backward bit reader  (bytes right→left, bits MSB-first)
+ *
+ *  Encoder writes LSB-first left→right. Reading bytes right→left
+ *  and extracting from the MSB of the 64-bit accumulator gives the
+ *  original value back:
+ *    val = b0 | b1<<1 | … | b_{n-1}<<(n-1)
+ *    stored LSB-first; reading MSB-first gives b_{n-1},…,b0
+ *    → acc>>(64-nb) = b_{n-1}·2^{n-1}+…+b0 = val  ✓
+ *
+ *  Sentinel bit (=1) terminates the encoder's output; brd_init()
+ *  finds it at the top of the loaded window and skips it.
+ * ═══════════════════════════════════════════════════════════════ */
 typedef struct {
     const uint8_t* buf;
-    size_t size;
-    size_t byte_pos;
-    uint32_t acc;
-    int acc_bits;
-} huff_reader;
+    size_t         remaining;   /* bytes not yet loaded (left side) */
+    uint64_t       acc;         /* valid bits in HIGH positions */
+    int            bits;
+} brd_t;
 
-static void hr_init(huff_reader* r, const uint8_t* buf, size_t size) {
-    r->buf = buf; r->size = size; r->byte_pos = 0;
-    r->acc = 0; r->acc_bits = 0;
-    /* Preload up to 4 bytes */
-    while (r->acc_bits <= 24 && r->byte_pos < r->size) {
-        r->acc = (r->acc << 8) | r->buf[r->byte_pos++];
-        r->acc_bits += 8;
+static inline void brd_refill(brd_t* r) {
+    while (r->bits <= 56 && r->remaining > 0) {
+        r->remaining--;
+        /* Put next left-side byte just below existing valid bits */
+        r->acc |= (uint64_t)r->buf[r->remaining] << (64 - r->bits - 8);
+        r->bits += 8;
     }
 }
 
-static void hr_refill(huff_reader* r) {
-    while (r->acc_bits <= 24 && r->byte_pos < r->size) {
-        r->acc = (r->acc << 8) | r->buf[r->byte_pos++];
-        r->acc_bits += 8;
-    }
+static int brd_init(brd_t* r, const uint8_t* buf, size_t sz) {
+    r->buf = buf; r->remaining = sz; r->acc = 0; r->bits = 0;
+    brd_refill(r);
+    if (r->acc == 0) return -1;
+    int hb   = highbit64(r->acc);
+    int skip = (63 - hb) + 1;    /* leading zeros + the sentinel bit */
+    if (skip > r->bits) return -1;
+    r->acc <<= skip; r->bits -= skip;
+    if (r->bits < 32) brd_refill(r);
+    return 0;
 }
 
-static uint32_t hr_peek(huff_reader* r, int nbits) {
-    return (r->acc >> (r->acc_bits - nbits)) & ((1u << nbits) - 1);
+static inline uint32_t brd_read(brd_t* r, int nb) {
+    if (nb == 0) return 0;
+    uint32_t val = (uint32_t)(r->acc >> (64 - nb));
+    r->acc <<= nb; r->bits -= nb;
+    if (r->bits < 32) brd_refill(r);
+    return val;
 }
 
-static void hr_consume(huff_reader* r, int nbits) {
-    r->acc_bits -= nbits;
-    r->acc &= ((uint64_t)1 << r->acc_bits) - 1;
-    hr_refill(r);
-}
-
-/* ═══════════════════════════════════════════════════════════════════
- *  Decode table: fast table-based Huffman decoder
- * ═══════════════════════════════════════════════════════════════════ */
-
-#define HUFF_DECODE_BITS 15
-#define HUFF_DECODE_SIZE (1 << HUFF_DECODE_BITS)
-
-typedef struct {
-    uint16_t symbol;
-    uint8_t nbits;
-} huff_decode_entry;
-
-static void build_decode_table(huff_decode_entry* table,
-                                const uint8_t* code_lens, int num_syms)
+/* ═══════════════════════════════════════════════════════════════
+ *  Internal: build stateTable used by both encode paths
+ * ═══════════════════════════════════════════════════════════════ */
+static uint32_t* build_state_table(const uint16_t* nf, int max_sym,
+                                    uint32_t* cumul_out)
 {
-    /* For each symbol with code length <= HUFF_DECODE_BITS,
-     * fill all table entries that match this prefix */
-    uint16_t codes[MCX_FSE_MAX_SYMBOLS];
-    make_canonical_codes(code_lens, num_syms, codes);
-
-    memset(table, 0, HUFF_DECODE_SIZE * sizeof(huff_decode_entry));
-
-    for (int s = 0; s < num_syms; s++) {
-        int len = code_lens[s];
-        if (len == 0 || len > HUFF_DECODE_BITS) continue;
-
-        int pad = HUFF_DECODE_BITS - len;
-        uint32_t base = (uint32_t)codes[s] << pad;
-        uint32_t count = 1u << pad;
-
-        for (uint32_t i = 0; i < count; i++) {
-            table[base + i].symbol = (uint8_t)s;
-            table[base + i].nbits = (uint8_t)len;
-        }
+    uint32_t* st = (uint32_t*)malloc(TS * sizeof(uint32_t));
+    if (!st) return NULL;
+    cumul_out[0] = 0;
+    for (int i = 0; i <= max_sym; i++) cumul_out[i+1] = cumul_out[i] + nf[i];
+    uint8_t spread[TS];
+    build_spread(spread, nf, max_sym, RLOG);
+    int rank[MCX_FSE_MAX_SYMBOLS] = {0};
+    for (int x = 0; x < TS; x++) {
+        int s = spread[x]; int k = rank[s]++;
+        st[cumul_out[s] + k] = (uint32_t)(x + TS);
     }
+    return st;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- *  Public API stubs (for mcx_fse.h compatibility)
- * ═══════════════════════════════════════════════════════════════════ */
-
-int mcx_fse_normalize_freq(uint16_t* nf, int* ms_out,
-    const uint32_t* counts, int nsym, int tl) {
-    (void)nf;(void)ms_out;(void)counts;(void)nsym;(void)tl; return 0;
-}
-int mcx_fse_build_enc_table(mcx_fse_enc_table* ct,const uint16_t* nf,int ms,int tl)
-{(void)ct;(void)nf;(void)ms;(void)tl;return 0;}
-int mcx_fse_build_dec_table(mcx_fse_dec_table* dt,const uint16_t* nf,int ms,int tl)
-{(void)dt;(void)nf;(void)ms;(void)tl;return 0;}
-
-/* ═══════════════════════════════════════════════════════════════════
- *  Compress
- * ═══════════════════════════════════════════════════════════════════ */
-
-size_t mcx_fse_compress(void* dst, size_t dst_cap, const void* src, size_t src_size)
+/* ─── Encode one symbol into state[lane] ─────────────────────── */
+static inline int encode_sym(bwx_t* bw, uint32_t* pstate,
+                              int s, uint32_t freq,
+                              const uint32_t* cumul,
+                              const uint32_t* stateTable)
 {
-    const uint8_t* in = (const uint8_t*)src;
-    uint8_t* out = (uint8_t*)dst;
-    if (src_size == 0 || dst_cap < 16) return 0;
+    uint32_t st = *pstate;
+    int nb = 0; uint32_t tmp = st;
+    while (tmp >= (freq << 1)) { nb++; tmp >>= 1; }
+    if (bwx_put(bw, st & ((1u << nb) - 1), nb) != 0) return -1;
+    *pstate = stateTable[cumul[s] + (tmp - freq)];
+    return 0;
+}
 
-    /* Count frequencies */
-    uint32_t counts[MCX_FSE_MAX_SYMBOLS];
-    memset(counts, 0, sizeof(counts));
+/* ═══════════════════════════════════════════════════════════════
+ *  5.  Compress  (4-stream interleaved, magic 0xFC)
+ * ═══════════════════════════════════════════════════════════════ */
+size_t mcx_fse_compress(void* dst, size_t dst_cap,
+                         const void* src, size_t src_size)
+{
+    const uint8_t* in  = (const uint8_t*)src;
+    uint8_t*       out = (uint8_t*)dst;
+
+    if (src_size == 0 || dst_cap < 24) return 0;
+
+    /* Count */
+    uint32_t counts[MCX_FSE_MAX_SYMBOLS] = {0};
     for (size_t i = 0; i < src_size; i++) counts[in[i]]++;
 
-    /* RLE check */
-    int unique=0, ssym=0;
-    for(int i=0;i<MCX_FSE_MAX_SYMBOLS;i++) if(counts[i]>0){unique++;ssym=i;}
-    if(unique<=1){
-        out[0]=0xFF; out[1]=(uint8_t)ssym;
-        uint32_t sz=(uint32_t)src_size; memcpy(out+2,&sz,4);
+    /* RLE */
+    int unique = 0, ssym = 0;
+    for (int i = 0; i < MCX_FSE_MAX_SYMBOLS; i++)
+        if (counts[i]) { unique++; ssym = i; }
+    if (unique <= 1) {
+        if (dst_cap < 6) return 0;
+        out[0] = 0xFF; out[1] = (uint8_t)ssym;
+        uint32_t sz = (uint32_t)src_size;
+        memcpy(out + 2, &sz, 4);
         return 6;
     }
 
-    /* Assign code lengths */
-    uint8_t code_lens[MCX_FSE_MAX_SYMBOLS];
-    int n_active = assign_code_lengths(counts, MCX_FSE_MAX_SYMBOLS, code_lens, MAX_CODE_LEN);
-    if (n_active < 2) return 0;
+    /* Normalize */
+    uint16_t nf[MCX_FSE_MAX_SYMBOLS] = {0};
+    int max_sym = -1;
+    if (mcx_fse_normalize_freq(nf, &max_sym, counts, MCX_FSE_MAX_SYMBOLS, RLOG) != 0)
+        return 0;
 
-    /* Generate canonical codes */
-    uint16_t codes[MCX_FSE_MAX_SYMBOLS];
-    make_canonical_codes(code_lens, MCX_FSE_MAX_SYMBOLS, codes);
+    /* Build stateTable */
+    uint32_t cumul[MCX_FSE_MAX_SYMBOLS + 1];
+    uint32_t* stateTable = build_state_table(nf, max_sym, cumul);
+    if (!stateTable) return 0;
 
-    /* Find max symbol */
-    int max_sym = 0;
-    for (int i = 0; i < MCX_FSE_MAX_SYMBOLS; i++) if (code_lens[i] > 0) max_sym = i;
+    /* Header: [0xFC][max_sym][nf…][orig_size][dec_init[4]] */
+    size_t hdr_size = 1 + 1 + (size_t)(max_sym + 1) * 2 + 4 + 4 * 4;
+    if (dst_cap < hdr_size + 8) { free(stateTable); return 0; }
 
-    /* Header: [0xFE] [max_sym] [code_lengths: max_sym+1 bytes] [orig_size:4] */
     uint8_t* op = out;
-    *op++ = 0xFE; /* magic */
+    *op++ = 0xFC;
     *op++ = (uint8_t)max_sym;
-    for (int i = 0; i <= max_sym; i++)
-        *op++ = code_lens[i];
-    uint32_t orig = (uint32_t)src_size;
-    memcpy(op, &orig, 4); op += 4;
+    for (int i = 0; i <= max_sym; i++) {
+        op[0] = (uint8_t)(nf[i] & 0xFF); op[1] = (uint8_t)(nf[i] >> 8); op += 2;
+    }
+    uint32_t orig32 = (uint32_t)src_size;
+    memcpy(op, &orig32, 4); op += 4;
+    uint8_t* dec_init_slot = op; op += 16;  /* 4 × uint32 filled after encoding */
 
-    size_t hdr_size = (size_t)(op - out);
+    /* Encode backward; 4 states interleaved round-robin */
+    size_t tmp_cap = src_size * 2 + 256;
+    uint8_t* tmp = (uint8_t*)malloc(tmp_cap);
+    if (!tmp) { free(stateTable); return 0; }
 
-    /* Encode */
-    huff_writer hw;
-    hw_init(&hw, op, dst_cap - hdr_size);
+    bwx_t bw;
+    bwx_init(&bw, tmp, tmp_cap);
 
-    for (size_t i = 0; i < src_size; i++)
-        hw_write(&hw, codes[in[i]], code_lens[in[i]]);
+    uint32_t states[4] = {(uint32_t)TS, (uint32_t)TS,
+                           (uint32_t)TS, (uint32_t)TS};
 
-    size_t bs_bytes = hw_flush(&hw);
-    size_t total = hdr_size + bs_bytes;
+    for (size_t i = src_size; i > 0; ) {
+        i--;
+        int lane = (int)(i & 3);
+        int s    = (int)in[i];
+        if (encode_sym(&bw, &states[lane], s, nf[s], cumul, stateTable) != 0) {
+            free(tmp); free(stateTable); return 0;
+        }
+    }
+    free(stateTable);
 
-    if (total >= src_size) return 0; /* not compressible */
+    /* Sentinel bit */
+    bwx_put(&bw, 1, 1);
+    size_t bs_size = bwx_done(&bw, tmp);
+
+    /* Store 4 dec_init values */
+    for (int l = 0; l < 4; l++) {
+        uint32_t di = states[l] - (uint32_t)TS;
+        memcpy(dec_init_slot + l * 4, &di, 4);
+    }
+
+    size_t total = hdr_size + bs_size;
+    if (total >= src_size || total > dst_cap) { free(tmp); return 0; }
+
+    memcpy(op, tmp, bs_size);
+    free(tmp);
     return total;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- *  Decompress
- * ═══════════════════════════════════════════════════════════════════ */
-
-size_t mcx_fse_decompress(void* dst, size_t dst_cap, const void* src, size_t src_size)
+/* ═══════════════════════════════════════════════════════════════
+ *  6.  Decompress  (handles 0xFC 4-stream, 0xFD 1-stream, 0xFF RLE)
+ * ═══════════════════════════════════════════════════════════════ */
+size_t mcx_fse_decompress(void* dst, size_t dst_cap,
+                           const void* src, size_t src_size)
 {
-    const uint8_t* in = (const uint8_t*)src;
-    uint8_t* out = (uint8_t*)dst;
+    const uint8_t* in  = (const uint8_t*)src;
+    uint8_t*       out = (uint8_t*)dst;
+
     if (src_size == 0) return 0;
 
     /* RLE */
-    if(in[0]==0xFF && src_size>=6){
-        uint32_t c; memcpy(&c,in+2,4); if((size_t)c>dst_cap)return 0;
-        memset(out,in[1],c); return (size_t)c;
+    if (in[0] == 0xFF && src_size >= 6) {
+        uint32_t c; memcpy(&c, in + 2, 4);
+        if ((size_t)c > dst_cap) return 0;
+        memset(out, in[1], c);
+        return (size_t)c;
     }
 
-    if (in[0] != 0xFE) return 0;
+    /* Legacy Huffman */
+    if (in[0] == 0xFE) goto huffman_decode;
 
-    const uint8_t* ip = in + 1;
-    int max_sym = *ip++;
+    /* ── tANS 1-stream (0xFD) ─────────────────────────────── */
+    if (in[0] == 0xFD)
+    {
+        const uint8_t* ip = in + 1;
+        if (src_size < 10) return 0;
+        int max_sym = (int)*ip++;
 
-    /* Read code lengths */
-    uint8_t code_lens[MCX_FSE_MAX_SYMBOLS];
-    memset(code_lens, 0, sizeof(code_lens));
-    for (int i = 0; i <= max_sym; i++)
-        code_lens[i] = *ip++;
+        uint16_t nf[MCX_FSE_MAX_SYMBOLS] = {0};
+        for (int i = 0; i <= max_sym; i++) {
+            nf[i] = (uint16_t)(ip[0] | ((uint16_t)ip[1] << 8)); ip += 2;
+        }
+        uint32_t orig32; memcpy(&orig32, ip, 4); ip += 4;
+        size_t orig_size = (size_t)orig32;
+        if (orig_size > dst_cap) return 0;
 
-    uint32_t orig;
-    memcpy(&orig, ip, 4); ip += 4;
-    if ((size_t)orig > dst_cap) return 0;
+        uint32_t dec_init; memcpy(&dec_init, ip, 4); ip += 4;
+        if (dec_init >= (uint32_t)TS) return 0;
 
-    size_t hdr_size = (size_t)(ip - in);
+        size_t bs_size = src_size - (size_t)(ip - in);
 
-    /* Build decode table */
-    huff_decode_entry* dec_table = (huff_decode_entry*)malloc(
-        HUFF_DECODE_SIZE * sizeof(huff_decode_entry));
-    if (!dec_table) return 0;
-    build_decode_table(dec_table, code_lens, max_sym + 1);
+        mcx_fse_dec_table* dt = (mcx_fse_dec_table*)malloc(sizeof(mcx_fse_dec_table));
+        if (!dt) return 0;
+        if (mcx_fse_build_dec_table(dt, nf, max_sym, RLOG) != 0) { free(dt); return 0; }
 
-    /* Decode */
-    huff_reader hr;
-    hr_init(&hr, ip, src_size - hdr_size);
+        brd_t br;
+        if (brd_init(&br, ip, bs_size) != 0) { free(dt); return 0; }
 
-    size_t out_pos = 0;
-    while (out_pos < (size_t)orig) {
-        if (hr.acc_bits < 1) break;
-        int peek_bits = hr.acc_bits < HUFF_DECODE_BITS ? hr.acc_bits : HUFF_DECODE_BITS;
-        uint32_t idx = hr_peek(&hr, peek_bits);
-        if (peek_bits < HUFF_DECODE_BITS)
-            idx <<= (HUFF_DECODE_BITS - peek_bits);
-
-        huff_decode_entry* e = &dec_table[idx];
-        if (e->nbits == 0) break; /* invalid */
-
-        out[out_pos++] = e->symbol;
-        hr_consume(&hr, e->nbits);
+        uint32_t state = dec_init;
+        size_t pos = 0;
+        while (pos < orig_size) {
+            if (state >= (uint32_t)TS) { pos = 0; break; }
+            const mcx_fse_dec_entry* e = &dt->table[state];
+            out[pos++] = e->symbol;
+            state = (uint32_t)e->new_state + brd_read(&br, e->nb_bits);
+        }
+        free(dt);
+        return pos;
     }
 
-    free(dec_table);
-    return out_pos;
+    /* ── tANS 4-stream interleaved (0xFC) ─────────────────── */
+    if (in[0] != 0xFC) return 0;
+    {
+        const uint8_t* ip = in + 1;
+        if (src_size < 22) return 0;
+        int max_sym = (int)*ip++;
+
+        uint16_t nf[MCX_FSE_MAX_SYMBOLS] = {0};
+        for (int i = 0; i <= max_sym; i++) {
+            nf[i] = (uint16_t)(ip[0] | ((uint16_t)ip[1] << 8)); ip += 2;
+        }
+        uint32_t orig32; memcpy(&orig32, ip, 4); ip += 4;
+        size_t orig_size = (size_t)orig32;
+        if (orig_size > dst_cap) return 0;
+
+        uint32_t dec_init[4];
+        for (int l = 0; l < 4; l++) {
+            memcpy(&dec_init[l], ip, 4); ip += 4;
+            if (dec_init[l] >= (uint32_t)TS) return 0;
+        }
+
+        size_t bs_size = src_size - (size_t)(ip - in);
+
+        mcx_fse_dec_table* dt = (mcx_fse_dec_table*)malloc(sizeof(mcx_fse_dec_table));
+        if (!dt) return 0;
+        if (mcx_fse_build_dec_table(dt, nf, max_sym, RLOG) != 0) { free(dt); return 0; }
+
+        brd_t br;
+        if (brd_init(&br, ip, bs_size) != 0) { free(dt); return 0; }
+
+        uint32_t states[4] = {dec_init[0], dec_init[1], dec_init[2], dec_init[3]};
+        size_t pos = 0;
+
+        /* Main 4-symbol unrolled loop — ILP: 4 independent table lookups */
+        size_t nblocks = orig_size >> 2;   /* orig_size / 4 */
+        for (size_t b = 0; b < nblocks; b++, pos += 4) {
+            /* Issue 4 independent loads from dec_table (OOO CPU can pipeline) */
+            const mcx_fse_dec_entry* e0 = &dt->table[states[0]];
+            const mcx_fse_dec_entry* e1 = &dt->table[states[1]];
+            const mcx_fse_dec_entry* e2 = &dt->table[states[2]];
+            const mcx_fse_dec_entry* e3 = &dt->table[states[3]];
+            /* Extract symbols before state transitions */
+            out[pos+0] = e0->symbol;
+            out[pos+1] = e1->symbol;
+            out[pos+2] = e2->symbol;
+            out[pos+3] = e3->symbol;
+            /* Update states (bit reads are sequential in the shared stream) */
+            states[0] = (uint32_t)e0->new_state + brd_read(&br, e0->nb_bits);
+            states[1] = (uint32_t)e1->new_state + brd_read(&br, e1->nb_bits);
+            states[2] = (uint32_t)e2->new_state + brd_read(&br, e2->nb_bits);
+            states[3] = (uint32_t)e3->new_state + brd_read(&br, e3->nb_bits);
+        }
+
+        /* Tail: 0-3 remaining symbols */
+        while (pos < orig_size) {
+            int lane = (int)(pos & 3);
+            if (states[lane] >= (uint32_t)TS) { pos = 0; break; }
+            const mcx_fse_dec_entry* e = &dt->table[states[lane]];
+            out[pos++] = e->symbol;
+            states[lane] = (uint32_t)e->new_state + brd_read(&br, e->nb_bits);
+        }
+
+        free(dt);
+        return pos;
+    }
+
+huffman_decode:
+    {
+#define HB 15
+#define HS (1 << HB)
+        typedef struct { uint8_t sym, nb; } hde;
+
+        const uint8_t* ip = in + 1;
+        int mx = *ip++;
+
+        uint8_t cl[MCX_FSE_MAX_SYMBOLS] = {0};
+        for (int i = 0; i <= mx; i++) cl[i] = *ip++;
+
+        uint32_t o32; memcpy(&o32, ip, 4); ip += 4;
+        size_t orig = (size_t)o32;
+        if (orig > dst_cap) return 0;
+
+        int lc[HB + 1] = {0};
+        for (int i = 0; i <= mx; i++) if (cl[i]) lc[cl[i]]++;
+        uint16_t nc[HB + 1]; nc[0] = 0;
+        uint16_t code = 0;
+        for (int b = 1; b <= HB; b++) { code = (code + (uint16_t)lc[b-1]) << 1; nc[b] = code; }
+        uint16_t codes[MCX_FSE_MAX_SYMBOLS] = {0};
+        for (int i = 0; i <= mx; i++) if (cl[i]) codes[i] = nc[cl[i]]++;
+
+        hde* tbl = (hde*)calloc(HS, sizeof(hde));
+        if (!tbl) return 0;
+        for (int s = 0; s <= mx; s++) {
+            int len = cl[s]; if (!len || len > HB) continue;
+            int pad = HB - len; uint32_t base = (uint32_t)codes[s] << pad;
+            for (uint32_t j = 0; j < (1u << pad); j++) {
+                tbl[base+j].sym = (uint8_t)s; tbl[base+j].nb = (uint8_t)len;
+            }
+        }
+
+        size_t hdr = (size_t)(ip - in);
+        const uint8_t* bs = ip; size_t bsz = src_size - hdr;
+        uint32_t acc = 0; int ab = 0; size_t bp = 0;
+        while (ab <= 24 && bp < bsz) { acc = (acc << 8) | bs[bp++]; ab += 8; }
+
+        size_t opos = 0;
+        while (opos < orig) {
+            if (ab < 1) break;
+            int pk = ab < HB ? ab : HB;
+            uint32_t idx = (acc >> (ab - pk)) & ((1u << pk) - 1);
+            if (pk < HB) idx <<= (HB - pk);
+            hde* e = &tbl[idx];
+            if (!e->nb) break;
+            out[opos++] = e->sym;
+            ab -= e->nb; acc &= (1u << ab) - 1;
+            while (ab <= 24 && bp < bsz) { acc = (acc << 8) | bs[bp++]; ab += 8; }
+        }
+        free(tbl);
+        return opos;
+#undef HB
+#undef HS
+    }
 }
