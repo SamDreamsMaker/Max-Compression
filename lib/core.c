@@ -177,8 +177,8 @@ size_t mcx_compress(void* dst, size_t dst_cap,
              * < 8KB: LZ-HC (BWT overhead too high for tiny files)
              * 8KB-4MB: BWT + RLE2 + rANS (suffix sort wins)
              * > 4MB: LZ24 16MB window (long-range matches) */
-            if (src_size < 8192) {
-                strategy = MCX_STRATEGY_LZ_HC;
+            if (src_size < 1024) {
+                strategy = MCX_STRATEGY_LZ_HC; /* BWT overhead too high for < 1KB */
             } else if (src_size > 4 * 1024 * 1024) {
                 strategy = MCX_STRATEGY_LZ24;
             } else {
@@ -481,12 +481,17 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                         else if (strategy == MCX_STRATEGY_BEST) eff_level = 17;
                         else if (strategy == MCX_STRATEGY_LZ_HC) eff_level = 9;
                     }
-                    genome = mcx_evolve(block_in, block_in_size, eff_level);
-                    /* For text in smart mode, force disable delta encoding.
-                     * Delta on text is destructive (turns ASCII patterns into noise).
-                     * The genome optimizer sometimes picks it due to inaccurate fitness. */
                     if (level >= 20 && strategy == MCX_STRATEGY_DEFAULT) {
+                        /* Text in smart mode: force optimal genome.
+                         * Skip the optimizer — we know the answer:
+                         * BWT + MTF + RLE2 + rANS, no delta. */
+                        genome.use_bwt = 1;
+                        genome.use_mtf_rle = 1;
                         genome.use_delta = 0;
+                        genome.entropy_coder = 1; /* rANS */
+                        genome.cm_learning = 0;
+                    } else {
+                        genome = mcx_evolve(block_in, block_in_size, eff_level);
                     }
                 }
                 
