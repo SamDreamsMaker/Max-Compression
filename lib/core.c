@@ -495,6 +495,20 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     }
                 }
                 
+            /* Fix genome optimizer delta bug: if the optimizer picked delta=1
+             * but data is text (< 5% bytes >= 128), disable delta.
+             * Delta on text destroys BWT-friendly patterns. */
+            if (genome.use_delta && genome.use_bwt) {
+                size_t high128 = 0;
+                size_t check_len = block_in_size > 4096 ? 4096 : block_in_size;
+                for (size_t ci = 0; ci < check_len; ci++) {
+                    if (block_in[ci] >= 128) high128++;
+                }
+                if (high128 * 20 < check_len) { /* < 5% high bytes → text */
+                    genome.use_delta = 0;
+                }
+            }
+
             /* Genome byte written later (after RLE2 may modify cm_learning) */
             size_t payload_offset = 1;
             
