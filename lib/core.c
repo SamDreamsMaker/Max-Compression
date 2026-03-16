@@ -465,7 +465,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     genome = mcx_evolve(block_in, block_in_size, eff_level);
                 }
                 
-            out1[0] = mcx_encode_genome(&genome);
+            /* Genome byte written later (after RLE2 may modify cm_learning) */
             size_t payload_offset = 1;
             
             /* For Babel/Stride, always store preproc size (0 = no preproc applied) */
@@ -507,8 +507,18 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 }
                 mcx_mtf_encode((uint8_t*)stage_in, stage_size);
                 size_t rle_cap = stage_size + (stage_size / 4) + 1024;
-                size_t rle_size = mcx_rle_encode(buf2, rle_cap, stage_in, stage_size);
-                if (MCX_IS_ERROR(rle_size)) {
+                size_t rle_size;
+                /* Use RLE2 (RUNA/RUNB) for text in smart mode — 5-8% better.
+                 * Signal via cm_learning=7 when entropy_coder is rANS (not CM-rANS). */
+                int use_rle2 = (level >= 20 && strategy == MCX_STRATEGY_DEFAULT
+                                && genome.entropy_coder != 2);
+                if (use_rle2) {
+                    rle_size = mcx_rle2_encode(buf2, rle_cap, stage_in, stage_size);
+                    genome.cm_learning = 7; /* Flag for decoder */
+                } else {
+                    rle_size = mcx_rle_encode(buf2, rle_cap, stage_in, stage_size);
+                }
+                if (MCX_IS_ERROR(rle_size) || rle_size == 0) {
                     #pragma omp critical
                     { omp_err = 1; }
                     free(buf0); free(buf1); free(buf2); free(out1); if (babel_buf) free(babel_buf);
@@ -520,6 +530,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 memcpy(out1 + payload_offset, &rle32, 4);
                 payload_offset += 4;
             }
+
+            /* Write genome byte now (after RLE2 may have set cm_learning=7) */
+            out1[0] = mcx_encode_genome(&genome);
 
             size_t entropy_size;
             if (genome.entropy_coder == 2) {
@@ -886,8 +899,14 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             size_t stage_size = dec_res;
 
             if (genome.use_mtf_rle) {
-                size_t rle_dec = mcx_rle_decode(buf2, bwt_target_size + 1024, stage_out, stage_size);
-                if (MCX_IS_ERROR(rle_dec)) {
+                size_t rle_dec;
+                /* Check cm_learning=7 flag for RLE2 (RUNA/RUNB) decoding */
+                if (genome.cm_learning == 7 && genome.entropy_coder != 2) {
+                    rle_dec = mcx_rle2_decode(buf2, bwt_target_size + 1024, stage_out, stage_size);
+                } else {
+                    rle_dec = mcx_rle_decode(buf2, bwt_target_size + 1024, stage_out, stage_size);
+                }
+                if (MCX_IS_ERROR(rle_dec) || rle_dec == 0) {
                     #pragma omp critical
                     { omp_err = 1; }
                     free(buf1); free(buf2);
