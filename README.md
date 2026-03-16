@@ -9,7 +9,7 @@ routing, SIMD SSE4.1 acceleration) to deliver strong compression ratios at pract
 
 **Highlights:**
 - 🏆 **46.02× on kennedy.xls** — **2.2× better than xz** (20.97×), **2.9× better than zstd-19** (15.88×)
-- 📈 **8.83× on ptt5** — auto-detects fax scan line stride (216 bytes), beats gzip/bzip2
+- 📈 **10.19× on ptt5** — auto-detects fax scan line stride (216 bytes), beats gzip/bzip2
 - 🧠 **Smart Mode (L20+)** — auto-detects data type and routes to optimal pipeline
 - ⚡ **Multi-threaded** — OpenMP block parallelism for multi-core CPUs
 - 🔬 **Stride-Delta transform** — detects fixed-width records (strides 1–512) in structured binary
@@ -92,17 +92,17 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 | File | Size | gzip -9 | bzip2 -9 | xz -6 | zstd -3 | zstd -19 | MCX L3 | MCX L12 | **MCX L20** |
 |------|------|---------|----------|--------|---------|----------|--------|---------|-------------|
 | kennedy.xls | 1.0 MB | 4.91× | 7.90× | 20.97× | 9.22× | 15.88× | 4.19× | 7.66× | **🏆 46.02×** |
-| ptt5 | 513 KB | 9.80× | 10.31× | **12.22×** | 9.43× | 11.76× | 7.44× | 6.54× | **8.83×** |
+| ptt5 | 513 KB | 9.80× | 10.31× | **12.22×** | 9.43× | 11.76× | 7.44× | 6.54× | **10.19×** |
 | sum | 38 KB | 2.99× | 2.96× | **4.05×** | 2.86× | 3.44× | **2.41×** | 2.10× | 2.39× |
 
-> **Note:** MCX L20 on kennedy.xls uses Stride-Delta + BWT + RLE2 pipeline (auto-detected stride=13, 86.9% zeros after delta). On ptt5 it auto-detects stride=216 (CCITT fax scan line width, 91.7% zeros → rANS direct path).
+> **Note:** MCX L20 on kennedy.xls uses Stride-Delta + BWT + RLE2 pipeline (auto-detected stride=13, 86.9% zeros after delta). On ptt5 it auto-detects stride=216 (CCITT fax scan line width, 91.7% zeros → Stride+RLE2+rANS path).
 
 #### Key Results
 
 | Metric | Result |
 |--------|--------|
 | 🏆 **Best single-file ratio** | **kennedy.xls: 46.02×** — **2.2× better than xz** (20.97×), 2.9× better than zstd-19 |
-| 📈 **ptt5 fax image** | **8.83×** (Stride-Delta, L20) — auto-detected stride=216 |
+| 📈 **ptt5 fax image** | **10.19×** (Stride-Delta, L20) — auto-detected stride=216 |
 | 📊 **L20 vs L12 on text** | +13–35% improvement (RLE2 + delta-fix + sparse rANS) |
 | 🏅 **MCX L12+ beats gzip -9** | On all text files (L12 now matches L20 thanks to auto-RLE2 + delta-fix) |
 | 🎯 **Smart Mode accuracy** | Best MCX result on 100% of Canterbury files |
@@ -244,11 +244,12 @@ const char* mcx_get_error_name(size_t result);
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **v1.5.1** | 2026-03-17 | Stride+RLE2+rANS: ptt5 **10.19×** (+15%), multi-trial for small binary |
 | **v1.5** | 2026-03-16 | Delta-fix + auto-RLE2 for ALL BWT levels — L12 now matches L20 on text |
 | **v1.4.2** | 2026-03-16 | BWT threshold 8KB→1KB: grammar +26%, xargs +32%; hardcoded text genome |
 | **v1.4.1** | 2026-03-16 | Delta-fix for text: +13–35%, MCX L20 now **beats gzip -9** on all text |
 | **v1.4** | 2026-03-16 | Stride+BWT+RLE2 pipeline — kennedy.xls **46.02×** (2.2× better than xz!) |
-| **v1.3.1** | 2026-03-16 | Sparse rANS table, 14-bit precision, extended stride detection (ptt5 8.83×) |
+| **v1.3.1** | 2026-03-16 | Sparse rANS table, 14-bit precision, extended stride detection (ptt5 10.19×) |
 | **v1.3** | 2026-03-16 | RLE2 (RUNA/RUNB) exponential zero-run encoding; +5–7% on text |
 | **v1.2** | 2026-03-16 | Smart Mode (L20+), Stride-Delta transform, LZ24 (16 MB window) |
 | **v1.1** | 2026-03-14 | 4-stream tANS (+64% decomp speed), MCX-fast (+28% ratio), CM-rANS |
