@@ -62,7 +62,7 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 |-----------|-----------|----------|-----|
 | **Structured binary** (xls, fax, bmp, wav) | Stride auto-correlation (1–512) | Stride-Delta → rANS | Exploits fixed-width records |
 | **Text** (ASCII/UTF-8) | Byte distribution analysis | BWT + MTF + RLE2 + rANS | Global suffix sorting + exponential zero-runs |
-| **Small text** (< 8 KB) | Size threshold | LZ77 HC + tANS | Avoids BWT overhead on tiny files |
+| **Tiny text** (< 1 KB) | Size threshold | LZ77 HC + tANS | Avoids BWT overhead on very small files |
 | **Generic binary** | Fallback | LZ24 (16 MB window) + FSE | Long-range matching |
 | **Incompressible** | Entropy > 7.5 bits/byte | STORE | No expansion |
 
@@ -82,10 +82,10 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 | asyoulik.txt | 125 KB | 2.56× | **3.16×** | 2.81× | 2.49× | 2.77× | 1.93× | 2.53× | **3.02×** |
 | cp.html | 24 KB | 3.08× | 3.23× | 3.22× | 2.91× | **3.70×** | 2.29× | 2.33× | **3.09×** |
 | fields.c | 11 KB | 3.56× | 3.67× | **3.68×** | 3.30× | 3.70× | 2.31× | 2.36× | **3.39×** |
-| grammar.lsp | 3.7 KB | **2.99×** | 2.90× | 2.88× | 2.88× | 3.07× | 1.90× | 1.66× | **1.95×** |
+| grammar.lsp | 3.7 KB | **2.99×** | 2.90× | 2.88× | 2.88× | 3.07× | 1.90× | 1.66× | **2.46×** |
 | lcet10.txt | 427 KB | 2.95× | **3.96×** | 3.57× | 3.02× | 3.52× | 2.18× | 3.25× | **3.77×** |
 | plrabn12.txt | 482 KB | 2.48× | **3.31×** | 2.91× | 2.51× | 2.88× | 1.86× | 2.80× | **3.14×** |
-| xargs.1 | 4.2 KB | **2.41×** | 2.40× | 2.33× | 2.35× | 2.45× | 1.58× | 1.48× | **1.62×** |
+| xargs.1 | 4.2 KB | **2.41×** | 2.40× | 2.33× | 2.35× | 2.45× | 1.58× | 1.48× | **2.14×** |
 
 #### Binary Files
 
@@ -244,6 +244,7 @@ const char* mcx_get_error_name(size_t result);
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **v1.4.2** | 2026-03-16 | BWT threshold 8KB→1KB: grammar +26%, xargs +32%; hardcoded text genome |
 | **v1.4.1** | 2026-03-16 | Delta-fix for text: +13–35%, MCX L20 now **beats gzip -9** on all text |
 | **v1.4** | 2026-03-16 | Stride+BWT+RLE2 pipeline — kennedy.xls **46.02×** (2.2× better than xz!) |
 | **v1.3.1** | 2026-03-16 | Sparse rANS table, 14-bit precision, extended stride detection (ptt5 8.83×) |
