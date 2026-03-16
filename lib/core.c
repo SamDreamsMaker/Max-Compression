@@ -21,6 +21,10 @@
 #include "lz/mcx_lz.h"
 #include "babel/babel_transform.h"
 #include "babel/babel_stride.h"
+
+/* RLE2 (RUNA/RUNB) */
+extern size_t mcx_rle2_encode(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
+extern size_t mcx_rle2_decode(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
 #include <stdio.h>
 #ifdef _OPENMP
 #include <omp.h>
@@ -169,13 +173,21 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         } else if (analysis.type == MCX_DTYPE_TEXT_ASCII ||
                    analysis.type == MCX_DTYPE_TEXT_UTF8 ||
                    analysis.type == MCX_DTYPE_STRUCTURED) {
-            /* Text: BWT is king for files < 4MB (suffix sorting beats LZ).
-             * LZ24 (16MB window) only wins on very large text files. */
-            strategy = (src_size > 4 * 1024 * 1024) ? MCX_STRATEGY_LZ24 : MCX_STRATEGY_DEFAULT;
+            /* Text strategy by size:
+             * < 8KB: LZ-HC (BWT overhead too high for tiny files)
+             * 8KB-4MB: BWT + rANS (suffix sort wins)
+             * > 4MB: LZ24 16MB window (long-range matches) */
+            if (src_size < 8192) {
+                strategy = MCX_STRATEGY_LZ_HC;
+            } else if (src_size > 4 * 1024 * 1024) {
+                strategy = MCX_STRATEGY_LZ24;
+            } else {
+                strategy = MCX_STRATEGY_DEFAULT;
+            }
         } else if (analysis.type == MCX_DTYPE_HIGH_ENTROPY) {
             strategy = MCX_STRATEGY_STORE;
         } else {
-            strategy = MCX_STRATEGY_LZ_HC; /* LZ77 HC for generic binary */
+            strategy = MCX_STRATEGY_LZ24; /* LZ24 16MB window for generic binary */
         }
     }
 

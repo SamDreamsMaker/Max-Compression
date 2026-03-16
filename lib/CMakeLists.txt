@@ -20,6 +20,7 @@ set(MCX_LIB_SOURCES
     lz_fast/mcx_lz_fast_decompress.c
     babel/babel_transform.c
     babel/babel_stride.c
+    preprocess/rle2.c
     babel/babel_dict.c
     entropy/adaptive_ac.c
 )
