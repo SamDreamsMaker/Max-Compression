@@ -64,7 +64,7 @@ int mcx_babel_stride_detect(const uint8_t* src, size_t src_size) {
 
     int best_stride = 0;
     double best_h0 = h0_orig;
-    double min_improvement = 0.3; /* at least 0.3 bits/byte improvement */
+    double min_improvement = 0.15; /* at least 0.15 bits/byte improvement */
 
     /* Test strides 1-32 */
     for (int s = 1; s <= 32; s++) {
@@ -81,8 +81,10 @@ int mcx_babel_stride_detect(const uint8_t* src, size_t src_size) {
         }
     }
 
-    /* Test common larger strides (common record sizes) */
-    int extra[] = { 36, 40, 48, 52, 64, 72, 80, 96, 100, 128, 160, 200, 256 };
+    /* Test common larger strides (record sizes, image scan lines, etc.)
+     * 216 = CCITT fax line (1728 bits), 240 = common row width */
+    int extra[] = { 36, 40, 48, 52, 64, 72, 80, 96, 100, 108, 120, 128, 
+                    144, 160, 176, 192, 200, 216, 240, 256, 320, 384, 432, 512 };
     int nextra = sizeof(extra) / sizeof(extra[0]);
     for (int ei = 0; ei < nextra; ei++) {
         int s = extra[ei];

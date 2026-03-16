@@ -164,9 +164,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     } else if (level <= 19) {
         strategy = MCX_STRATEGY_BEST;    /* v0.2: BWT + MTF + RLE + CM-rANS */
     } else {
-        /* v1.2 Babel Smart (L20+): auto-detect best strategy.
+        /* v1.3 Smart Mode (L20+): auto-detect best strategy.
          * Try stride-delta first (wins big on structured binary like .xls).
-         * Fall back to BWT for text, Babel XOR for generic binary. */
+         * Fall back to BWT+RLE2 for text, LZ24 for generic binary. */
         int stride = mcx_babel_stride_detect(in, MCX_MIN(src_size, 65536));
         if (stride > 0) {
             strategy = MCX_STRATEGY_STRIDE;
@@ -175,7 +175,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                    analysis.type == MCX_DTYPE_STRUCTURED) {
             /* Text strategy by size:
              * < 8KB: LZ-HC (BWT overhead too high for tiny files)
-             * 8KB-4MB: BWT + rANS (suffix sort wins)
+             * 8KB-4MB: BWT + RLE2 + rANS (suffix sort wins)
              * > 4MB: LZ24 16MB window (long-range matches) */
             if (src_size < 8192) {
                 strategy = MCX_STRATEGY_LZ_HC;

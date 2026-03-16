@@ -76,8 +76,8 @@ size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
 
 /** Precision for frequency normalization (log2 of total).
  *  M = 2^RANS_PRECISION = 4096. All symbol frequencies must sum to M. */
-#define MCX_RANS_PRECISION      12
-#define MCX_RANS_SCALE          (1u << MCX_RANS_PRECISION)  /* 4096 */
+#define MCX_RANS_PRECISION      14
+#define MCX_RANS_SCALE          (1u << MCX_RANS_PRECISION)  /* 16384 */
 
 /** State bounds for 32-bit rANS. */
 #define MCX_RANS_STATE_LOWER    (MCX_RANS_SCALE)            /* L = M */

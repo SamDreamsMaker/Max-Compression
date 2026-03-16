@@ -206,39 +206,92 @@ size_t mcx_rans_compress(uint8_t* dst, size_t dst_cap,
                    + (*state_ptr % freq);
     }
 
-    /* Step 4: Write output.
+    /* Step 4: Write output (sparse frequency table format).
      *
      * Format:
-     *   [4 bytes]       Original size (uint32)
-     *   [512 bytes]     Normalized freq table (256 × uint16)
-     *   [8 bytes]       Final rANS state1 and state2 (2 × uint32)
-     *   [variable]      Encoded uint16 stream (reversed)
+     *   [4 bytes]              Original size (uint32)
+     *   [1 byte]               num_active (number of symbols with freq > 0)
+     *   [num_active bytes]     Symbol indices (sorted)
+     *   [num_active × 2 bytes] Freq values (uint16 each)
+     *   [8 bytes]              Final rANS state1 and state2 (2 × uint32)
+     *   [variable]             Encoded uint16 stream (reversed)
+     *
+     * Sparse table: typically 25-40 active symbols after BWT+MTF+RLE
+     * → ~80-125 bytes instead of fixed 512 bytes (saves 390-430 bytes/block)
      */
-    header_size = 4 + 256 * 2 + 8;
-    byte_count = out16_pos * 2;
-    total_size = header_size + byte_count;
+    {
+        uint8_t active_syms[256];
+        int num_active = 0;
+        for (i = 0; i < 256; i++) {
+            if (table.freq[i] > 0) {
+                active_syms[num_active++] = (uint8_t)i;
+            }
+        }
+        
+        /* If all 256 symbols active, use dense format (full 512-byte table).
+         * num_active=0 in header signals dense format. */
+        if (num_active == 256) {
+            header_size = 4 + 1 + 256 * 2 + 8;
+            byte_count = out16_pos * 2;
+            total_size = header_size + byte_count;
+            
+            if (total_size > dst_cap) {
+                free(out16);
+                return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
+            }
+            
+            orig_size32 = (uint32_t)src_size;
+            memcpy(dst, &orig_size32, 4);
+            dst[4] = 0; /* 0 = dense format (256 symbols) */
+            memcpy(dst + 5, table.freq, 256 * 2);
+            memcpy(dst + 5 + 512, &state1, 4);
+            memcpy(dst + 5 + 512 + 4, &state2, 4);
+            
+            for (j = 0; j < out16_pos; j++) {
+                uint16_t val = out16[out16_pos - 1 - j];
+                memcpy(dst + header_size + j * 2, &val, 2);
+            }
+            
+            free(out16);
+            return total_size;
+        }
+        
+        size_t table_size = 1 + num_active + num_active * 2; /* count + syms + freqs */
+        header_size = 4 + table_size + 8;
+        byte_count = out16_pos * 2;
+        total_size = header_size + byte_count;
 
-    if (total_size > dst_cap) {
-        fprintf(stderr, "ANS ENCODER FAIL: total_size %zu > %zu\n", total_size, dst_cap);
-        free(out16);
-        return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
-    }
+        if (total_size > dst_cap) {
+            free(out16);
+            return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
+        }
 
-    /* Write original size */
-    orig_size32 = (uint32_t)src_size;
-    memcpy(dst, &orig_size32, 4);
+        /* Write original size */
+        orig_size32 = (uint32_t)src_size;
+        memcpy(dst, &orig_size32, 4);
 
-    /* Write normalized frequency table */
-    memcpy(dst + 4, table.freq, 256 * 2);
+        /* Write sparse frequency table */
+        size_t off = 4;
+        dst[off++] = (uint8_t)num_active;
+        memcpy(dst + off, active_syms, num_active);
+        off += num_active;
+        for (i = 0; i < (size_t)num_active; i++) {
+            uint16_t f = table.freq[active_syms[i]];
+            memcpy(dst + off, &f, 2);
+            off += 2;
+        }
 
-    /* Write final states */
-    memcpy(dst + 4 + 512, &state1, 4);
-    memcpy(dst + 4 + 512 + 4, &state2, 4);
+        /* Write final states */
+        memcpy(dst + off, &state1, 4);
+        off += 4;
+        memcpy(dst + off, &state2, 4);
+        off += 4;
 
-    /* Write encoded stream in REVERSE order */
-    for (j = 0; j < out16_pos; j++) {
-        uint16_t val = out16[out16_pos - 1 - j];
-        memcpy(dst + header_size + j * 2, &val, 2);
+        /* Write encoded stream in REVERSE order */
+        for (j = 0; j < out16_pos; j++) {
+            uint16_t val = out16[out16_pos - 1 - j];
+            memcpy(dst + off + j * 2, &val, 2);
+        }
     }
 
     free(out16);
@@ -271,8 +324,7 @@ size_t mcx_rans_decompress(uint8_t* dst, size_t dst_cap,
 
     if (dst == NULL || src == NULL) return MCX_ERROR(MCX_ERR_GENERIC);
 
-    header_size = 4 + 256 * 2 + 8;  /* orig_size + freq_table + state1/2 */
-    if (src_size < header_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+    if (src_size < 5) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
 
     /* Read original size */
     memcpy(&orig_size32, src, 4);
@@ -280,8 +332,32 @@ size_t mcx_rans_decompress(uint8_t* dst, size_t dst_cap,
 
     if (orig_size > dst_cap) return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
 
-    /* Read normalized frequency table directly into the rANS table */
-    memcpy(table.freq, src + 4, 256 * 2);
+    /* Read frequency table (sparse or dense) */
+    memset(table.freq, 0, sizeof(table.freq));
+    size_t off = 4;
+    uint8_t num_active = src[off++];
+    
+    if (num_active == 0) {
+        /* Dense format: all 256 symbols, full table */
+        if (off + 256 * 2 + 8 > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        memcpy(table.freq, src + off, 256 * 2);
+        off += 256 * 2;
+    } else {
+        /* Sparse format */
+        if (off + num_active + (size_t)num_active * 2 + 8 > src_size) {
+            return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        }
+        
+        const uint8_t* sym_list = src + off;
+        off += num_active;
+        
+        for (i = 0; i < num_active; i++) {
+            uint16_t f;
+            memcpy(&f, src + off, 2);
+            table.freq[sym_list[i]] = f;
+            off += 2;
+        }
+    }
 
     /* Rebuild cumfreq and lookup from the freq table */
     {
@@ -308,8 +384,12 @@ size_t mcx_rans_decompress(uint8_t* dst, size_t dst_cap,
 
     /* Read initial states */
     uint32_t state1, state2;
-    memcpy(&state1, src + 4 + 512, 4);
-    memcpy(&state2, src + 4 + 512 + 4, 4);
+    memcpy(&state1, src + off, 4);
+    off += 4;
+    memcpy(&state2, src + off, 4);
+    off += 4;
+
+    header_size = off;
 
     /* Encoded stream starts after header, read as uint16s */
     stream_pos = header_size;
