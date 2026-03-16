@@ -15,8 +15,13 @@ set(MCX_LIB_SOURCES
     lz/lz_compress.c
     lz/lz_decompress.c
     lz/lz_multistream.c
+    lz/lz24.c
     lz_fast/mcx_lz_fast_compress.c
     lz_fast/mcx_lz_fast_decompress.c
+    babel/babel_transform.c
+    babel/babel_stride.c
+    babel/babel_dict.c
+    entropy/adaptive_ac.c
 )
 
 # ─── Static library (always built) ──────────────────────────────────

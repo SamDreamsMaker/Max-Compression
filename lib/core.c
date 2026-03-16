@@ -19,6 +19,8 @@
 #include "entropy/mcx_fse.h"
 #include "optimizer/genetic.h"
 #include "lz/mcx_lz.h"
+#include "babel/babel_transform.h"
+#include "babel/babel_stride.h"
 #include <stdio.h>
 #ifdef _OPENMP
 #include <omp.h>
@@ -155,8 +157,26 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         strategy = MCX_STRATEGY_STORE;
     } else if (level <= 14) {
         strategy = MCX_STRATEGY_DEFAULT; /* v0.2: BWT + MTF + RLE + ANS */
-    } else {
+    } else if (level <= 19) {
         strategy = MCX_STRATEGY_BEST;    /* v0.2: BWT + MTF + RLE + CM-rANS */
+    } else {
+        /* v1.2 Babel Smart (L20+): auto-detect best strategy.
+         * Try stride-delta first (wins big on structured binary like .xls).
+         * Fall back to BWT for text, Babel XOR for generic binary. */
+        int stride = mcx_babel_stride_detect(in, MCX_MIN(src_size, 65536));
+        if (stride > 0) {
+            strategy = MCX_STRATEGY_STRIDE;
+        } else if (analysis.type == MCX_DTYPE_TEXT_ASCII ||
+                   analysis.type == MCX_DTYPE_TEXT_UTF8 ||
+                   analysis.type == MCX_DTYPE_STRUCTURED) {
+            /* Text: BWT is king for files < 4MB (suffix sorting beats LZ).
+             * LZ24 (16MB window) only wins on very large text files. */
+            strategy = (src_size > 4 * 1024 * 1024) ? MCX_STRATEGY_LZ24 : MCX_STRATEGY_DEFAULT;
+        } else if (analysis.type == MCX_DTYPE_HIGH_ENTROPY) {
+            strategy = MCX_STRATEGY_STORE;
+        } else {
+            strategy = MCX_STRATEGY_LZ_HC; /* LZ77 HC for generic binary */
+        }
     }
 
     /* ── Write frame header ── */
@@ -291,12 +311,101 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
                 block_sizes[b] = fse_size + 1;
                 block_buffers[b] = fse_buf;
+            } else if (strategy == MCX_STRATEGY_LZ24) {
+                /* LZ24 Path: 24-bit offsets (16MB window) + FSE */
+                size_t lz_cap = mcx_lz24_compress_bound(block_src_size);
+                uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
+                size_t fse_cap = mcx_compress_bound(lz_cap);
+                uint8_t* fse_buf = (uint8_t*)malloc(fse_cap + 1);
+                
+                if (!lz_buf || !fse_buf) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    if (lz_buf) free(lz_buf); if (fse_buf) free(fse_buf);
+                    continue;
+                }
+
+                size_t lz_size = mcx_lz24_compress(lz_buf, lz_cap,
+                                                    in + src_offset, block_src_size);
+                if (lz_size == 0) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    free(lz_buf); free(fse_buf);
+                    continue;
+                }
+
+                size_t fse_size = mcx_fse_compress(fse_buf + 1, fse_cap, lz_buf, lz_size);
+
+                if (fse_size > 0 && fse_size < block_src_size) {
+                    fse_buf[0] = 0xAC; /* LZ24 + FSE */
+                    free(lz_buf);
+                } else if (lz_size < block_src_size) {
+                    fse_buf[0] = 0xAD; /* LZ24 raw */
+                    memcpy(fse_buf + 1, lz_buf, lz_size);
+                    fse_size = lz_size;
+                    free(lz_buf);
+                } else {
+                    fse_buf[0] = 0x00; /* STORE fallback */
+                    memcpy(fse_buf + 1, in + src_offset, block_src_size);
+                    fse_size = block_src_size;
+                    free(lz_buf);
+                }
+
+                block_sizes[b] = fse_size + 1;
+                block_buffers[b] = fse_buf;
             } else {
-                /* BWT Path (DEFAULT or BEST) */
-                uint8_t* buf0 = (uint8_t*)malloc(block_src_size);
-                uint8_t* buf1 = (uint8_t*)malloc(block_src_size);
-                uint8_t* buf2 = (uint8_t*)malloc(block_src_size + (block_src_size / 4) + 1024);
-                size_t max_out = mcx_compress_bound(block_src_size);
+                /* BWT Path (DEFAULT, BEST, BABEL, or STRIDE) */
+                
+                /* ── Preprocessing (strategy BABEL or STRIDE) ── */
+                uint8_t* babel_buf = NULL;
+                const uint8_t* block_in = in + src_offset;
+                size_t block_in_size = block_src_size;
+                uint32_t babel_size32 = 0;
+                
+                if (strategy == MCX_STRATEGY_STRIDE) {
+                    size_t stride_cap = mcx_babel_stride_bound(block_src_size);
+                    babel_buf = (uint8_t*)malloc(stride_cap);
+                    if (!babel_buf) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        continue;
+                    }
+                    size_t stride_out = mcx_babel_stride_forward(babel_buf, stride_cap,
+                                                                  block_in, block_src_size);
+                    if (stride_out == 0) {
+                        /* No stride detected — fall back to raw data */
+                        free(babel_buf);
+                        babel_buf = NULL;
+                    } else {
+                        block_in = babel_buf;
+                        block_in_size = stride_out;
+                        babel_size32 = (uint32_t)stride_out;
+                    }
+                } else if (strategy == MCX_STRATEGY_BABEL) {
+                    size_t babel_cap = mcx_babel_bound(block_src_size);
+                    babel_buf = (uint8_t*)malloc(babel_cap);
+                    if (!babel_buf) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        continue;
+                    }
+                    size_t babel_out = mcx_babel_forward(babel_buf, babel_cap,
+                                                         block_in, block_src_size);
+                    if (babel_out == 0) {
+                        /* Babel failed — fall back to raw data */
+                        free(babel_buf);
+                        babel_buf = NULL;
+                    } else {
+                        block_in = babel_buf;
+                        block_in_size = babel_out;
+                        babel_size32 = (uint32_t)babel_out;
+                    }
+                }
+                
+                uint8_t* buf0 = (uint8_t*)malloc(block_in_size);
+                uint8_t* buf1 = (uint8_t*)malloc(block_in_size);
+                uint8_t* buf2 = (uint8_t*)malloc(block_in_size + (block_in_size / 4) + 1024);
+                size_t max_out = mcx_compress_bound(block_in_size) + 8; /* +8 for babel header */
                 uint8_t* out1 = (uint8_t*)malloc(max_out);
 
                 if (!buf0 || !buf1 || !buf2 || !out1) {
@@ -304,15 +413,57 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     { omp_err = 1; }
                     if (buf0) free(buf0); if (buf1) free(buf1); 
                     if (buf2) free(buf2); if (out1) free(out1);
+                    if (babel_buf) free(babel_buf);
                     continue;
                 }
 
-                mcx_genome genome = mcx_evolve(in + src_offset, block_src_size, level);
+                /* For Babel strategy: Babel handles prediction, so use a simple
+                 * order-0 entropy coder (rANS). No BWT/MTF/Delta — those would
+                 * fight the Babel residual structure.
+                 * For Stride strategy: use BWT+CM-rANS (best pipeline) since
+                 * stride-delta output is ideal for BWT (near-zero runs). */
+                mcx_genome genome;
+                if (strategy == MCX_STRATEGY_BABEL) {
+                    genome.use_bwt = 0;
+                    genome.use_mtf_rle = 0;
+                    genome.use_delta = 0;
+                    genome.entropy_coder = 1; /* rANS (order-0) */
+                    genome.cm_learning = 0;
+                } else if (strategy == MCX_STRATEGY_STRIDE) {
+                    if (babel_buf != NULL) {
+                        /* Stride delta output has long zero runs → rANS order-0
+                         * handles this very well (same insight as Babel XOR). */
+                        genome.use_bwt = 0;
+                        genome.use_mtf_rle = 0;
+                        genome.use_delta = 0;
+                        genome.entropy_coder = 1; /* rANS (order-0) */
+                        genome.cm_learning = 0;
+                    } else {
+                        genome = mcx_evolve(block_in, block_in_size, 12);
+                    }
+                } else {
+                    /* For smart mode (L20+), use the effective level matching
+                     * the selected strategy, not the user-requested level. */
+                    int eff_level = level;
+                    if (level >= 20) {
+                        if (strategy == MCX_STRATEGY_DEFAULT) eff_level = 12;
+                        else if (strategy == MCX_STRATEGY_BEST) eff_level = 17;
+                        else if (strategy == MCX_STRATEGY_LZ_HC) eff_level = 9;
+                    }
+                    genome = mcx_evolve(block_in, block_in_size, eff_level);
+                }
+                
             out1[0] = mcx_encode_genome(&genome);
             size_t payload_offset = 1;
             
-            const uint8_t* stage_in = in + src_offset;
-            size_t stage_size = block_src_size;
+            /* For Babel/Stride, always store preproc size (0 = no preproc applied) */
+            if (strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE) {
+                memcpy(out1 + payload_offset, &babel_size32, 4);
+                payload_offset += 4;
+            }
+            
+            const uint8_t* stage_in = block_in;
+            size_t stage_size = block_in_size;
             
             if (genome.use_delta) {
                 if (stage_in != buf0) memcpy(buf0, stage_in, stage_size);
@@ -327,7 +478,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 if (MCX_IS_ERROR(bwt_result)) {
                     #pragma omp critical
                     { omp_err = 1; }
-                    free(buf0); free(buf1); free(buf2); free(out1);
+                    free(buf0); free(buf1); free(buf2); free(out1); if (babel_buf) free(babel_buf);
                     continue;
                 }
                 pidx64 = (uint64_t)primary_idx;
@@ -348,7 +499,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 if (MCX_IS_ERROR(rle_size)) {
                     #pragma omp critical
                     { omp_err = 1; }
-                    free(buf0); free(buf1); free(buf2); free(out1);
+                    free(buf0); free(buf1); free(buf2); free(out1); if (babel_buf) free(babel_buf);
                     continue;
                 }
                 stage_in = buf2;
@@ -370,7 +521,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             if (MCX_IS_ERROR(entropy_size)) {
                 #pragma omp critical
                 { omp_err = 1; }
-                free(buf0); free(buf1); free(buf2); free(out1);
+                free(buf0); free(buf1); free(buf2); free(out1); if (babel_buf) free(babel_buf);
                 continue;
             }
 
@@ -378,6 +529,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             block_sizes[b] = payload_offset + entropy_size;
 
             free(buf0); free(buf1); free(buf2);
+            if (babel_buf) free(babel_buf);
         }
         } /* end BWT path block */
 
@@ -574,10 +726,81 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                     { omp_err = 1; }
                     continue;
                 }
+            } else if (strategy == MCX_STRATEGY_LZ24) {
+                /* LZ24 decompression */
+                uint8_t block_type = in[chunk_src_offset];
+                
+                if (block_type == 0x00) {
+                    if (chunk_comp_size - 1 != block_dst_size) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        continue;
+                    }
+                    memcpy(out + dst_offset, in + chunk_src_offset + 1, block_dst_size);
+                } else if (block_type == 0xAC || block_type == 0xAD) {
+                    size_t lz_cap = mcx_lz24_compress_bound(block_dst_size);
+                    uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
+                    if (!lz_buf) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        continue;
+                    }
+
+                    size_t lz_size;
+                    if (block_type == 0xAC) {
+                        lz_size = mcx_fse_decompress(lz_buf, lz_cap,
+                                                     in + chunk_src_offset + 1,
+                                                     chunk_comp_size - 1);
+                    } else {
+                        lz_size = chunk_comp_size - 1;
+                        if (lz_size > lz_cap) lz_size = 0;
+                        else memcpy(lz_buf, in + chunk_src_offset + 1, lz_size);
+                    }
+
+                    if (lz_size == 0) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        free(lz_buf);
+                        continue;
+                    }
+
+                    size_t decomp = mcx_lz24_decompress(out + dst_offset, block_dst_size,
+                                                         lz_buf, lz_size, block_dst_size);
+                    free(lz_buf);
+
+                    if (decomp != block_dst_size) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        continue;
+                    }
+                } else {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    continue;
+                }
             } else {
-                /* BWT Path */
+                /* BWT Path (+ Babel inverse for BABEL strategy) */
                 mcx_genome genome = mcx_decode_genome(in[chunk_src_offset]);
             size_t payload_offset = 1;
+            
+            /* For Babel strategy, read the babel output size */
+            uint32_t babel_size32 = 0;
+            size_t babel_intermediate_size = 0;
+            if (strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE) {
+                if (payload_offset + 4 > chunk_comp_size) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    continue;
+                }
+                memcpy(&babel_size32, in + chunk_src_offset + payload_offset, 4);
+                babel_intermediate_size = (size_t)babel_size32;
+                payload_offset += 4;
+            }
+            
+            /* For Babel, the BWT pipeline decompresses to babel_intermediate_size,
+             * not block_dst_size. We then run babel_inverse to get block_dst_size. */
+            size_t bwt_target_size = ((strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE) && babel_intermediate_size > 0)
+                                   ? babel_intermediate_size : block_dst_size;
 
             uint64_t pidx64 = 0;
             size_t primary_idx = 0;
@@ -593,7 +816,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             }
 
             uint32_t rle32 = 0;
-            size_t rle_size = block_dst_size; /* Default if no BWT/MTF/RLE */
+            size_t rle_size = bwt_target_size; /* Default if no BWT/MTF/RLE */
             if (genome.use_mtf_rle) {
                 if (payload_offset + 4 > chunk_comp_size) {
                     #pragma omp critical
@@ -606,7 +829,19 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             }
 
             uint8_t* buf1 = (uint8_t*)malloc(rle_size + 1024);
-            uint8_t* buf2 = (uint8_t*)malloc(block_dst_size + 1024);
+            uint8_t* buf2 = (uint8_t*)malloc(bwt_target_size + 1024);
+            /* For Babel, we need an extra buffer for the intermediate decoded data */
+            uint8_t* babel_dec_buf = NULL;
+            if ((strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE) && babel_intermediate_size > 0) {
+                babel_dec_buf = (uint8_t*)malloc(babel_intermediate_size + 1024);
+                if (!babel_dec_buf) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    if (buf1) free(buf1);
+                    if (buf2) free(buf2);
+                    continue;
+                }
+            }
             
             if (!buf1 || !buf2) {
                 #pragma omp critical
@@ -639,7 +874,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             size_t stage_size = dec_res;
 
             if (genome.use_mtf_rle) {
-                size_t rle_dec = mcx_rle_decode(buf2, block_dst_size + 1024, stage_out, stage_size);
+                size_t rle_dec = mcx_rle_decode(buf2, bwt_target_size + 1024, stage_out, stage_size);
                 if (MCX_IS_ERROR(rle_dec)) {
                     #pragma omp critical
                     { omp_err = 1; }
@@ -652,30 +887,59 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             }
 
             if (genome.use_bwt) {
-                size_t bwt_dec = mcx_bwt_inverse(out + dst_offset, primary_idx, stage_out, stage_size);
-                if (MCX_IS_ERROR(bwt_dec) || bwt_dec != block_dst_size) {
+                /* For Babel, decode BWT into intermediate buffer, not final output */
+                uint8_t* bwt_dst = ((strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE) && babel_dec_buf)
+                                 ? babel_dec_buf : (out + dst_offset);
+                size_t bwt_dec = mcx_bwt_inverse(bwt_dst, primary_idx, stage_out, stage_size);
+                if (MCX_IS_ERROR(bwt_dec) || bwt_dec != bwt_target_size) {
                     #pragma omp critical
                     { omp_err = 1; }
-                    free(buf1); free(buf2);
+                    free(buf1); free(buf2); if (babel_dec_buf) free(babel_dec_buf);
                     continue;
                 }
-                stage_out = out + dst_offset;
+                stage_out = bwt_dst;
             } else {
-                if (stage_size != block_dst_size) {
+                if (stage_size != bwt_target_size) {
                     #pragma omp critical
                     { omp_err = 1; }
-                    free(buf1); free(buf2);
+                    free(buf1); free(buf2); if (babel_dec_buf) free(babel_dec_buf);
                     continue;
                 }
-                memcpy(out + dst_offset, stage_out, stage_size);
-                stage_out = out + dst_offset;
+                if ((strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE) && babel_dec_buf) {
+                    memcpy(babel_dec_buf, stage_out, stage_size);
+                    stage_out = babel_dec_buf;
+                } else {
+                    memcpy(out + dst_offset, stage_out, stage_size);
+                    stage_out = out + dst_offset;
+                }
             }
 
             if (genome.use_delta) {
-                mcx_delta_decode(stage_out, block_dst_size);
+                mcx_delta_decode(stage_out, bwt_target_size);
+            }
+            
+            /* ── Babel/Stride inverse ── */
+            if (strategy == MCX_STRATEGY_BABEL && babel_dec_buf && babel_intermediate_size > 0) {
+                size_t babel_dec = mcx_babel_inverse(out + dst_offset, block_dst_size,
+                                                     stage_out, babel_intermediate_size);
+                if (babel_dec != block_dst_size) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    free(buf1); free(buf2); free(babel_dec_buf);
+                    continue;
+                }
+            } else if (strategy == MCX_STRATEGY_STRIDE && babel_dec_buf && babel_intermediate_size > 0) {
+                size_t stride_dec = mcx_babel_stride_inverse(out + dst_offset, block_dst_size,
+                                                              stage_out, babel_intermediate_size);
+                if (stride_dec != block_dst_size) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    free(buf1); free(buf2); free(babel_dec_buf);
+                    continue;
+                }
             }
 
-            free(buf1); free(buf2);
+            free(buf1); free(buf2); if (babel_dec_buf) free(babel_dec_buf);
             } /* end BWT path block */
         } /* end parallel loops */
 
@@ -769,28 +1033,88 @@ static size_t stream_compress_block(mcx_cctx* cctx)
         memcpy(cctx->out_buf + 4, fse_buf, fse_size + 1);
         free(fse_buf);
         return fse_size + 1;
-    } else if (!(strategy == MCX_STRATEGY_DEFAULT || strategy == MCX_STRATEGY_BEST)) {
+    } else if (!(strategy == MCX_STRATEGY_DEFAULT || strategy == MCX_STRATEGY_BEST ||
+                 strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE)) {
         return MCX_ERROR(MCX_ERR_GENERIC);
     }
 
-    size_t bsz = cctx->in_pos > 0 ? cctx->in_pos : 1;
+    /* ── Stride/Babel preprocessing ── */
+    uint8_t* preproc_buf = NULL;
+    const uint8_t* preproc_in = cctx->in_buf;
+    size_t preproc_size = cctx->in_pos;
+    uint32_t preproc_size32 = 0;
+
+    if (strategy == MCX_STRATEGY_STRIDE) {
+        size_t stride_cap = mcx_babel_stride_bound(cctx->in_pos);
+        preproc_buf = (uint8_t*)malloc(stride_cap);
+        if (preproc_buf) {
+            size_t stride_out = mcx_babel_stride_forward(preproc_buf, stride_cap,
+                                                          cctx->in_buf, cctx->in_pos);
+            if (stride_out > 0) {
+                preproc_in = preproc_buf;
+                preproc_size = stride_out;
+                preproc_size32 = (uint32_t)stride_out;
+            } else {
+                free(preproc_buf);
+                preproc_buf = NULL;
+            }
+        }
+    } else if (strategy == MCX_STRATEGY_BABEL) {
+        size_t babel_cap = mcx_babel_bound(cctx->in_pos);
+        preproc_buf = (uint8_t*)malloc(babel_cap);
+        if (preproc_buf) {
+            size_t babel_out = mcx_babel_forward(preproc_buf, babel_cap,
+                                                  cctx->in_buf, cctx->in_pos);
+            if (babel_out > 0) {
+                preproc_in = preproc_buf;
+                preproc_size = babel_out;
+                preproc_size32 = (uint32_t)babel_out;
+            } else {
+                free(preproc_buf);
+                preproc_buf = NULL;
+            }
+        }
+    }
+
+    size_t bsz = preproc_size > 0 ? preproc_size : 1;
     uint8_t* bbuf0 = (uint8_t*)malloc(bsz);
     uint8_t* bbuf1 = (uint8_t*)malloc(bsz);
     uint8_t* bbuf2 = (uint8_t*)malloc(bsz + (bsz / 4) + 1024);
-    size_t entropy_cap = mcx_compress_bound(cctx->in_pos);
+    size_t entropy_cap = mcx_compress_bound(preproc_size);
     uint8_t* entropy_buf = (uint8_t*)malloc(entropy_cap);
 
     if (!bbuf0 || !bbuf1 || !bbuf2 || !entropy_buf) {
-        free(bbuf0); free(bbuf1); free(bbuf2); free(entropy_buf);
+        free(bbuf0); free(bbuf1); free(bbuf2); free(entropy_buf); if (preproc_buf) free(preproc_buf);
+        if (preproc_buf) free(preproc_buf);
         return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
     }
 
-    mcx_genome genome = mcx_evolve(cctx->in_buf, cctx->in_pos, cctx->level);
+    mcx_genome genome;
+    if (strategy == MCX_STRATEGY_BABEL) {
+        genome.use_bwt = 0;
+        genome.use_mtf_rle = 0;
+        genome.use_delta = 0;
+        genome.entropy_coder = 1; /* rANS (order-0) */
+        genome.cm_learning = 0;
+    } else if (strategy == MCX_STRATEGY_STRIDE) {
+        /* When stride detected: use BWT+CM-rANS (level 19) on delta data
+         * When stride failed (no preproc): use DEFAULT (level 12) for best text results */
+        int effective_level = (preproc_buf != NULL) ? 19 : 12;
+        genome = mcx_evolve(preproc_in, preproc_size, effective_level);
+    } else {
+        genome = mcx_evolve(preproc_in, preproc_size, cctx->level);
+    }
     cctx->out_buf[4] = mcx_encode_genome(&genome);
     size_t payload_offset = 1;
 
-    const uint8_t* stage_in = cctx->in_buf;
-    size_t stage_size = cctx->in_pos;
+    /* Store preproc size for decoder (always write for BABEL/STRIDE, 0 = no preproc) */
+    if (strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE) {
+        memcpy(cctx->out_buf + 4 + payload_offset, &preproc_size32, 4);
+        payload_offset += 4;
+    }
+
+    const uint8_t* stage_in = preproc_in;
+    size_t stage_size = preproc_size;
 
     if (genome.use_delta) {
         if (stage_in != bbuf0) memcpy(bbuf0, stage_in, stage_size);
@@ -802,7 +1126,7 @@ static size_t stream_compress_block(mcx_cctx* cctx)
         size_t pidx;
         size_t bwt_res = mcx_bwt_forward(bbuf1, &pidx, stage_in, stage_size);
         if (MCX_IS_ERROR(bwt_res)) {
-            free(bbuf0); free(bbuf1); free(bbuf2); free(entropy_buf);
+            free(bbuf0); free(bbuf1); free(bbuf2); free(entropy_buf); if (preproc_buf) free(preproc_buf);
             return bwt_res;
         }
         uint64_t p64 = (uint64_t)pidx;
@@ -819,7 +1143,7 @@ static size_t stream_compress_block(mcx_cctx* cctx)
         mcx_mtf_encode((uint8_t*)stage_in, stage_size);
         size_t rle_sz = mcx_rle_encode(bbuf2, bsz + (bsz / 4) + 1024, stage_in, stage_size);
         if (MCX_IS_ERROR(rle_sz)) {
-            free(bbuf0); free(bbuf1); free(bbuf2); free(entropy_buf);
+            free(bbuf0); free(bbuf1); free(bbuf2); free(entropy_buf); if (preproc_buf) free(preproc_buf);
             return rle_sz;
         }
         uint32_t r32 = (uint32_t)rle_sz;
@@ -839,6 +1163,7 @@ static size_t stream_compress_block(mcx_cctx* cctx)
     }
 
     free(bbuf0); free(bbuf1); free(bbuf2);
+    if (preproc_buf) free(preproc_buf);
 
     if (MCX_IS_ERROR(csize)) { free(entropy_buf); return csize; }
 
@@ -895,7 +1220,9 @@ size_t mcx_compress_stream(mcx_cctx* cctx, mcx_out_buffer* output, mcx_in_buffer
         if (level <= 3) strategy = MCX_STRATEGY_LZ_FAST;
         else if (level <= 9) strategy = MCX_STRATEGY_LZ_HC;
         else if (level <= 14) strategy = MCX_STRATEGY_DEFAULT;
-        else strategy = MCX_STRATEGY_BEST;
+        else if (level <= 19) strategy = MCX_STRATEGY_BEST;
+        else if (level <= 22) strategy = MCX_STRATEGY_BABEL;
+        else strategy = MCX_STRATEGY_STRIDE;
         
         mcx_frame_header_t header;
         memset(&header, 0, sizeof(header));
@@ -1145,10 +1472,22 @@ size_t mcx_decompress_stream(mcx_dctx* dctx, mcx_out_buffer* output, mcx_in_buff
             /* Decoding huffman directly into internal out_buf max boundary */
             orig_block_size = mcx_huffman_decompress(dctx->out_buf, dctx->out_size, dctx->in_buf, dctx->in_pos);
             if (MCX_IS_ERROR(orig_block_size)) return orig_block_size;
-        } else if (dctx->strategy == MCX_STRATEGY_DEFAULT || dctx->strategy == MCX_STRATEGY_BEST) {
+        } else if (dctx->strategy == MCX_STRATEGY_DEFAULT || dctx->strategy == MCX_STRATEGY_BEST ||
+                   dctx->strategy == MCX_STRATEGY_BABEL || dctx->strategy == MCX_STRATEGY_STRIDE) {
             if (dctx->in_pos < 1) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
             mcx_genome genome = mcx_decode_genome(dctx->in_buf[0]);
             size_t payload_offset = 1;
+
+            /* Read preproc size if Babel/Stride */
+            uint32_t preproc_size32 = 0;
+            size_t preproc_intermediate_size = 0;
+            if (dctx->strategy == MCX_STRATEGY_BABEL || dctx->strategy == MCX_STRATEGY_STRIDE) {
+                if (payload_offset + 4 <= dctx->in_pos) {
+                    memcpy(&preproc_size32, dctx->in_buf + payload_offset, 4);
+                    preproc_intermediate_size = (size_t)preproc_size32;
+                    payload_offset += 4;
+                }
+            }
 
             uint64_t pidx64 = 0;
             size_t pidx = 0;
@@ -1168,11 +1507,16 @@ size_t mcx_decompress_stream(mcx_dctx* dctx, mcx_out_buffer* output, mcx_in_buff
                 payload_offset += 4;
             }
 
+            size_t target_size = (preproc_intermediate_size > 0) ? preproc_intermediate_size : MCX_MAX_BLOCK_SIZE;
+
             uint8_t* bbuf1 = (uint8_t*)malloc(rle_sz + 1024);
-            uint8_t* bbuf2 = (uint8_t*)malloc(MCX_MAX_BLOCK_SIZE + 1024);
+            uint8_t* bbuf2 = (uint8_t*)malloc(target_size + 1024);
+            uint8_t* preproc_dec = (preproc_intermediate_size > 0) ? 
+                                   (uint8_t*)malloc(preproc_intermediate_size + 1024) : NULL;
             if (!bbuf1 || !bbuf2) {
                 if (bbuf1) free(bbuf1);
                 if (bbuf2) free(bbuf2);
+                if (preproc_dec) free(preproc_dec);
                 return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
             }
 
@@ -1185,35 +1529,48 @@ size_t mcx_decompress_stream(mcx_dctx* dctx, mcx_out_buffer* output, mcx_in_buff
                 dec_res = mcx_huffman_decompress(bbuf1, rle_sz + 1024, dctx->in_buf + payload_offset, dctx->in_pos - payload_offset);
             }
 
-            if (MCX_IS_ERROR(dec_res)) { free(bbuf1); free(bbuf2); return dec_res; }
+            if (MCX_IS_ERROR(dec_res)) { free(bbuf1); free(bbuf2); if (preproc_dec) free(preproc_dec); return dec_res; }
 
             uint8_t* stage_out = bbuf1;
             size_t stage_size = dec_res;
 
             if (genome.use_mtf_rle) {
-                size_t rle_dec = mcx_rle_decode(bbuf2, MCX_MAX_BLOCK_SIZE + 1024, stage_out, stage_size);
-                if (MCX_IS_ERROR(rle_dec)) { free(bbuf1); free(bbuf2); return rle_dec; }
+                size_t rle_dec = mcx_rle_decode(bbuf2, target_size + 1024, stage_out, stage_size);
+                if (MCX_IS_ERROR(rle_dec)) { free(bbuf1); free(bbuf2); if (preproc_dec) free(preproc_dec); return rle_dec; }
                 mcx_mtf_decode(bbuf2, rle_dec);
                 stage_out = bbuf2;
                 stage_size = rle_dec;
             }
 
+            /* BWT inverse into appropriate buffer */
+            uint8_t* bwt_target = (preproc_dec) ? preproc_dec : dctx->out_buf;
             if (genome.use_bwt) {
-                orig_block_size = mcx_bwt_inverse(dctx->out_buf, pidx, stage_out, stage_size);
-                if (MCX_IS_ERROR(orig_block_size)) { free(bbuf1); free(bbuf2); return orig_block_size; }
-                stage_out = dctx->out_buf;
-                stage_size = orig_block_size; /* Inverse sets properly */
+                orig_block_size = mcx_bwt_inverse(bwt_target, pidx, stage_out, stage_size);
+                if (MCX_IS_ERROR(orig_block_size)) { free(bbuf1); free(bbuf2); if (preproc_dec) free(preproc_dec); return orig_block_size; }
+                stage_out = bwt_target;
+                stage_size = orig_block_size;
             } else {
-                memcpy(dctx->out_buf, stage_out, stage_size);
+                memcpy(bwt_target, stage_out, stage_size);
                 orig_block_size = stage_size;
-                stage_out = dctx->out_buf;
+                stage_out = bwt_target;
             }
 
             if (genome.use_delta) {
                 mcx_delta_decode(stage_out, orig_block_size);
             }
 
-            free(bbuf1); free(bbuf2);
+            /* Preproc inverse (Babel/Stride) */
+            if (preproc_dec && preproc_intermediate_size > 0) {
+                if (dctx->strategy == MCX_STRATEGY_BABEL) {
+                    orig_block_size = mcx_babel_inverse(dctx->out_buf, dctx->out_size,
+                                                        stage_out, preproc_intermediate_size);
+                } else if (dctx->strategy == MCX_STRATEGY_STRIDE) {
+                    orig_block_size = mcx_babel_stride_inverse(dctx->out_buf, dctx->out_size,
+                                                                stage_out, preproc_intermediate_size);
+                }
+            }
+
+            free(bbuf1); free(bbuf2); if (preproc_dec) free(preproc_dec);
             
             if (MCX_IS_ERROR(orig_block_size)) return orig_block_size;
         } else {

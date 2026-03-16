@@ -49,6 +49,11 @@ extern "C" {
 #define MCX_LZ_LEVEL_DEFAULT  5  /* Greedy, accel=1, hash_log=18 */
 #define MCX_LZ_LEVEL_HIGH     9  /* Lazy evaluation, hash_log=18, best ratio */
 
+/* ── LZ24: Extended 24-bit offset variant (16MB window) ───────── */
+size_t mcx_lz24_compress_bound(size_t src_size);
+size_t mcx_lz24_compress(void* dst, size_t dst_cap, const void* src, size_t src_size);
+size_t mcx_lz24_decompress(void* dst, size_t dst_cap, const void* src, size_t src_size, size_t original_size);
+
 /* ── Public API ────────────────────────────────────────────────── */
 
 size_t mcx_lz_compress_bound(size_t src_size);

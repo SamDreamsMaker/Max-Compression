@@ -41,3 +41,7 @@ corpus_adv/
 adv_bench_*.md
 canterbury_results*.md
 cargo_err.txt
+
+# Test corpora (large binary files)
+corpora/
+*.zip

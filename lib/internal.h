@@ -80,6 +80,9 @@ typedef enum {
     MCX_STRATEGY_BEST      = 3,   /* Context mixing + ANS (v0.2) */
     MCX_STRATEGY_LZ_FAST   = 4,   /* LZ77 greedy + Huffman (v1.0 L1-3) */
     MCX_STRATEGY_LZ_HC     = 5,   /* LZ77 lazy + Huffman (v1.0 L4-9) */
+    MCX_STRATEGY_BABEL     = 6,   /* Babel XOR predict + rANS (v1.2) */
+    MCX_STRATEGY_LZ24      = 8,   /* LZ24 (24-bit offsets, 16MB window) + FSE */
+    MCX_STRATEGY_STRIDE    = 7,   /* Stride-delta preprocess + BWT + ANS (v1.2 L23-25) */
 } mcx_strategy_t;
 
 /* ═══════════════════════════════════════════════════════════════════════
