@@ -482,6 +482,12 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                         else if (strategy == MCX_STRATEGY_LZ_HC) eff_level = 9;
                     }
                     genome = mcx_evolve(block_in, block_in_size, eff_level);
+                    /* For text in smart mode, force disable delta encoding.
+                     * Delta on text is destructive (turns ASCII patterns into noise).
+                     * The genome optimizer sometimes picks it due to inaccurate fitness. */
+                    if (level >= 20 && strategy == MCX_STRATEGY_DEFAULT) {
+                        genome.use_delta = 0;
+                    }
                 }
                 
             /* Genome byte written later (after RLE2 may modify cm_learning) */
@@ -553,6 +559,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
             /* Write genome byte now (after RLE2 may have set cm_learning=7) */
             out1[0] = mcx_encode_genome(&genome);
+            
 
             size_t entropy_size;
             if (genome.entropy_coder == 2) {
