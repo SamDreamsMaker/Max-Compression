@@ -443,13 +443,32 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     genome.cm_learning = 0;
                 } else if (strategy == MCX_STRATEGY_STRIDE) {
                     if (babel_buf != NULL) {
-                        /* Stride delta output has long zero runs → rANS order-0
-                         * handles this very well (same insight as Babel XOR). */
-                        genome.use_bwt = 0;
-                        genome.use_mtf_rle = 0;
-                        genome.use_delta = 0;
-                        genome.entropy_coder = 1; /* rANS (order-0) */
-                        genome.cm_learning = 0;
+                        /* Stride delta output: choose pipeline based on zero density.
+                         * High diversity (< 85% zeros): BWT+MTF+RLE2 is much better
+                         *   because BWT reorganizes the non-zero bytes efficiently.
+                         * Very sparse (>= 85% zeros): rANS order-0 is sufficient
+                         *   and avoids BWT overhead. */
+                        size_t zero_count = 0;
+                        for (size_t zi = 0; zi < block_in_size; zi++) {
+                            if (block_in[zi] == 0) zero_count++;
+                        }
+                        int zero_pct = (int)(100 * zero_count / block_in_size);
+                        
+                        if (zero_pct < 90) {
+                            /* Diverse stride output → BWT + RLE2 pipeline */
+                            genome.use_bwt = 1;
+                            genome.use_mtf_rle = 1;
+                            genome.use_delta = 0;
+                            genome.entropy_coder = 1; /* rANS */
+                            genome.cm_learning = 0;
+                        } else {
+                            /* Very sparse → rANS direct (less overhead) */
+                            genome.use_bwt = 0;
+                            genome.use_mtf_rle = 0;
+                            genome.use_delta = 0;
+                            genome.entropy_coder = 1; /* rANS */
+                            genome.cm_learning = 0;
+                        }
                     } else {
                         genome = mcx_evolve(block_in, block_in_size, 12);
                     }
@@ -510,7 +529,8 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 size_t rle_size;
                 /* Use RLE2 (RUNA/RUNB) for text in smart mode — 5-8% better.
                  * Signal via cm_learning=7 when entropy_coder is rANS (not CM-rANS). */
-                int use_rle2 = (level >= 20 && strategy == MCX_STRATEGY_DEFAULT
+                int use_rle2 = (level >= 20 
+                                && (strategy == MCX_STRATEGY_DEFAULT || strategy == MCX_STRATEGY_STRIDE)
                                 && genome.entropy_coder != 2);
                 if (use_rle2) {
                     rle_size = mcx_rle2_encode(buf2, rle_cap, stage_in, stage_size);
