@@ -540,9 +540,16 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 size_t rle_size;
                 /* Use RLE2 (RUNA/RUNB) for text in smart mode — 5-8% better.
                  * Signal via cm_learning=7 when entropy_coder is rANS (not CM-rANS). */
-                int use_rle2 = (level >= 20 
-                                && (strategy == MCX_STRATEGY_DEFAULT || strategy == MCX_STRATEGY_STRIDE)
-                                && genome.entropy_coder != 2);
+                /* RLE2 (RUNA/RUNB) is better than RLE1 on BWT+MTF output when
+                 * the data has few high-value bytes (254/255 need 2-byte escapes).
+                 * After BWT+MTF, text has very few 254/255 bytes; binary has more.
+                 * Check the MTF output before RLE: if < 1% is 254+, use RLE2. */
+                size_t high_count = 0;
+                for (size_t hi = 0; hi < stage_size; hi++) {
+                    if (((uint8_t*)stage_in)[hi] >= 254) high_count++;
+                }
+                int use_rle2 = (genome.entropy_coder != 2 &&
+                                high_count * 100 < stage_size); /* < 1% high bytes */
                 if (use_rle2) {
                     rle_size = mcx_rle2_encode(buf2, rle_cap, stage_in, stage_size);
                     genome.cm_learning = 7; /* Flag for decoder */
