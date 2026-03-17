@@ -21,6 +21,7 @@ set(MCX_LIB_SOURCES
     babel/babel_transform.c
     babel/babel_stride.c
     preprocess/rle2.c
+preprocess/e8e9.c
     babel/babel_dict.c
     entropy/adaptive_ac.c
     entropy/multi_rans.c

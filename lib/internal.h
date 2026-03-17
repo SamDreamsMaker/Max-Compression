@@ -58,6 +58,7 @@ typedef enum {
 #define MCX_FRAME_VERSION        1
 #define MCX_FLAG_HAS_ORIG_SIZE   0x01
 #define MCX_FLAG_STREAMING       0x02
+#define MCX_FLAG_E8E9            0x04  /* E8/E9 x86 filter was applied */
 
 typedef struct {
     uint32_t magic;

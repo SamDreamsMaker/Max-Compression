@@ -27,6 +27,11 @@ extern size_t mcx_rle2_encode(uint8_t* dst, size_t dst_cap, const uint8_t* src, 
 extern size_t mcx_rle2_decode(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
 extern size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
 extern size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
+
+/* E8/E9 x86 filter */
+extern size_t mcx_e8e9_encode(uint8_t* data, size_t size);
+extern size_t mcx_e8e9_decode(uint8_t* data, size_t size);
+
 #include <stdio.h>
 #ifdef _OPENMP
 #include <omp.h>
@@ -719,6 +724,46 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             free(alt_buf);
         }
     }
+    
+    /* ── E8/E9 x86 filter trial ──
+     * For non-text data at L20+, try preprocessing with E8/E9 filter.
+     * This converts relative x86 CALL/JMP addresses to absolute,
+     * dramatically improving BWT compression of executable binaries.
+     * Only try if data might contain x86 code (BINARY or EXECUTABLE). */
+    if (level == 20 &&
+        analysis.type != MCX_DTYPE_TEXT_ASCII &&
+        analysis.type != MCX_DTYPE_TEXT_UTF8 &&
+        analysis.type != MCX_DTYPE_STRUCTURED &&
+        src_size >= 64) {
+        /* Quick check: count E8/E9 opcodes. Only try if >= 0.5% of bytes
+         * are E8 or E9 (typical for x86 executables: 2-5%, non-exe: <0.1%) */
+        size_t e8e9_count = 0;
+        for (size_t i = 0; i < src_size - 4; i++) {
+            if (in[i] == 0xE8 || in[i] == 0xE9) { e8e9_count++; i += 4; }
+        }
+        if (e8e9_count * 200 < src_size) goto skip_e8e9; /* < 0.5% */
+        
+        /* Make a copy, apply E8/E9, compress at same level (but skip this
+         * trial recursively by using level 21 as a "no E8/E9 retry" flag) */
+        uint8_t* e8_buf = (uint8_t*)malloc(src_size);
+        uint8_t* e8_dst = (uint8_t*)malloc(dst_cap);
+        if (e8_buf && e8_dst) {
+            memcpy(e8_buf, src, src_size);
+            mcx_e8e9_encode(e8_buf, src_size);
+            /* Compress the E8/E9-filtered data at level 21 (skips E8/E9 retry) */
+            size_t e8_size = mcx_compress(e8_dst, dst_cap, e8_buf, src_size, 21);
+            if (!mcx_is_error(e8_size) && e8_size < offset) {
+                /* E8/E9 version is smaller — use it and set the flag */
+                memcpy(dst, e8_dst, e8_size);
+                /* Set E8/E9 flag in the frame header */
+                ((uint8_t*)dst)[5] |= MCX_FLAG_E8E9;
+                offset = e8_size;
+            }
+        }
+        if (e8_buf) free(e8_buf);
+        if (e8_dst) free(e8_dst);
+    }
+skip_e8e9:
 
     return offset;
 }
@@ -763,6 +808,8 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
         }
         memcpy(out, in + offset, orig_size);
+        /* Apply E8/E9 inverse if flag is set */
+        if (header.flags & MCX_FLAG_E8E9) mcx_e8e9_decode(out, orig_size);
         return orig_size;
 
     } else if (strategy == MCX_STRATEGY_FAST) {
@@ -1144,6 +1191,8 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
         }
 
+        /* Apply E8/E9 inverse if flag is set */
+        if (header.flags & MCX_FLAG_E8E9) mcx_e8e9_decode(out, orig_size);
         return orig_size;
     }
 
