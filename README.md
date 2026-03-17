@@ -8,7 +8,7 @@ information-theory techniques (LZ77, tANS/FSE, BWT, rANS) with modern innovation
 routing, SIMD SSE4.1 acceleration) to deliver strong compression ratios at practical speeds.
 
 **Highlights:**
-- 🏆 **46.91× on kennedy.xls** — **2.2× better than xz** (20.97×), **2.9× better than zstd-19** (15.88×)
+- 🏆 **48.72× on kennedy.xls** — **2.3× better than xz** (20.97×), **3.1× better than zstd-19** (15.88×)
 - 📈 **10.19× on ptt5** — auto-detects fax scan line stride (216 bytes), beats gzip/bzip2
 - 🧠 **Smart Mode (L20+)** — auto-detects data type and routes to optimal pipeline
 - ⚡ **Multi-threaded** — OpenMP block parallelism for multi-core CPUs
@@ -78,20 +78,20 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 
 | File | Size | gzip -9 | bzip2 -9 | xz -6 | zstd -3 | zstd -19 | MCX L3 | MCX L12 | **MCX L20** |
 |------|------|---------|----------|--------|---------|----------|--------|---------|-------------|
-| alice29.txt | 152 KB | 2.81× | **3.52×** | 3.14× | 2.67× | 3.09× | 2.04× | **3.50×** | **3.50×** |
+| alice29.txt | 152 KB | 2.81× | **3.52×** | 3.14× | 2.67× | 3.09× | 2.04× | **3.52×** | **3.52×** 🏆 |
 | asyoulik.txt | 125 KB | 2.56× | **3.16×** | 2.81× | 2.49× | 2.77× | 1.93× | **3.12×** | **3.12×** |
 | cp.html | 24 KB | 3.08× | 3.23× | 3.22× | 2.91× | **3.70×** | 2.29× | **3.09×** | **3.09×** |
 | fields.c | 11 KB | 3.56× | 3.67× | **3.68×** | 3.30× | 3.70× | 2.31× | **3.39×** | **3.39×** |
 | grammar.lsp | 3.7 KB | **2.99×** | 2.90× | 2.88× | 2.88× | 3.07× | 1.90× | **2.46×** | **2.46×** |
-| lcet10.txt | 427 KB | 2.95× | **3.96×** | 3.57× | 3.02× | 3.52× | 2.18× | 3.77× | **3.96×** 🏆 |
-| plrabn12.txt | 482 KB | 2.48× | **3.31×** | 2.91× | 2.51× | 2.88× | 1.86× | 3.14× | **3.31×** 🏆 |
+| lcet10.txt | 427 KB | 2.95× | **3.96×** | 3.57× | 3.02× | 3.52× | 2.18× | 3.77× | **3.98×** 🏆 |
+| plrabn12.txt | 482 KB | 2.48× | **3.31×** | 2.91× | 2.51× | 2.88× | 1.86× | 3.14× | **3.33×** 🏆 |
 | xargs.1 | 4.2 KB | **2.41×** | 2.40× | 2.33× | 2.35× | 2.45× | 1.58× | **2.14×** | **2.14×** |
 
 #### Binary Files
 
 | File | Size | gzip -9 | bzip2 -9 | xz -6 | zstd -3 | zstd -19 | MCX L3 | MCX L12 | **MCX L20** |
 |------|------|---------|----------|--------|---------|----------|--------|---------|-------------|
-| kennedy.xls | 1.0 MB | 4.91× | 7.90× | 20.97× | 9.22× | 15.88× | 4.19× | 7.66× | **🏆 46.91×** |
+| kennedy.xls | 1.0 MB | 4.91× | 7.90× | 20.97× | 9.22× | 15.88× | 4.19× | 7.66× | **🏆 48.72×** |
 | ptt5 | 513 KB | 9.80× | 10.31× | **12.22×** | 9.43× | 11.76× | 7.44× | 6.54× | **10.19×** |
 | sum | 38 KB | 2.99× | 2.96× | **4.05×** | 2.86× | 3.44× | **2.41×** | 2.10× | 2.39× |
 
@@ -101,10 +101,10 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 
 | Metric | Result |
 |--------|--------|
-| 🏆 **Best single-file ratio** | **kennedy.xls: 46.91×** — **2.2× better than xz** (20.97×), 2.9× better than zstd-19 |
+| 🏆 **Best single-file ratio** | **kennedy.xls: 48.72×** — **2.3× better than xz** (20.97×), 3.1× better than zstd-19 |
 | 📈 **ptt5 fax image** | **10.19×** (Stride-Delta, L20) — auto-detected stride=216 |
 | 📊 **L20 vs L12 on text** | +13–35% improvement (RLE2 + delta-fix + sparse rANS) |
-| 🏅 **MCX L20 equals bzip2 -9** | On lcet10 (3.96×) and plrabn12 (3.31×) — multi-table rANS |
+| 🏅 **MCX L20 BEATS bzip2 -9** | alice29 3.52× (=bzip2), lcet10 3.98× (+0.5%), plrabn12 3.33× (+0.6%) |
 | 🏅 **MCX L12+ beats gzip -9** | On all text files (L12 now matches L20 thanks to auto-RLE2 + delta-fix) |
 | 🎯 **Smart Mode accuracy** | Best MCX result on 100% of Canterbury files |
 | ⚡ **L3 decompression** | 400–570 MB/s (4-stream interleaved tANS) |
@@ -238,7 +238,8 @@ const char* mcx_get_error_name(size_t result);
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| **v1.6** | 2026-03-17 | Multi-table rANS: **EQUALS bzip2** on lcet10 + plrabn12, alice29 within 1.4% |
+| **v1.7.8** | 2026-03-17 | Adaptive multi-table rANS: **MATCHES bzip2** on alice29, BEATS on lcet10 (+0.5%) and plrabn12 (+0.6%) |
+| **v1.6** | 2026-03-17 | Multi-table rANS: first time near bzip2 on text |
 | **v1.5.1** | 2026-03-17 | Stride+RLE2+rANS: ptt5 **10.19×** (+15%), multi-trial for small binary |
 | **v1.5** | 2026-03-16 | Delta-fix + auto-RLE2 for ALL BWT levels — L12 now matches L20 on text |
 | **v1.4.2** | 2026-03-16 | BWT threshold 8KB→1KB: grammar +26%, xargs +32%; hardcoded text genome |
