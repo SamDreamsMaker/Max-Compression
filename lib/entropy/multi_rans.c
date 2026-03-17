@@ -369,13 +369,6 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
         uint8_t bitmap[32];
         memcpy(bitmap, src + pos, 32); pos += 32;
         
-        int n_active = 0;
-        for (int i = 0; i < 32; i++) {
-            for (int b = 0; b < 8; b++) {
-                if (bitmap[i] & (1 << b)) n_active++;
-            }
-        }
-        
         /* Read varint freq: if high bit set, 2 bytes (0x80|high, low); else 1 byte */
         for (int s = 0; s < 256; s++) {
             if (bitmap[s >> 3] & (1 << (s & 7))) {
@@ -389,8 +382,10 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
                 }
             }
         }
-        
-        /* Re-normalize to MT_SCALE (encoder may have stored approximate values) */
+    }
+    
+    /* Re-normalize each table to MT_SCALE */
+    for (int t = 0; t < n_tables; t++) {
         {
             uint32_t sum = 0;
             int max_i = -1; uint32_t max_v = 0;
