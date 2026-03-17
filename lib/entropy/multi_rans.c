@@ -127,8 +127,10 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
     uint32_t table_raw[MT_MAX_TABLES][256];
     int* assign = calloc(num_groups, sizeof(int));
     
-    /* Initial assignment: round-robin */
-    for (int g = 0; g < num_groups; g++) assign[g] = g % n_tables;
+    /* Initial assignment: sequential split (each table gets a contiguous region).
+     * This gives better initial centroids than round-robin because
+     * contiguous regions share local distribution patterns. */
+    for (int g = 0; g < num_groups; g++) assign[g] = g * n_tables / num_groups;
     
     /* K-means iterations */
     for (int iter = 0; iter < 10; iter++) {
