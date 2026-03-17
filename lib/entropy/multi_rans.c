@@ -156,42 +156,7 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
     /* Write tables using per-table bitmap + varint freq format:
      * Per table: 32-byte bitmap + varint per active symbol.
      * Varint: if freq < 128, 1 byte; if >= 128, 2 bytes (0x80|high, low).
-     * Encoder quantizes tables to match what decoder will reconstruct,
-     * ensuring identical tables on both sides. */
-    
-    /* Quantize encoder tables to match decoder reconstruction */
-    for (int t = 0; t < n_tables; t++) {
-        /* Store raw freq values, then re-normalize from stored values */
-        uint16_t stored[256];
-        int n_act = 0;
-        for (int s = 0; s < 256; s++) {
-            stored[s] = tables[t][s]; /* already 14-bit normalized */
-            if (stored[s] > 0) n_act++;
-        }
-        /* Re-normalize from stored values (decoder does this too) */
-        uint32_t sum = 0;
-        int max_i = -1; uint32_t max_v = 0;
-        for (int s = 0; s < 256; s++) {
-            sum += stored[s];
-            if (stored[s] > max_v) { max_v = stored[s]; max_i = s; }
-        }
-        if (sum > 0 && sum != MT_SCALE) {
-            /* Renormalize to MT_SCALE */
-            uint32_t new_sum = 0;
-            for (int s = 0; s < 256; s++) {
-                if (stored[s] > 0) {
-                    stored[s] = (uint16_t)((uint64_t)stored[s] * MT_SCALE / sum);
-                    if (stored[s] == 0) stored[s] = 1;
-                    new_sum += stored[s];
-                }
-            }
-            if (new_sum > MT_SCALE) stored[max_i] -= (uint16_t)(new_sum - MT_SCALE);
-            else if (new_sum < MT_SCALE) stored[max_i] += (uint16_t)(MT_SCALE - new_sum);
-        }
-        /* Use quantized tables for encoding */
-        memcpy(tables[t], stored, sizeof(uint16_t) * 256);
-    }
-    
+     * Tables are already normalized to MT_SCALE, stored losslessly. */
     for (int t = 0; t < n_tables; t++) {
         if (pos + 32 > dst_cap) {
             free(grp_freq); free(assign);
