@@ -682,16 +682,23 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         free(block_sizes);
     }
 
-    /* ── Multi-trial for L20+: try LZ-HC too, keep smallest ── */
+    /* ── Multi-trial for L20+: try alternative strategies, keep smallest ── */
     if (level >= 20 && strategy != MCX_STRATEGY_STORE 
         && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST) {
-        /* Try LZ-HC (L9) on same data — it might beat BWT on some data types */
         uint8_t* alt_buf = (uint8_t*)malloc(dst_cap);
         if (alt_buf) {
+            /* Try LZ-HC (L9) — might beat BWT on some data types */
             size_t alt_size = mcx_compress(alt_buf, dst_cap, src, src_size, 9);
             if (!mcx_is_error(alt_size) && alt_size < offset) {
                 memcpy(dst, alt_buf, alt_size);
                 offset = alt_size;
+            }
+            /* Try BWT with genome optimizer (L12) — might find a better genome
+             * than the forced genome at L20 (especially for binary data) */
+            size_t alt12 = mcx_compress(alt_buf, dst_cap, src, src_size, 12);
+            if (!mcx_is_error(alt12) && alt12 < offset) {
+                memcpy(dst, alt_buf, alt12);
+                offset = alt12;
             }
             free(alt_buf);
         }
