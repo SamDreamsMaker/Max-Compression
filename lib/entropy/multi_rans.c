@@ -72,20 +72,27 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
         return mcx_rans_compress(dst, dst_cap, src, src_size);
     }
     
-    /* Adaptive: try 4 and 5 tables, keep the smaller result */
-    size_t sz4 = mt_compress_ntables(dst, dst_cap, src, src_size, 4);
+    /* Adaptive: try 4 and 5 tables, keep the smaller result.
+     * For large data (>200KB), also try 6 tables. */
+    size_t best = mt_compress_ntables(dst, dst_cap, src, src_size, 4);
     
     uint8_t* alt = (uint8_t*)malloc(dst_cap);
     if (alt) {
         size_t sz5 = mt_compress_ntables(alt, dst_cap, src, src_size, 5);
-        if (!mcx_is_error(sz5) && (mcx_is_error(sz4) || sz5 < sz4)) {
+        if (!mcx_is_error(sz5) && (mcx_is_error(best) || sz5 < best)) {
             memcpy(dst, alt, sz5);
-            free(alt);
-            return sz5;
+            best = sz5;
+        }
+        if (src_size > 200000) {
+            size_t sz6 = mt_compress_ntables(alt, dst_cap, src, src_size, 6);
+            if (!mcx_is_error(sz6) && (mcx_is_error(best) || sz6 < best)) {
+                memcpy(dst, alt, sz6);
+                best = sz6;
+            }
         }
         free(alt);
     }
-    return sz4;
+    return best;
 }
 
 static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
