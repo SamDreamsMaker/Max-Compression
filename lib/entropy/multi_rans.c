@@ -21,7 +21,7 @@
 #include <math.h>
 #include "entropy.h"
 
-#define MT_GROUP_SIZE  45    /* bzip2 uses 50 — optimal for most files */
+#define MT_GROUP_SIZE  50    /* bzip2 uses 50 — optimal for most files */
 #define MT_MAX_TABLES  6     /* Max tables to try (adaptive picks best of 4-5) */
 #define MT_PRECISION   MCX_RANS_PRECISION   /* 14-bit — matches rANS */
 #define MT_SCALE       MCX_RANS_SCALE
