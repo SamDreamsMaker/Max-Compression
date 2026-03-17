@@ -216,6 +216,16 @@ size_t mcx_lz_compress(
  *  emit ip as a literal and use the better match at ip+1.
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════
+ *  HC compressor with hash chains — better match finding.
+ *
+ *  Uses a chain[] array where chain[pos] → previous position with
+ *  the same hash. Depth-limited traversal (8 candidates max) finds
+ *  the longest match within the 64KB window.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define HC_CHAIN_DEPTH  8   /* Max candidates to check per position */
+
 size_t mcx_lz_compress_hc(
     void* dst, size_t dst_cap,
     const void* src, size_t src_size, int level)
@@ -237,96 +247,122 @@ size_t mcx_lz_compress_hc(
     int hash_log = MCX_LZ_HASH_LOG;
     int hash_size = 1 << hash_log;
     uint32_t* ht = (uint32_t*)calloc(hash_size, sizeof(uint32_t));
-    uint32_t* ht2 = (uint32_t*)calloc(hash_size, sizeof(uint32_t));
-    if (!ht || !ht2) { free(ht); free(ht2); return 0; }
+    /* Chain array: chain[pos % window] → previous position with same hash.
+     * Only need window_size entries since older positions are outside the window. */
+    size_t chain_mask = MCX_LZ_MAX_OFFSET; /* 64K-1, power of 2 minus 1 */
+    size_t chain_size = MCX_LZ_MAX_OFFSET + 1; /* 64K entries */
+    uint32_t* chain = (uint32_t*)calloc(chain_size, sizeof(uint32_t));
+    if (!ht || !chain) { free(ht); free(chain); return 0; }
 
     const uint8_t* anchor = ip;
     ip++;
 
     while (ip < mflimit) {
-        /* Find match at current position */
-        uint32_t h1 = lz_hash4(ip, hash_log);
-        uint32_t pos1 = ht[h1];
-        ht[h1] = (uint32_t)(ip - (const uint8_t*)src);
+        uint32_t cur_pos = (uint32_t)(ip - (const uint8_t*)src);
+        uint32_t h = lz_hash4(ip, hash_log);
+        uint32_t prev = ht[h];
 
-        const uint8_t* ref = (const uint8_t*)src + pos1;
-        size_t offset = (size_t)(ip - ref);
-        size_t match_len = 0;
+        /* Insert current position into chain */
+        chain[cur_pos & chain_mask] = prev;
+        ht[h] = cur_pos;
 
-        if (offset > 0 && offset <= MCX_LZ_MAX_OFFSET && lz_read32(ref) == lz_read32(ip)) {
-            size_t max_m = (size_t)(match_limit - ip);
-            if (max_m < MCX_LZ_MIN_MATCH) max_m = MCX_LZ_MIN_MATCH;
-            match_len = MCX_LZ_MIN_MATCH +
-                lz_count_match(ip + MCX_LZ_MIN_MATCH, ref + MCX_LZ_MIN_MATCH,
-                               max_m - MCX_LZ_MIN_MATCH);
-        }
+        /* Walk the chain to find the best (longest) match */
+        const uint8_t* best_ref = NULL;
+        size_t best_len = MCX_LZ_MIN_MATCH - 1;
+        size_t best_offset = 0;
 
-        if (match_len == 0) {
-            /* Try secondary */
-            uint32_t h2 = lz_hash4_alt(ip, hash_log);
-            uint32_t pos2 = ht2[h2];
-            ht2[h2] = (uint32_t)(ip - (const uint8_t*)src);
-            ref = (const uint8_t*)src + pos2;
-            offset = (size_t)(ip - ref);
-            if (offset > 0 && offset <= MCX_LZ_MAX_OFFSET && lz_read32(ref) == lz_read32(ip)) {
+        uint32_t candidate = prev;
+        for (int depth = 0; depth < HC_CHAIN_DEPTH && candidate > 0; depth++) {
+            size_t off = (size_t)(cur_pos - candidate);
+            if (off > MCX_LZ_MAX_OFFSET) break; /* Outside window */
+
+            const uint8_t* ref = (const uint8_t*)src + candidate;
+            if (lz_read32(ref) == lz_read32(ip)) {
                 size_t max_m = (size_t)(match_limit - ip);
                 if (max_m < MCX_LZ_MIN_MATCH) max_m = MCX_LZ_MIN_MATCH;
-                match_len = MCX_LZ_MIN_MATCH +
+                size_t ml = MCX_LZ_MIN_MATCH +
                     lz_count_match(ip + MCX_LZ_MIN_MATCH, ref + MCX_LZ_MIN_MATCH,
                                    max_m - MCX_LZ_MIN_MATCH);
+                if (ml > best_len) {
+                    best_len = ml;
+                    best_ref = ref;
+                    best_offset = off;
+                }
             }
+            candidate = chain[candidate & chain_mask];
         }
 
-        if (match_len < MCX_LZ_MIN_MATCH) {
+        if (best_len < MCX_LZ_MIN_MATCH) {
             ip++;
             continue;
         }
 
         /* Lazy evaluation: check if ip+1 has a longer match */
         if (ip + 1 < mflimit) {
+            uint32_t next_pos = cur_pos + 1;
             uint32_t h_next = lz_hash4(ip + 1, hash_log);
-            uint32_t pos_next = ht[h_next];
-            const uint8_t* ref_next = (const uint8_t*)src + pos_next;
-            size_t off_next = (size_t)((ip + 1) - ref_next);
+            uint32_t prev_next = ht[h_next];
 
-            if (off_next > 0 && off_next <= MCX_LZ_MAX_OFFSET &&
-                lz_read32(ref_next) == lz_read32(ip + 1)) {
-                size_t max_m2 = (size_t)(match_limit - (ip + 1));
-                if (max_m2 < MCX_LZ_MIN_MATCH) max_m2 = MCX_LZ_MIN_MATCH;
-                size_t match2 = MCX_LZ_MIN_MATCH +
-                    lz_count_match(ip + 1 + MCX_LZ_MIN_MATCH, ref_next + MCX_LZ_MIN_MATCH,
-                                   max_m2 - MCX_LZ_MIN_MATCH);
+            /* Don't insert ip+1 yet — only peek */
+            uint32_t cand2 = prev_next;
+            size_t best_len2 = MCX_LZ_MIN_MATCH - 1;
+            const uint8_t* best_ref2 = NULL;
+            size_t best_off2 = 0;
 
-                if (match2 > match_len + 1) {
-                    /* Better match at ip+1, skip this position */
-                    ip++;
-                    match_len = match2;
-                    ref = ref_next;
-                    offset = off_next;
+            for (int depth = 0; depth < HC_CHAIN_DEPTH && cand2 > 0; depth++) {
+                size_t off2 = (size_t)(next_pos - cand2);
+                if (off2 > MCX_LZ_MAX_OFFSET) break;
+
+                const uint8_t* ref2 = (const uint8_t*)src + cand2;
+                if (lz_read32(ref2) == lz_read32(ip + 1)) {
+                    size_t max_m2 = (size_t)(match_limit - (ip + 1));
+                    if (max_m2 < MCX_LZ_MIN_MATCH) max_m2 = MCX_LZ_MIN_MATCH;
+                    size_t ml2 = MCX_LZ_MIN_MATCH +
+                        lz_count_match(ip + 1 + MCX_LZ_MIN_MATCH, ref2 + MCX_LZ_MIN_MATCH,
+                                       max_m2 - MCX_LZ_MIN_MATCH);
+                    if (ml2 > best_len2) {
+                        best_len2 = ml2;
+                        best_ref2 = ref2;
+                        best_off2 = off2;
+                    }
                 }
+                cand2 = chain[cand2 & chain_mask];
+            }
+
+            if (best_len2 > best_len + 1) {
+                /* Better match at ip+1 */
+                ip++;
+                /* Insert the skipped position */
+                chain[(cur_pos + 1) & chain_mask] = ht[h_next];
+                ht[h_next] = cur_pos + 1;
+                best_len = best_len2;
+                best_ref = best_ref2;
+                best_offset = best_off2;
+                cur_pos++;
             }
         }
 
-        /* Update hashes */
-        ht[lz_hash4(ip, hash_log)] = (uint32_t)(ip - (const uint8_t*)src);
-
         /* Write sequence */
         op = lz_write_sequence(op, op_end, anchor, (size_t)(ip - anchor),
-                               (uint16_t)offset, match_len);
-        if (!op) { free(ht); free(ht2); return 0; }
+                               (uint16_t)best_offset, best_len);
+        if (!op) { free(ht); free(chain); return 0; }
 
-        ip += match_len;
+        ip += best_len;
         anchor = ip;
 
+        /* Insert positions we skipped over into the chain */
         if (ip < mflimit) {
-            ht[lz_hash4(ip - 2, hash_log)] = (uint32_t)((ip - 2) - (const uint8_t*)src);
-            ht2[lz_hash4_alt(ip - 2, hash_log)] = (uint32_t)((ip - 2) - (const uint8_t*)src);
-            ht[lz_hash4(ip - 1, hash_log)] = (uint32_t)((ip - 1) - (const uint8_t*)src);
+            for (const uint8_t* fill = ip - 2; fill < ip && fill > (const uint8_t*)src; fill++) {
+                uint32_t fpos = (uint32_t)(fill - (const uint8_t*)src);
+                uint32_t fh = lz_hash4(fill, hash_log);
+                chain[fpos & chain_mask] = ht[fh];
+                ht[fh] = fpos;
+            }
         }
     }
 
     op = lz_write_last_literals(op, op_end, anchor, (size_t)(ip_end - anchor));
     free(ht);
-    free(ht2);
+    free(chain);
     return op ? (size_t)(op - (uint8_t*)dst) : 0;
 }
