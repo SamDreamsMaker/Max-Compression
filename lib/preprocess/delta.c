@@ -35,29 +35,34 @@ void mcx_mtf_encode(uint8_t* data, size_t size)
 {
     if (data == NULL || size == 0) return;
 
-    /* Initialize symbol table with identity mapping */
+    /* Initialize symbol table with identity mapping and reverse lookup.
+     * table[pos] = symbol at position pos
+     * rtable[symbol] = position of symbol
+     * This makes the find step O(1) instead of O(256). */
     uint8_t table[256];
+    uint8_t rtable[256];
     for (int i = 0; i < 256; i++) {
         table[i] = (uint8_t)i;
+        rtable[i] = (uint8_t)i;
     }
 
     for (size_t i = 0; i < size; i++) {
         uint8_t sym = data[i];
-        uint8_t pos = 0;
-
-        /* Find symbol position in table */
-        while (table[pos] != sym) {
-            pos++;
-        }
+        uint8_t pos = rtable[sym]; /* O(1) lookup */
 
         /* Output position */
         data[i] = pos;
 
-        /* Move symbol to front */
-        for (uint8_t j = pos; j > 0; j--) {
-            table[j] = table[j - 1];
+        /* Move symbol to front: shift table[0..pos-1] right by 1 */
+        if (pos > 0) {
+            /* Update reverse lookup for shifted symbols */
+            for (uint8_t j = pos; j > 0; j--) {
+                table[j] = table[j - 1];
+                rtable[table[j]] = j;
+            }
+            table[0] = sym;
+            rtable[sym] = 0;
         }
-        table[0] = sym;
     }
 }
 
