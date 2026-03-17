@@ -42,10 +42,17 @@ Entropy analysis on mozilla (50MB binary archive):
 But static tables cost 14MB overhead (65536 contexts × ~70 active symbols each).
 Solution: adaptive coding (encoder/decoder build model on-the-fly, zero table overhead).
 
+### What We Tested (and Why It Doesn't Help)
+- **Adaptive order-1 AC**: BWT beats it on EVERY file (BWT captures higher-order context)
+- **Adaptive AC on BWT output**: Multi-rANS is 5.3% better (K-means captures BWT statistics perfectly)
+- **Per-block LZ-HC trial**: BWT wins every block (64KB window too small vs 32MB BWT blocks)
+- **CM-rANS (order-1)**: 128KB header overhead per block destroys any benefit
+- **Context MTF (256 lists)**: Fragments BWT locality, catastrophically worse
+
 ## Short-term Goals (v2.0)
-1. [ ] Improve LZ-HC with hash chains (better match finding)
+1. [x] ~~Improve LZ-HC with hash chains~~ ✅ Done (depth-8 chains, +8% on L9)
 2. [ ] ARM/ARM64 BCJ filter (broadens platform support)
-3. [ ] Per-block strategy selection for archives
+3. [x] ~~Per-block strategy selection~~ ✅ Decompressor refactored, but BWT wins every block
 4. [ ] SIMD-optimized BWT inverse (faster decompression)
 5. [ ] Streaming API improvements (match core API quality)
 
