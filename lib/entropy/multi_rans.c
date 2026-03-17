@@ -47,12 +47,48 @@ static void mt_normalize(const uint32_t raw[256], uint32_t total, uint16_t freq[
 }
 
 /* Compute cost of encoding a group with a given frequency table (in bits) */
-static double group_cost(const uint8_t* data, size_t len, const uint16_t freq[256]) {
-    double cost = 0;
-    for (size_t i = 0; i < len; i++) {
-        uint16_t f = freq[data[i]];
-        if (f == 0) return 1e30; /* Can't encode this symbol */
-        cost += log2((double)MT_SCALE / f);
+/* Precomputed -log2(f/MT_SCALE) × 256 for fast integer cost.
+ * cost[f] ≈ -log2(f/16384) × 256 = (14 - log2(f)) × 256.
+ * Index 0 = can't encode (huge cost). */
+static uint16_t g_cost_lut[MT_SCALE + 1];
+static int g_cost_lut_ready = 0;
+
+static void init_cost_lut(void) {
+    if (g_cost_lut_ready) return;
+    g_cost_lut[0] = 0xFFFF; /* can't encode */
+    for (int f = 1; f <= MT_SCALE; f++) {
+        double bits = log2((double)MT_SCALE / f);
+        g_cost_lut[f] = (uint16_t)(bits * 256 + 0.5);
+    }
+    g_cost_lut_ready = 1;
+}
+
+/* Fast group cost using precomputed LUT — avoids per-byte log2() calls.
+ * Uses per-symbol frequency histogram instead of scanning raw bytes.
+ * n_active + active_syms[] allow skipping zero-freq symbols (50 bytes
+ * in a group usually have ~20-40 unique symbols out of 256). */
+static uint64_t group_cost_fast(const uint16_t sym_freq[256], const uint16_t freq[256]) {
+    uint64_t cost = 0;
+    for (int s = 0; s < 256; s++) {
+        if (sym_freq[s] == 0) continue;
+        uint16_t f = freq[s];
+        if (f == 0) return UINT64_MAX; /* Can't encode this symbol */
+        cost += (uint64_t)sym_freq[s] * g_cost_lut[f];
+    }
+    return cost;
+}
+
+/* Even faster: only iterate over active symbols (passed as a list).
+ * For BWT+MTF output, groups typically have 20-40 active symbols. */
+static uint64_t group_cost_sparse(const uint16_t sym_freq[256], 
+                                   const uint8_t* active, int n_active,
+                                   const uint16_t freq[256]) {
+    uint64_t cost = 0;
+    for (int i = 0; i < n_active; i++) {
+        int s = active[i];
+        uint16_t f = freq[s];
+        if (f == 0) return UINT64_MAX;
+        cost += (uint64_t)sym_freq[s] * g_cost_lut[f];
     }
     return cost;
 }
@@ -87,8 +123,9 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
             best = sz5;
             five_won = 1;
         }
-        /* Only try 6 tables if 5 was better than 4 AND data is large enough */
-        if (five_won && src_size > 200000) {
+        /* Only try 6 tables if 5 was better than 4 AND data is large enough
+         * but not huge (>2MB blocks have diminishing returns from more tables) */
+        if (five_won && src_size > 200000 && src_size < 2000000) {
             size_t sz6 = mt_compress_ntables(alt, dst_cap, src, src_size, 6);
             if (!mcx_is_error(sz6) && (mcx_is_error(best) || sz6 < best)) {
                 memcpy(dst, alt, sz6);
@@ -105,16 +142,35 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
                                    int max_tables)
 {
     
+    init_cost_lut();
+    
     int num_groups = (int)((src_size + MT_GROUP_SIZE - 1) / MT_GROUP_SIZE);
     
-    /* Step 1: Compute per-group frequency distributions */
-    uint32_t (*grp_freq)[256] = calloc(num_groups, sizeof(uint32_t[256]));
+    /* Step 1: Compute per-group frequency distributions.
+     * Use uint16_t since max group size = 50 (fits in 16 bits).
+     * This halves memory: 76K groups × 512B = 39MB vs 78MB with uint32_t. */
+    uint16_t (*grp_freq)[256] = calloc(num_groups, sizeof(uint16_t[256]));
     if (!grp_freq) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
     
     for (int g = 0; g < num_groups; g++) {
         size_t off = (size_t)g * MT_GROUP_SIZE;
         size_t len = (off + MT_GROUP_SIZE <= src_size) ? MT_GROUP_SIZE : (src_size - off);
         for (size_t i = 0; i < len; i++) grp_freq[g][src[off + i]]++;
+    }
+    
+    /* Build per-group active symbol lists for sparse cost function */
+    uint8_t (*grp_active)[256] = malloc(num_groups * sizeof(uint8_t[256]));
+    uint8_t *grp_n_active = malloc(num_groups);
+    if (!grp_active || !grp_n_active) {
+        free(grp_freq); free(grp_active); free(grp_n_active);
+        return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+    }
+    for (int g = 0; g < num_groups; g++) {
+        int n = 0;
+        for (int s = 0; s < 256; s++) {
+            if (grp_freq[g][s]) grp_active[g][n++] = (uint8_t)s;
+        }
+        grp_n_active[g] = (uint8_t)n;
     }
     
     /* Step 2: Determine optimal number of tables via iterative refinement.
@@ -132,8 +188,10 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
      * contiguous regions share local distribution patterns. */
     for (int g = 0; g < num_groups; g++) assign[g] = g * n_tables / num_groups;
     
-    /* K-means iterations */
-    for (int iter = 0; iter < 15; iter++) {
+    /* K-means iterations: more iters help small blocks converge,
+     * but large blocks (many groups) converge faster naturally. */
+    int max_iters = (num_groups > 50000) ? 10 : 15;
+    for (int iter = 0; iter < max_iters; iter++) {
         /* Recompute table frequencies from assignments */
         memset(table_raw, 0, sizeof(table_raw));
         for (int g = 0; g < num_groups; g++) {
@@ -148,16 +206,13 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
             mt_normalize(table_raw[t], total, tables[t]);
         }
         
-        /* Reassign groups to closest table */
+        /* Reassign groups to closest table (sparse: only active symbols) */
         int changed = 0;
         for (int g = 0; g < num_groups; g++) {
-            size_t off = (size_t)g * MT_GROUP_SIZE;
-            size_t len = (off + MT_GROUP_SIZE <= src_size) ? MT_GROUP_SIZE : (src_size - off);
-            
-            double best_cost = 1e30;
+            uint64_t best_cost = UINT64_MAX;
             int best_t = 0;
             for (int t = 0; t < n_tables; t++) {
-                double c = group_cost(src + off, len, tables[t]);
+                uint64_t c = group_cost_sparse(grp_freq[g], grp_active[g], grp_n_active[g], tables[t]);
                 if (c < best_cost) { best_cost = c; best_t = t; }
             }
             if (best_t != assign[g]) { assign[g] = best_t; changed++; }
@@ -185,7 +240,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
     size_t pos = 0;
     
     /* Header */
-    if (dst_cap < 16) { free(grp_freq); free(assign); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
+    if (dst_cap < 16) { free(grp_freq); free(grp_active); free(grp_n_active); free(assign); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
     
     uint32_t orig32 = (uint32_t)src_size;
     memcpy(dst + pos, &orig32, 4); pos += 4;
@@ -199,7 +254,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
      * Tables are already normalized to MT_SCALE, stored losslessly. */
     for (int t = 0; t < n_tables; t++) {
         if (pos + 32 > dst_cap) {
-            free(grp_freq); free(assign);
+            free(grp_freq); free(grp_active); free(grp_n_active); free(assign);
             return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
         }
         
@@ -215,7 +270,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
         memcpy(dst + pos, bitmap, 32); pos += 32;
         
         if (pos + n_active * 2 > dst_cap) {
-            free(grp_freq); free(assign);
+            free(grp_freq); free(grp_active); free(grp_n_active); free(assign);
             return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
         }
         for (int s = 0; s < 256; s++) {
@@ -234,7 +289,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
     /* Write selector array — MTF encode then rANS compress */
     {
         uint8_t* sel_raw = malloc(num_groups);
-        if (!sel_raw) { free(grp_freq); free(assign); return MCX_ERROR(MCX_ERR_ALLOC_FAILED); }
+        if (!sel_raw) { free(grp_freq); free(grp_active); free(grp_n_active); free(assign); return MCX_ERROR(MCX_ERR_ALLOC_FAILED); }
         
         /* MTF encode the selectors (bzip2 does this too) */
         uint8_t sel_mtf[MT_MAX_TABLES];
@@ -255,13 +310,13 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
         /* rANS compress the MTF'd selectors */
         size_t sel_cap = num_groups + 256;
         uint8_t* sel_comp = malloc(sel_cap);
-        if (!sel_comp) { free(sel_raw); free(grp_freq); free(assign); return MCX_ERROR(MCX_ERR_ALLOC_FAILED); }
+        if (!sel_comp) { free(sel_raw); free(grp_freq); free(grp_active); free(grp_n_active); free(assign); return MCX_ERROR(MCX_ERR_ALLOC_FAILED); }
         
         size_t sel_comp_sz = mcx_rans_compress(sel_comp, sel_cap, sel_raw, num_groups);
         free(sel_raw);
         
         if (mcx_is_error(sel_comp_sz) || pos + 4 + sel_comp_sz > dst_cap) {
-            free(sel_comp); free(grp_freq); free(assign);
+            free(sel_comp); free(grp_freq); free(grp_active); free(grp_n_active); free(assign);
             return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
         }
         
@@ -275,7 +330,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
     /* Step 4: Encode data — single rANS pass but switch freq table per group */
     size_t out16_cap = src_size + 4096;
     uint16_t* out16 = malloc(out16_cap * sizeof(uint16_t));
-    if (!out16) { free(grp_freq); free(assign); return MCX_ERROR(MCX_ERR_ALLOC_FAILED); }
+    if (!out16) { free(grp_freq); free(grp_active); free(grp_n_active); free(assign); return MCX_ERROR(MCX_ERR_ALLOC_FAILED); }
     
     size_t out16_pos = 0;
     uint32_t state1 = MT_STATE_LOWER;
@@ -303,7 +358,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
         uint32_t* st = ((src_size - i) & 1) ? &state2 : &state1;
         
         while (*st >= ((uint32_t)f << 16)) {
-            if (out16_pos >= out16_cap) { free(out16); free(grp_freq); free(assign); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
+            if (out16_pos >= out16_cap) { free(out16); free(grp_freq); free(grp_active); free(grp_n_active); free(assign); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
             out16[out16_pos++] = (uint16_t)(*st & 0xFFFF);
             *st >>= 16;
         }
@@ -312,7 +367,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
     
     /* Write states + bitstream */
     size_t needed = pos + 8 + out16_pos * 2;
-    if (needed > dst_cap) { free(out16); free(grp_freq); free(assign); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
+    if (needed > dst_cap) { free(out16); free(grp_freq); free(grp_active); free(grp_n_active); free(assign); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
     
     memcpy(dst + pos, &state1, 4); pos += 4;
     memcpy(dst + pos, &state2, 4); pos += 4;
@@ -324,7 +379,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
     pos += out16_pos * 2;
     
     free(out16);
-    free(grp_freq);
+    free(grp_freq); free(grp_active); free(grp_n_active);
     free(assign);
     return pos;
 }
