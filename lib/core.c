@@ -687,11 +687,16 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST) {
         uint8_t* alt_buf = (uint8_t*)malloc(dst_cap);
         if (alt_buf) {
-            /* Try LZ-HC (L9) — might beat BWT on some data types */
-            size_t alt_size = mcx_compress(alt_buf, dst_cap, src, src_size, 9);
-            if (!mcx_is_error(alt_size) && alt_size < offset) {
-                memcpy(dst, alt_buf, alt_size);
-                offset = alt_size;
+            /* Skip LZ-HC trial for text — BWT always wins on text */
+            if (analysis.type != MCX_DTYPE_TEXT_ASCII &&
+                analysis.type != MCX_DTYPE_TEXT_UTF8 &&
+                analysis.type != MCX_DTYPE_STRUCTURED) {
+                /* Try LZ-HC (L9) — might beat BWT on binary data */
+                size_t alt_size = mcx_compress(alt_buf, dst_cap, src, src_size, 9);
+                if (!mcx_is_error(alt_size) && alt_size < offset) {
+                    memcpy(dst, alt_buf, alt_size);
+                    offset = alt_size;
+                }
             }
             /* Try BWT with genome optimizer (L12) — might find a better genome
              * than the forced genome at L20 (especially for binary data) */
