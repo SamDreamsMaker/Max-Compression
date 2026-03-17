@@ -126,20 +126,21 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 
 | File | Size | gzip -9 | bzip2 -9 | **MCX L20** | vs bzip2 |
 |------|------|---------|----------|-------------|----------|
-| dickens | 10 MB | 2.65× | 3.64× | **3.93×** 🏆 | +7% |
-| xml | 5 MB | 8.07× | 12.12× | **13.04×** 🏆 | +7% |
+| dickens | 10 MB | 2.65× | 3.64× | **4.06×** 🏆 | +12% |
+| xml | 5 MB | 8.07× | 12.12× | **12.74×** 🏆 | +5% |
 | ooffice | 6 MB | 1.99× | 2.15× | **2.18×** 🏆 | +2% |
-| reymont | 6.5 MB | 3.64× | 5.32× | **5.75×** 🏆 | +8% |
-| sao | 7 MB | 1.36× | **1.47×** | 1.44× | -2% |
-| x-ray | 8 MB | 1.40× | **2.09×** | 2.04× | -3% |
-| mr | 10 MB | 2.71× | 4.08× | **4.14×** 🏆 | +1% |
-| osdb | 10 MB | 2.71× | 3.60× | **3.87×** 🏆 | +7% |
-| nci | 33 MB | 11.23× | 18.51× | **21.51×** 🏆 | +14% |
-| samba | 21 MB | 4.00× | 4.75× | **4.93×** 🏆 | +4% |
-| webster | 40 MB | 3.44× | 4.80× | **5.23×** 🏆 | +8% |
-| mozilla | 50 MB | 2.70× | — | **2.92×** | — |
+| reymont | 6.5 MB | 3.64× | 5.32× | **5.88×** 🏆 | +11% |
+| sao | 7 MB | 1.36× | 1.47× | **1.48×** 🏆 | +1% |
+| x-ray | 8 MB | 1.40× | **2.09×** | 2.04× | -2% |
+| mr | 10 MB | 2.71× | 4.08× | **4.19×** 🏆 | +3% |
+| osdb | 10 MB | 2.71× | 3.60× | **4.00×** 🏆 | +11% |
+| nci | 33 MB | 11.23× | 18.51× | **23.99×** 🏆 | +30% |
+| samba | 21 MB | 4.00× | 4.75× | **4.94×** 🏆 | +4% |
+| webster | 40 MB | 3.44× | 4.80× | **5.54×** 🏆 | +15% |
+| mozilla | 50 MB | 2.70× | — | **2.93×** | — |
 
-> **MCX beats gzip -9 on 12/12 files (100%) and bzip2 -9 on 9/12 files (75%).**
+> **MCX beats gzip -9 on 12/12 files (100%) and bzip2 -9 on 11/12 files (92%).**
+> Only x-ray (medical imaging, near-random 16-bit data) remains 2% behind bzip2.
 > All results verified with roundtrip decompression.
 
 Run the full suite yourself:
