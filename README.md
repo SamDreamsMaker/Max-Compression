@@ -134,14 +134,14 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 | x-ray | 8 MB | 1.40× | 2.09× | 1.89× | **2.05×** | -2% | +8% |
 | mr | 10 MB | 2.71× | 4.08× | 3.63× | **4.28×** 🏆 | +5% | +18% |
 | osdb | 10 MB | 2.71× | 3.60× | 3.54× | **4.04×** 🏆 | +12% | +14% |
-| nci | 33 MB | 11.23× | 18.51× | 19.30× | **24.26×** 🏆 | +31% | +26% |
-| samba | 21 MB | 4.00× | 4.75× | 5.74× | **4.98×** | +5% | -13% |
-| webster | 40 MB | 3.44× | 4.80× | 4.94× | **5.56×** 🏆 | +16% | +13% |
-| mozilla | 50 MB | 2.70× | — | 3.83× | **2.95×** | — | -23% |
+| nci | 33 MB | 11.23× | 18.51× | 19.30× | **25.65×** 🏆 | +39% | +33% |
+| samba | 21 MB | 4.00× | 4.75× | 5.74× | **5.03×** | +6% | -12% |
+| webster | 40 MB | 3.44× | 4.80× | 4.94× | **5.69×** 🏆 | +19% | +15% |
+| mozilla | 50 MB | 2.70× | — | 3.83× | **2.92×** | — | -24% |
 
 > **MCX beats gzip -9 on 12/12 files (100%), bzip2 -9 on 10/12 (83%), xz -9 on 9/12 (75%).**
 > Only x-ray (-2%) and sao (-1%) remain behind bzip2.
-> **nci achieves 24.26× compression** — 31% better than bzip2, 26% better than xz!
+> **nci achieves 25.65× compression** — 39% better than bzip2, 33% better than xz!
 > **ooffice 2.53× with E8/E9 x86 filter** — matches xz 2.54× (was -14% behind)!
 > xz wins on binary archives (sao, samba, mozilla) where LZMA2's large dictionary excels.
 > All results verified with roundtrip decompression.
