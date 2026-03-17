@@ -133,7 +133,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
     for (int g = 0; g < num_groups; g++) assign[g] = g * n_tables / num_groups;
     
     /* K-means iterations */
-    for (int iter = 0; iter < 10; iter++) {
+    for (int iter = 0; iter < 15; iter++) {
         /* Recompute table frequencies from assignments */
         memset(table_raw, 0, sizeof(table_raw));
         for (int g = 0; g < num_groups; g++) {
