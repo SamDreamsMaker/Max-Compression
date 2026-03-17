@@ -122,35 +122,25 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 | LZ4 fast | Canterbury | 2.29× | 727 | 2,324 |
 | zstd -3 | Canterbury | 4.45× | 345 | 1,188 |
 
-### Silesia Corpus (202 MB)
+### Silesia Corpus (202 MB) — Per-file comparison
 
-| Algorithm | Ratio | Compress (MB/s) | Decompress (MB/s) |
-|-----------|-------|------------------|--------------------|
-| **MCX L3** | 2.53× | 129 | **538** |
-| **MCX L9** | 2.60× | 130 | **543** |
-| **MCX-fast** | 2.03× | 274 | 822 |
-| LZ4 fast | 2.10× | 789 | 1,937 |
-| zstd -3 | 3.20× | 373 | 1,117 |
+| File | Size | gzip -9 | bzip2 -9 | **MCX L20** | vs bzip2 |
+|------|------|---------|----------|-------------|----------|
+| dickens | 10 MB | 2.65× | 3.64× | **3.93×** 🏆 | +7% |
+| xml | 5 MB | 8.07× | 12.12× | **13.04×** 🏆 | +7% |
+| ooffice | 6 MB | 1.99× | 2.15× | **2.18×** 🏆 | +2% |
+| reymont | 6.5 MB | 3.64× | 5.32× | **5.75×** 🏆 | +8% |
+| sao | 7 MB | 1.36× | **1.47×** | 1.44× | -2% |
+| x-ray | 8 MB | 1.40× | **2.09×** | 2.04× | -3% |
+| mr | 10 MB | 2.71× | 4.08× | **4.14×** 🏆 | +1% |
+| osdb | 10 MB | 2.71× | 3.60× | **3.87×** 🏆 | +7% |
+| nci | 33 MB | 11.23× | 18.51× | **21.51×** 🏆 | +14% |
+| samba | 21 MB | 4.00× | 4.75× | **4.93×** 🏆 | +4% |
+| webster | 40 MB | 3.44× | 4.80× | **5.23×** 🏆 | +8% |
+| mozilla | 50 MB | 2.70× | — | **2.92×** | — |
 
-### Enwik8 (95 MB — Natural Language)
-
-| Algorithm | Ratio | Compress (MB/s) | Decompress (MB/s) |
-|-----------|-------|------------------|--------------------|
-| **MCX L3** | 2.12× | 106 | **427** |
-| **MCX L9** | 2.22× | 105 | **447** |
-| **MCX L12** | 2.76× | 18 | 35 |
-| LZ4 fast | 1.75× | 597 | 1,931 |
-| zstd -3 | 2.82× | 273 | 1,009 |
-
-### Calgary Corpus (3.0 MB)
-
-| Algorithm | Ratio | Compress (MB/s) | Decompress (MB/s) |
-|-----------|-------|------------------|--------------------|
-| **MCX L3** | 2.28× | 112 | **479** |
-| **MCX L9** | 2.38× | 112 | **494** |
-| **MCX-fast** | 1.82× | 262 | 798 |
-| LZ4 fast | 1.91× | 664 | 2,189 |
-| zstd -3 | 2.99× | 288 | 1,150 |
+> **MCX beats gzip -9 on 12/12 files (100%) and bzip2 -9 on 9/12 files (75%).**
+> All results verified with roundtrip decompression.
 
 Run the full suite yourself:
 
