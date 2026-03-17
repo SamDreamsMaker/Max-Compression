@@ -18,7 +18,7 @@
 #define LZ24_MAX_OFFSET    (1 << 24)  /* 16MB window */
 #define LZ24_HASH_LOG      18         /* 256K buckets */
 #define LZ24_HASH_SIZE     (1 << LZ24_HASH_LOG)
-#define LZ24_CHAIN_LEN     64         /* Max chain depth per search */
+#define LZ24_CHAIN_LEN     16         /* Max chain depth (was 64, 16 sufficient for speed/ratio) */
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
