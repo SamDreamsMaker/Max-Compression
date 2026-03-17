@@ -709,6 +709,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 memcpy(dst, alt_buf, alt12);
                 offset = alt12;
             }
+            /* Note: CM-rANS (L15) tested but doesn't help — L20 forced BWT
+             * already beats CM-rANS on binary data (ooffice: 2.19x vs 2.09x).
+             * CM-rANS has 128KB header overhead that negates its context advantage. */
             free(alt_buf);
         }
     }
