@@ -8,7 +8,7 @@ information-theory techniques (LZ77, tANS/FSE, BWT, rANS) with modern innovation
 routing, SIMD SSE4.1 acceleration) to deliver strong compression ratios at practical speeds.
 
 **Highlights:**
-- 🏆 **46.02× on kennedy.xls** — **2.2× better than xz** (20.97×), **2.9× better than zstd-19** (15.88×)
+- 🏆 **46.91× on kennedy.xls** — **2.2× better than xz** (20.97×), **2.9× better than zstd-19** (15.88×)
 - 📈 **10.19× on ptt5** — auto-detects fax scan line stride (216 bytes), beats gzip/bzip2
 - 🧠 **Smart Mode (L20+)** — auto-detects data type and routes to optimal pipeline
 - ⚡ **Multi-threaded** — OpenMP block parallelism for multi-core CPUs
@@ -78,8 +78,8 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 
 | File | Size | gzip -9 | bzip2 -9 | xz -6 | zstd -3 | zstd -19 | MCX L3 | MCX L12 | **MCX L20** |
 |------|------|---------|----------|--------|---------|----------|--------|---------|-------------|
-| alice29.txt | 152 KB | 2.81× | **3.52×** | 3.14× | 2.67× | 3.09× | 2.04× | 3.38× | **3.47×** |
-| asyoulik.txt | 125 KB | 2.56× | **3.16×** | 2.81× | 2.49× | 2.77× | 1.93× | 3.02× | **3.10×** |
+| alice29.txt | 152 KB | 2.81× | **3.52×** | 3.14× | 2.67× | 3.09× | 2.04× | **3.50×** | **3.50×** |
+| asyoulik.txt | 125 KB | 2.56× | **3.16×** | 2.81× | 2.49× | 2.77× | 1.93× | **3.12×** | **3.12×** |
 | cp.html | 24 KB | 3.08× | 3.23× | 3.22× | 2.91× | **3.70×** | 2.29× | **3.09×** | **3.09×** |
 | fields.c | 11 KB | 3.56× | 3.67× | **3.68×** | 3.30× | 3.70× | 2.31× | **3.39×** | **3.39×** |
 | grammar.lsp | 3.7 KB | **2.99×** | 2.90× | 2.88× | 2.88× | 3.07× | 1.90× | **2.46×** | **2.46×** |
@@ -91,7 +91,7 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 
 | File | Size | gzip -9 | bzip2 -9 | xz -6 | zstd -3 | zstd -19 | MCX L3 | MCX L12 | **MCX L20** |
 |------|------|---------|----------|--------|---------|----------|--------|---------|-------------|
-| kennedy.xls | 1.0 MB | 4.91× | 7.90× | 20.97× | 9.22× | 15.88× | 4.19× | 7.66× | **🏆 46.02×** |
+| kennedy.xls | 1.0 MB | 4.91× | 7.90× | 20.97× | 9.22× | 15.88× | 4.19× | 7.66× | **🏆 46.91×** |
 | ptt5 | 513 KB | 9.80× | 10.31× | **12.22×** | 9.43× | 11.76× | 7.44× | 6.54× | **10.19×** |
 | sum | 38 KB | 2.99× | 2.96× | **4.05×** | 2.86× | 3.44× | **2.41×** | 2.10× | 2.39× |
 
@@ -101,7 +101,7 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 
 | Metric | Result |
 |--------|--------|
-| 🏆 **Best single-file ratio** | **kennedy.xls: 46.02×** — **2.2× better than xz** (20.97×), 2.9× better than zstd-19 |
+| 🏆 **Best single-file ratio** | **kennedy.xls: 46.91×** — **2.2× better than xz** (20.97×), 2.9× better than zstd-19 |
 | 📈 **ptt5 fax image** | **10.19×** (Stride-Delta, L20) — auto-detected stride=216 |
 | 📊 **L20 vs L12 on text** | +13–35% improvement (RLE2 + delta-fix + sparse rANS) |
 | 🏅 **MCX L20 equals bzip2 -9** | On lcet10 (3.96×) and plrabn12 (3.31×) — multi-table rANS |
@@ -250,7 +250,7 @@ const char* mcx_get_error_name(size_t result);
 | **v1.5** | 2026-03-16 | Delta-fix + auto-RLE2 for ALL BWT levels — L12 now matches L20 on text |
 | **v1.4.2** | 2026-03-16 | BWT threshold 8KB→1KB: grammar +26%, xargs +32%; hardcoded text genome |
 | **v1.4.1** | 2026-03-16 | Delta-fix for text: +13–35%, MCX L20 now **beats gzip -9** on all text |
-| **v1.4** | 2026-03-16 | Stride+BWT+RLE2 pipeline — kennedy.xls **46.02×** (2.2× better than xz!) |
+| **v1.4** | 2026-03-16 | Stride+BWT+RLE2 pipeline — kennedy.xls **46.91×** (2.2× better than xz!) |
 | **v1.3.1** | 2026-03-16 | Sparse rANS table, 14-bit precision, extended stride detection (ptt5 10.19×) |
 | **v1.3** | 2026-03-16 | RLE2 (RUNA/RUNB) exponential zero-run encoding; +5–7% on text |
 | **v1.2** | 2026-03-16 | Smart Mode (L20+), Stride-Delta transform, LZ24 (16 MB window) |
