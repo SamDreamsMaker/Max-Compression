@@ -188,7 +188,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         } else if (analysis.type == MCX_DTYPE_HIGH_ENTROPY) {
             strategy = MCX_STRATEGY_STORE;
         } else {
-            strategy = MCX_STRATEGY_LZ24; /* LZ24 16MB window for generic binary */
+            /* Generic binary / unknown: BWT is often better than LZ24.
+             * The multi-trial at the end will also try L9 (LZ-HC) and keep best. */
+            strategy = MCX_STRATEGY_DEFAULT;
         }
     }
 
@@ -682,9 +684,8 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
     /* ── Multi-trial for L20+: try LZ-HC too, keep smallest ── */
     if (level >= 20 && strategy != MCX_STRATEGY_STORE 
-        && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST
-        && src_size < 65536) {
-        /* Try LZ-HC (L9) on same data — it might beat BWT on small files */
+        && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST) {
+        /* Try LZ-HC (L9) on same data — it might beat BWT on some data types */
         uint8_t* alt_buf = (uint8_t*)malloc(dst_cap);
         if (alt_buf) {
             size_t alt_size = mcx_compress(alt_buf, dst_cap, src, src_size, 9);
