@@ -11,9 +11,9 @@ static void bench_file(const char* path, const char* name) {
     size_t n = ftell(f);
     fseek(f, 0, SEEK_SET);
     
-    /* Skip files > 16MB for now (BWT is O(n²) on our implementation) */
-    if (n > 16 * 1024 * 1024) {
-        printf("  %-10s %7zuKB  SKIP (>16MB)\n", name, n/1024);
+    /* Skip files > 64MB for memory reasons */
+    if (n > 64 * 1024 * 1024) {
+        printf("  %-10s %7zuKB  SKIP (>64MB)\n", name, n/1024);
         fclose(f);
         return;
     }
