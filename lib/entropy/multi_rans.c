@@ -153,10 +153,45 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
     uint32_t ng32 = (uint32_t)num_groups;
     memcpy(dst + pos, &ng32, 4); pos += 4;
     
-    /* Write tables using per-table bitmap + 1-byte freq format:
-     * Per table: 32-byte bitmap + 1 byte per active symbol.
-     * Freq is stored as 8-bit value (0-255), reconstructed by decoder
-     * to full precision via normalization. */
+    /* Write tables using per-table bitmap + varint freq format:
+     * Per table: 32-byte bitmap + varint per active symbol.
+     * Varint: if freq < 128, 1 byte; if >= 128, 2 bytes (0x80|high, low).
+     * Encoder quantizes tables to match what decoder will reconstruct,
+     * ensuring identical tables on both sides. */
+    
+    /* Quantize encoder tables to match decoder reconstruction */
+    for (int t = 0; t < n_tables; t++) {
+        /* Store raw freq values, then re-normalize from stored values */
+        uint16_t stored[256];
+        int n_act = 0;
+        for (int s = 0; s < 256; s++) {
+            stored[s] = tables[t][s]; /* already 14-bit normalized */
+            if (stored[s] > 0) n_act++;
+        }
+        /* Re-normalize from stored values (decoder does this too) */
+        uint32_t sum = 0;
+        int max_i = -1; uint32_t max_v = 0;
+        for (int s = 0; s < 256; s++) {
+            sum += stored[s];
+            if (stored[s] > max_v) { max_v = stored[s]; max_i = s; }
+        }
+        if (sum > 0 && sum != MT_SCALE) {
+            /* Renormalize to MT_SCALE */
+            uint32_t new_sum = 0;
+            for (int s = 0; s < 256; s++) {
+                if (stored[s] > 0) {
+                    stored[s] = (uint16_t)((uint64_t)stored[s] * MT_SCALE / sum);
+                    if (stored[s] == 0) stored[s] = 1;
+                    new_sum += stored[s];
+                }
+            }
+            if (new_sum > MT_SCALE) stored[max_i] -= (uint16_t)(new_sum - MT_SCALE);
+            else if (new_sum < MT_SCALE) stored[max_i] += (uint16_t)(MT_SCALE - new_sum);
+        }
+        /* Use quantized tables for encoding */
+        memcpy(tables[t], stored, sizeof(uint16_t) * 256);
+    }
+    
     for (int t = 0; t < n_tables; t++) {
         if (pos + 32 > dst_cap) {
             free(grp_freq); free(assign);
@@ -180,8 +215,13 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
         }
         for (int s = 0; s < 256; s++) {
             if (tables[t][s] > 0) {
-                dst[pos++] = (uint8_t)(tables[t][s] >> 8);
-                dst[pos++] = (uint8_t)(tables[t][s] & 0xFF);
+                uint16_t f = tables[t][s];
+                if (f < 128) {
+                    dst[pos++] = (uint8_t)f;
+                } else {
+                    dst[pos++] = (uint8_t)(0x80 | (f >> 8));
+                    dst[pos++] = (uint8_t)(f & 0xFF);
+                }
             }
         }
     }
@@ -336,12 +376,39 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
             }
         }
         
-        if (pos + n_active * 2 > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
-        
+        /* Read varint freq: if high bit set, 2 bytes (0x80|high, low); else 1 byte */
         for (int s = 0; s < 256; s++) {
             if (bitmap[s >> 3] & (1 << (s & 7))) {
-                tables[t][s] = ((uint16_t)src[pos] << 8) | src[pos + 1];
-                pos += 2;
+                if (pos >= src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+                uint8_t first = src[pos++];
+                if (first & 0x80) {
+                    if (pos >= src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+                    tables[t][s] = ((uint16_t)(first & 0x7F) << 8) | src[pos++];
+                } else {
+                    tables[t][s] = first;
+                }
+            }
+        }
+        
+        /* Re-normalize to MT_SCALE (encoder may have stored approximate values) */
+        {
+            uint32_t sum = 0;
+            int max_i = -1; uint32_t max_v = 0;
+            for (int s = 0; s < 256; s++) {
+                sum += tables[t][s];
+                if (tables[t][s] > max_v) { max_v = tables[t][s]; max_i = s; }
+            }
+            if (sum > 0 && sum != MT_SCALE) {
+                uint32_t new_sum = 0;
+                for (int s = 0; s < 256; s++) {
+                    if (tables[t][s] > 0) {
+                        tables[t][s] = (uint16_t)((uint64_t)tables[t][s] * MT_SCALE / sum);
+                        if (tables[t][s] == 0) tables[t][s] = 1;
+                        new_sum += tables[t][s];
+                    }
+                }
+                if (new_sum > MT_SCALE && max_i >= 0) tables[t][max_i] -= (uint16_t)(new_sum - MT_SCALE);
+                else if (new_sum < MT_SCALE && max_i >= 0) tables[t][max_i] += (uint16_t)(MT_SCALE - new_sum);
             }
         }
         
