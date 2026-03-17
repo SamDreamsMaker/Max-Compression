@@ -140,69 +140,114 @@ static int cmd_compress(const char* input, const char* output, int level)
         return 1;
     }
 
-    /* Fixed buffers for streaming */
-    size_t IN_CHUNK_SIZE = 64 * 1024;
-    size_t OUT_CHUNK_SIZE = 256 * 1024;
-    
-    uint8_t* in_buf = (uint8_t*)malloc(IN_CHUNK_SIZE);
-    uint8_t* out_buf = (uint8_t*)malloc(OUT_CHUNK_SIZE);
-    
-    mcx_cctx* cctx = mcx_create_cctx();
-    if (!in_buf || !out_buf || !cctx) {
-        fprintf(stderr, "Error: out of memory during CLI init\n");
-        if (in_buf) free(in_buf); if (out_buf) free(out_buf);
-        if (cctx) mcx_free_cctx(cctx);
-        fclose(fin); fclose(fout);
-        return 1;
-    }
-
     fseek(fin, 0, SEEK_END);
     size_t src_size = ftell(fin);
     fseek(fin, 0, SEEK_SET);
 
-    printf("Compressing '%s' (%zu bytes) at level %d... (Streaming API)\n", input, src_size, level);
-
-    mcx_in_buffer in_b = { in_buf, 0, 0 };
-    mcx_out_buffer out_b = { out_buf, OUT_CHUNK_SIZE, 0 };
-    
-    int is_eof = 0;
     size_t total_out = 0;
-    size_t result = 1;
-    
-    while (result != 0) {
-        /* Read more if we exhausted the input chunk and aren't EOF theoretically */
-        if (in_b.pos >= in_b.size && !is_eof) {
-            size_t bytes_read = fread(in_buf, 1, IN_CHUNK_SIZE, fin);
-            in_b.size = bytes_read;
-            in_b.pos = 0;
-            
-            if (bytes_read == 0) {
-                is_eof = 1; /* Trigger EOF flush sequence */
-            }
-        }
-        
-        if (is_eof) {
-            in_b.src = NULL;
-            in_b.size = 0;
-            in_b.pos = 0;
-        }
 
-        /* Perform a stream boundary pass */
-        result = mcx_compress_stream(cctx, &out_b, &in_b, level);
-        
-        if (mcx_is_error(result)) {
-            fprintf(stderr, "Error: Stream compression failed: %s\n", mcx_get_error_name(result));
-            free(in_buf); free(out_buf); mcx_free_cctx(cctx);
+    /* Use one-shot API for files that fit in memory (full pipeline with
+     * multi-trial, E8/E9, multi-table rANS, etc.).
+     * Fall back to streaming API for very large files (>256MB). */
+    size_t ONE_SHOT_LIMIT = 256ULL * 1024 * 1024;
+
+    if (src_size > 0 && src_size <= ONE_SHOT_LIMIT) {
+        /* ── One-shot compression (full pipeline) ── */
+        uint8_t* src_buf = (uint8_t*)malloc(src_size);
+        size_t dst_cap = mcx_compress_bound(src_size);
+        uint8_t* dst_buf = (uint8_t*)malloc(dst_cap);
+
+        if (!src_buf || !dst_buf) {
+            fprintf(stderr, "Error: out of memory (%zu bytes)\n", src_size);
+            if (src_buf) free(src_buf);
+            if (dst_buf) free(dst_buf);
             fclose(fin); fclose(fout);
             return 1;
         }
-        
-        /* Flush output if we have encoded parts waiting */
-        if (out_b.pos > 0) {
-            fwrite(out_buf, 1, out_b.pos, fout);
-            total_out += out_b.pos;
-            out_b.pos = 0;
+
+        size_t bytes_read = fread(src_buf, 1, src_size, fin);
+        if (bytes_read != src_size) {
+            fprintf(stderr, "Error: could not read full file\n");
+            free(src_buf); free(dst_buf);
+            fclose(fin); fclose(fout);
+            return 1;
         }
+
+        printf("Compressing '%s' (%zu bytes) at level %d...\n", input, src_size, level);
+
+        size_t comp_size = mcx_compress(dst_buf, dst_cap, src_buf, src_size, level);
+        free(src_buf);
+
+        if (mcx_is_error(comp_size)) {
+            fprintf(stderr, "Error: compression failed: %s\n", mcx_get_error_name(comp_size));
+            free(dst_buf);
+            fclose(fin); fclose(fout);
+            return 1;
+        }
+
+        fwrite(dst_buf, 1, comp_size, fout);
+        total_out = comp_size;
+        free(dst_buf);
+    } else {
+        /* ── Streaming compression (for very large files or empty files) ── */
+        size_t IN_CHUNK_SIZE = 64 * 1024;
+        size_t OUT_CHUNK_SIZE = 256 * 1024;
+
+        uint8_t* in_buf = (uint8_t*)malloc(IN_CHUNK_SIZE);
+        uint8_t* out_buf = (uint8_t*)malloc(OUT_CHUNK_SIZE);
+
+        mcx_cctx* cctx = mcx_create_cctx();
+        if (!in_buf || !out_buf || !cctx) {
+            fprintf(stderr, "Error: out of memory during CLI init\n");
+            if (in_buf) free(in_buf); if (out_buf) free(out_buf);
+            if (cctx) mcx_free_cctx(cctx);
+            fclose(fin); fclose(fout);
+            return 1;
+        }
+
+        fseek(fin, 0, SEEK_SET);
+
+        printf("Compressing '%s' (%zu bytes) at level %d... (Streaming API)\n", input, src_size, level);
+
+        mcx_in_buffer in_b = { in_buf, 0, 0 };
+        mcx_out_buffer out_b = { out_buf, OUT_CHUNK_SIZE, 0 };
+
+        int is_eof = 0;
+        size_t result = 1;
+
+        while (result != 0) {
+            if (in_b.pos >= in_b.size && !is_eof) {
+                size_t bytes_read = fread(in_buf, 1, IN_CHUNK_SIZE, fin);
+                in_b.size = bytes_read;
+                in_b.pos = 0;
+                if (bytes_read == 0) is_eof = 1;
+            }
+
+            if (is_eof) {
+                in_b.src = NULL;
+                in_b.size = 0;
+                in_b.pos = 0;
+            }
+
+            result = mcx_compress_stream(cctx, &out_b, &in_b, level);
+
+            if (mcx_is_error(result)) {
+                fprintf(stderr, "Error: Stream compression failed: %s\n", mcx_get_error_name(result));
+                free(in_buf); free(out_buf); mcx_free_cctx(cctx);
+                fclose(fin); fclose(fout);
+                return 1;
+            }
+
+            if (out_b.pos > 0) {
+                fwrite(out_buf, 1, out_b.pos, fout);
+                total_out += out_b.pos;
+                out_b.pos = 0;
+            }
+        }
+
+        free(in_buf);
+        free(out_buf);
+        mcx_free_cctx(cctx);
     }
 
     double ratio = (double)src_size / (double)total_out;
@@ -213,9 +258,6 @@ static int cmd_compress(const char* input, const char* output, int level)
     printf("  Output: %zu bytes -> '%s'\n", total_out, output);
     printf("  Ratio:  %.2fx (%.1f%% smaller)\n", ratio, savings);
 
-    free(in_buf);
-    free(out_buf);
-    mcx_free_cctx(cctx);
     fclose(fin);
     fclose(fout);
     return 0;
@@ -242,65 +284,60 @@ static int cmd_decompress(const char* input, const char* output)
         return 1;
     }
 
-    size_t IN_CHUNK_SIZE = 256 * 1024;
-    size_t OUT_CHUNK_SIZE = 1048576 * 2; /* 2MB streaming boundary */
-    
-    uint8_t* in_buf = (uint8_t*)malloc(IN_CHUNK_SIZE);
-    uint8_t* out_buf = (uint8_t*)malloc(OUT_CHUNK_SIZE);
-    
-    mcx_dctx* dctx = mcx_create_dctx();
-    if (!in_buf || !out_buf || !dctx) {
-        fprintf(stderr, "Error: out of memory during CLI decompression init\n");
-        if (in_buf) free(in_buf); if (out_buf) free(out_buf);
-        if (dctx) mcx_free_dctx(dctx);
+    /* Read entire compressed file into memory */
+    fseek(fin, 0, SEEK_END);
+    size_t src_size = ftell(fin);
+    fseek(fin, 0, SEEK_SET);
+
+    uint8_t* src_buf = (uint8_t*)malloc(src_size);
+    if (!src_buf) {
+        fprintf(stderr, "Error: out of memory (%zu bytes)\n", src_size);
         fclose(fin); fclose(fout);
         return 1;
     }
 
-    printf("Decompressing '%s'... (Streaming API)\n", input);
-
-    mcx_in_buffer in_b = { in_buf, 0, 0 };
-    mcx_out_buffer out_b = { out_buf, OUT_CHUNK_SIZE, 0 };
-    
-    size_t total_out = 0;
-    size_t result = 1;
-    
-    while (result != 0) {
-        if (in_b.pos >= in_b.size) {
-            size_t bytes_read = fread(in_buf, 1, IN_CHUNK_SIZE, fin);
-            in_b.size = bytes_read;
-            in_b.pos = 0;
-            
-            if (bytes_read == 0 && result != 0 && dctx->state != MCX_DSTATE_FINISHED) {
-                fprintf(stderr, "Error: unexpected EOF in compressed stream!\n");
-                free(in_buf); free(out_buf); mcx_free_dctx(dctx);
-                fclose(fin); fclose(fout);
-                return 1;
-            }
-        }
-
-        result = mcx_decompress_stream(dctx, &out_b, &in_b);
-        
-        if (mcx_is_error(result)) {
-            fprintf(stderr, "Error: Stream decompression failed: %s\n", mcx_get_error_name(result));
-            free(in_buf); free(out_buf); mcx_free_dctx(dctx);
-            fclose(fin); fclose(fout);
-            return 1;
-        }
-        
-        if (out_b.pos > 0) {
-            fwrite(out_buf, 1, out_b.pos, fout);
-            total_out += out_b.pos;
-            out_b.pos = 0;
-        }
+    size_t bytes_read = fread(src_buf, 1, src_size, fin);
+    if (bytes_read != src_size) {
+        fprintf(stderr, "Error: could not read full file\n");
+        free(src_buf); fclose(fin); fclose(fout);
+        return 1;
     }
+
+    /* Read original size from frame header */
+    uint64_t orig_size = 0;
+    if (src_size >= 16) {
+        memcpy(&orig_size, src_buf + 8, 8);
+    }
+    if (orig_size == 0 || orig_size > 1024ULL * 1024 * 1024) {
+        /* Fallback: use 10x compressed size as estimate */
+        orig_size = src_size * 10;
+    }
+
+    uint8_t* dst_buf = (uint8_t*)malloc((size_t)orig_size + 1024);
+    if (!dst_buf) {
+        fprintf(stderr, "Error: out of memory for decompression (%llu bytes)\n",
+                (unsigned long long)orig_size);
+        free(src_buf); fclose(fin); fclose(fout);
+        return 1;
+    }
+
+    printf("Decompressing '%s' (%zu bytes)...\n", input, src_size);
+
+    size_t total_out = mcx_decompress(dst_buf, (size_t)orig_size + 1024, src_buf, src_size);
+    free(src_buf);
+
+    if (mcx_is_error(total_out)) {
+        fprintf(stderr, "Error: decompression failed: %s\n", mcx_get_error_name(total_out));
+        free(dst_buf); fclose(fin); fclose(fout);
+        return 1;
+    }
+
+    fwrite(dst_buf, 1, total_out, fout);
+    free(dst_buf);
 
     printf("Done!\n");
     printf("  Decompressed: %zu bytes -> '%s'\n", total_out, output);
 
-    free(in_buf);
-    free(out_buf);
-    mcx_free_dctx(dctx);
     fclose(fin);
     fclose(fout);
     return 0;
