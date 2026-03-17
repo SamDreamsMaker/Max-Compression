@@ -124,23 +124,25 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 
 ### Silesia Corpus (202 MB) — Per-file comparison
 
-| File | Size | gzip -9 | bzip2 -9 | **MCX L20** | vs bzip2 |
-|------|------|---------|----------|-------------|----------|
-| dickens | 10 MB | 2.65× | 3.64× | **4.06×** 🏆 | +12% |
-| xml | 5 MB | 8.07× | 12.12× | **12.74×** 🏆 | +5% |
-| ooffice | 6 MB | 1.99× | 2.15× | **2.18×** 🏆 | +2% |
-| reymont | 6.5 MB | 3.64× | 5.32× | **5.88×** 🏆 | +11% |
-| sao | 7 MB | 1.36× | 1.47× | **1.48×** 🏆 | +1% |
-| x-ray | 8 MB | 1.40× | **2.09×** | 2.04× | -2% |
-| mr | 10 MB | 2.71× | 4.08× | **4.19×** 🏆 | +3% |
-| osdb | 10 MB | 2.71× | 3.60× | **4.00×** 🏆 | +11% |
-| nci | 33 MB | 11.23× | 18.51× | **23.99×** 🏆 | +30% |
-| samba | 21 MB | 4.00× | 4.75× | **4.94×** 🏆 | +4% |
-| webster | 40 MB | 3.44× | 4.80× | **5.54×** 🏆 | +15% |
-| mozilla | 50 MB | 2.70× | — | **2.93×** | — |
+| File | Size | gzip -9 | bzip2 -9 | xz -9 | **MCX L20** | vs bzip2 | vs xz |
+|------|------|---------|----------|-------|-------------|----------|-------|
+| dickens | 10 MB | 2.65× | 3.64× | 3.60× | **4.07×** 🏆 | +12% | +13% |
+| xml | 5 MB | 8.07× | 12.12× | 11.79× | **12.75×** 🏆 | +5% | +8% |
+| ooffice | 6 MB | 1.99× | 2.15× | 2.54× | **2.18×** | +2% | -14% |
+| reymont | 6.5 MB | 3.64× | 5.32× | 5.03× | **5.89×** 🏆 | +11% | +17% |
+| sao | 7 MB | 1.36× | 1.47× | 1.64× | **1.48×** | +1% | -10% |
+| x-ray | 8 MB | 1.40× | 2.09× | 1.89× | **2.05×** | -2% | +8% |
+| mr | 10 MB | 2.71× | 4.08× | 3.63× | **4.26×** 🏆 | +4% | +17% |
+| osdb | 10 MB | 2.71× | 3.60× | 3.54× | **4.00×** 🏆 | +11% | +13% |
+| nci | 33 MB | 11.23× | 18.51× | 19.30× | **24.00×** 🏆 | +30% | +24% |
+| samba | 21 MB | 4.00× | 4.75× | 5.74× | **4.94×** | +4% | -14% |
+| webster | 40 MB | 3.44× | 4.80× | 4.94× | **5.54×** 🏆 | +15% | +12% |
+| mozilla | 50 MB | 2.70× | — | 3.83× | **2.93×** | — | -24% |
 
-> **MCX beats gzip -9 on 12/12 files (100%) and bzip2 -9 on 11/12 files (92%).**
-> Only x-ray (medical imaging, near-random 16-bit data) remains 2% behind bzip2.
+> **MCX beats gzip -9 on 12/12 files (100%), bzip2 -9 on 11/12 (92%), xz -9 on 8/12 (67%).**
+> Only x-ray remains 2% behind bzip2 (near-random 16-bit medical data).
+> **nci achieves 24× compression** — 30% better than bzip2, 24% better than xz!
+> xz wins on binary-heavy files (ooffice, sao, samba, mozilla) where LZMA2 excels.
 > All results verified with roundtrip decompression.
 
 Run the full suite yourself:
