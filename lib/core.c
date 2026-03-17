@@ -704,9 +704,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             }
             /* Try BWT with genome optimizer (L12) — might find a better genome
              * than the forced genome at L20 (especially for binary data).
-             * Skip for large files (>4MB) — genome optimizer runs 100 BWT passes
-             * which is ~50s per MB. Forced genome already optimal for text. */
-            if (src_size <= 4 * 1024 * 1024) {
+             * Skip for large files (>16MB) — genome optimizer runs 100 BWT passes
+             * which is ~50s per 10MB. Keep for files up to block size. */
+            if (src_size <= MCX_MAX_BLOCK_SIZE) {
                 size_t alt12 = mcx_compress(alt_buf, dst_cap, src, src_size, 12);
                 if (!mcx_is_error(alt12) && alt12 < offset) {
                     memcpy(dst, alt_buf, alt12);
