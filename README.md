@@ -73,7 +73,7 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 | **Generic binary** | Fallback | Multi-trial (BWT vs LZ-HC) | Picks smaller result per file |
 | **Incompressible** | Entropy > 7.5 bits/byte | STORE | No expansion |
 
-## Benchmarks (v1.9.1)
+## Benchmarks (v1.9.2)
 
 ### Canterbury Corpus — MCX vs The Competition
 
@@ -96,11 +96,15 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 
 #### Binary Files
 
-| File | Size | gzip -9 | bzip2 -9 | xz -6 | zstd -3 | zstd -19 | MCX L3 | MCX L12 | **MCX L20** |
-|------|------|---------|----------|--------|---------|----------|--------|---------|-------------|
-| kennedy.xls | 1.0 MB | 4.91× | 7.90× | 20.97× | 9.22× | 15.88× | 4.19× | 7.66× | **🏆 50.12×** |
-| ptt5 | 513 KB | 9.80× | 10.31× | **12.22×** | 9.43× | 11.76× | 7.44× | 6.54× | **10.19×** |
-| sum | 38 KB | 2.99× | 2.96× | **4.05×** | 2.86× | 3.44× | **2.41×** | 2.10× | 2.39× |
+| File | Size | gzip -9 | bzip2 -9 | xz -6 | zstd -19 | MCX L3 | **MCX L6** | **MCX L9** | MCX L12 | **MCX L20** |
+|------|------|---------|----------|--------|----------|--------|---------|---------|---------|-------------|
+| kennedy.xls | 1.0 MB | 4.91× | 7.90× | 20.97× | 15.88× | 4.19× | **8.62×** | **9.04×** | 7.66× | **🏆 50.12×** |
+| ptt5 | 513 KB | 9.80× | 10.31× | **12.22×** | 11.76× | 7.44× | **8.61×** | **8.65×** | 6.54× | **10.19×** |
+| sum | 38 KB | 2.99× | 2.96× | **4.05×** | 3.44× | **2.41×** | **2.62×** | **2.62×** | 2.19× | 2.84× |
+
+> **New in v1.9.2:** L6+ uses adaptive order-1 arithmetic coding on LZ output (when better than FSE).
+> kennedy L9: **9.04×** — beats bzip2 (7.90×) and gzip (4.91×) at LZ speed!
+> L6 now beats L12 on binary data (8.62× vs 7.66× on kennedy).
 
 > **Note:** MCX L20 on kennedy.xls uses Stride-Delta + BWT + RLE2 pipeline (auto-detected stride=13, 86.9% zeros after delta). On ptt5 it auto-detects stride=216 (CCITT fax scan line width, 91.7% zeros → Stride+RLE2+rANS path).
 
