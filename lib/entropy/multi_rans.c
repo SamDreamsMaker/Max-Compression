@@ -21,9 +21,11 @@
 #include <math.h>
 #include "entropy.h"
 
-#define MT_GROUP_SIZE  50    /* bzip2 uses 50 bytes per group */
+#define MT_GROUP_SIZE  50    /* bzip2 uses 50 — optimal for most files */
 #define MT_MAX_TABLES  4     /* 4 tables is optimal for most files */
+#define MT_PRECISION   MCX_RANS_PRECISION   /* 14-bit — matches rANS */
 #define MT_SCALE       MCX_RANS_SCALE
+#define MT_STATE_LOWER MCX_RANS_STATE_LOWER
 
 /* Normalize raw counts to sum = MT_SCALE */
 static void mt_normalize(const uint32_t raw[256], uint32_t total, uint16_t freq[256]) {
@@ -151,17 +153,14 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
     uint32_t ng32 = (uint32_t)num_groups;
     memcpy(dst + pos, &ng32, 4); pos += 4;
     
-    /* Write tables using bitmap format:
-     * 32 bytes bitmap (which symbols are active) + 1 byte per active symbol (log2 freq).
-     * This saves ~40% vs the sparse (sym, freq_hi, freq_lo) format.
-     * Decoder reconstructs exact frequencies from log2 values + normalization. */
+    /* Write tables using per-table bitmap format:
+     * Per table: 32-byte bitmap + 2 bytes per active symbol. */
     for (int t = 0; t < n_tables; t++) {
         if (pos + 32 > dst_cap) {
             free(grp_freq); free(assign);
             return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
         }
         
-        /* Write bitmap */
         uint8_t bitmap[32];
         memset(bitmap, 0, 32);
         int n_active = 0;
@@ -173,7 +172,6 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
         }
         memcpy(dst + pos, bitmap, 32); pos += 32;
         
-        /* Write freq values as uint16 for active symbols only */
         if (pos + n_active * 2 > dst_cap) {
             free(grp_freq); free(assign);
             return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
@@ -233,8 +231,8 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
     if (!out16) { free(grp_freq); free(assign); return MCX_ERROR(MCX_ERR_ALLOC_FAILED); }
     
     size_t out16_pos = 0;
-    uint32_t state1 = MCX_RANS_STATE_LOWER;
-    uint32_t state2 = MCX_RANS_STATE_LOWER;
+    uint32_t state1 = MT_STATE_LOWER;
+    uint32_t state2 = MT_STATE_LOWER;
     
     /* Build cumfreq for all tables */
     uint16_t cumfreq[MT_MAX_TABLES][256];
@@ -262,7 +260,7 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
             out16[out16_pos++] = (uint16_t)(*st & 0xFFFF);
             *st >>= 16;
         }
-        *st = ((*st / f) << MCX_RANS_PRECISION) + cf + (*st % f);
+        *st = ((*st / f) << MT_PRECISION) + cf + (*st % f);
     }
     
     /* Write states + bitstream */
@@ -326,7 +324,6 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
     for (int t = 0; t < n_tables; t++) {
         if (pos + 32 > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
         
-        /* Read bitmap */
         uint8_t bitmap[32];
         memcpy(bitmap, src + pos, 32); pos += 32;
         
@@ -339,7 +336,6 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
         
         if (pos + n_active * 2 > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
         
-        /* Read freq values */
         for (int s = 0; s < 256; s++) {
             if (bitmap[s >> 3] & (1 << (s & 7))) {
                 tables[t][s] = ((uint16_t)src[pos] << 8) | src[pos + 1];
@@ -365,10 +361,10 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
     
     if (pos + sel_comp_sz > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
     
-    uint8_t* sel_raw = malloc(num_groups);
+    uint8_t* sel_raw = malloc(num_groups + 256);
     if (!sel_raw) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
     
-    size_t sel_dec = mcx_rans_decompress(sel_raw, num_groups, src + pos, sel_comp_sz);
+    size_t sel_dec = mcx_rans_decompress(sel_raw, num_groups + 256, src + pos, sel_comp_sz);
     pos += sel_comp_sz;
     
     if (mcx_is_error(sel_dec) || sel_dec != (size_t)num_groups) {
@@ -423,10 +419,10 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
         uint16_t cf = cum[t][sym];
         
         /* Advance state */
-        *st = f * (*st >> MCX_RANS_PRECISION) + slot - cf;
+        *st = f * (*st >> MT_PRECISION) + slot - cf;
         
         /* Renormalize */
-        while (*st < MCX_RANS_STATE_LOWER && bits_pos < max_bits) {
+        while (*st < MT_STATE_LOWER && bits_pos < max_bits) {
             *st = (*st << 16) | bits[bits_pos++];
         }
         
