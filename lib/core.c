@@ -879,18 +879,19 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 continue;
             }
 
-            if (strategy == MCX_STRATEGY_LZ_FAST || strategy == MCX_STRATEGY_LZ_HC) {
-                uint8_t block_type = in[chunk_src_offset];
-                
-                if (block_type == 0x00) {
-                    /* STORE fallback */
-                    if (chunk_comp_size - 1 != block_dst_size) {
-                        #pragma omp critical
-                        { omp_err = 1; }
-                        continue;
-                    }
-                    memcpy(out + dst_offset, in + chunk_src_offset + 1, block_dst_size);
-                } else if (block_type == 0xAA || block_type == 0xAB) {
+            /* Dispatch based on block's first byte, not file-level strategy.
+             * This supports per-block strategy selection (L20 may mix BWT and LZ blocks). */
+            uint8_t block_type = in[chunk_src_offset];
+            
+            if (block_type == 0x00) {
+                /* STORE fallback */
+                if (chunk_comp_size - 1 != block_dst_size) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    continue;
+                }
+                memcpy(out + dst_offset, in + chunk_src_offset + 1, block_dst_size);
+            } else if (block_type == 0xAA || block_type == 0xAB) {
                     /* 0xAA = LZ77 + FSE, 0xAB = LZ77 raw (FSE didn't compress further) */
                     size_t lz_cap = mcx_lz_compress_bound(block_dst_size);
                     uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
@@ -928,22 +929,6 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                         { omp_err = 1; }
                         continue;
                     }
-                } else {
-                    #pragma omp critical
-                    { omp_err = 1; }
-                    continue;
-                }
-            } else if (strategy == MCX_STRATEGY_LZ24) {
-                /* LZ24 decompression */
-                uint8_t block_type = in[chunk_src_offset];
-                
-                if (block_type == 0x00) {
-                    if (chunk_comp_size - 1 != block_dst_size) {
-                        #pragma omp critical
-                        { omp_err = 1; }
-                        continue;
-                    }
-                    memcpy(out + dst_offset, in + chunk_src_offset + 1, block_dst_size);
                 } else if (block_type == 0xAC || block_type == 0xAD) {
                     size_t lz_cap = mcx_lz24_compress_bound(block_dst_size);
                     uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
@@ -981,11 +966,6 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                         continue;
                     }
                 } else {
-                    #pragma omp critical
-                    { omp_err = 1; }
-                    continue;
-                }
-            } else {
                 /* BWT Path (+ Babel inverse for BABEL strategy) */
                 mcx_genome genome = mcx_decode_genome(in[chunk_src_offset]);
             size_t payload_offset = 1;
