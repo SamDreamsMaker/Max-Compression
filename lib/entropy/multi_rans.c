@@ -73,8 +73,11 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
     }
     
     /* Adaptive: try 4 and 5 tables, keep the smaller result.
-     * For large data (>200KB), also try 6 tables. */
-    size_t best = mt_compress_ntables(dst, dst_cap, src, src_size, 4);
+     * For large data (>200KB), also try 6 tables — but only if 5 beat 4
+     * (trend suggests more tables help, so 6 might help too). */
+    size_t sz4 = mt_compress_ntables(dst, dst_cap, src, src_size, 4);
+    size_t best = sz4;
+    int five_won = 0;
     
     uint8_t* alt = (uint8_t*)malloc(dst_cap);
     if (alt) {
@@ -82,8 +85,10 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
         if (!mcx_is_error(sz5) && (mcx_is_error(best) || sz5 < best)) {
             memcpy(dst, alt, sz5);
             best = sz5;
+            five_won = 1;
         }
-        if (src_size > 200000) {
+        /* Only try 6 tables if 5 was better than 4 AND data is large enough */
+        if (five_won && src_size > 200000) {
             size_t sz6 = mt_compress_ntables(alt, dst_cap, src, src_size, 6);
             if (!mcx_is_error(sz6) && (mcx_is_error(best) || sz6 < best)) {
                 memcpy(dst, alt, sz6);
