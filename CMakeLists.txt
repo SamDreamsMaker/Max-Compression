@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(maxcomp
-    VERSION 1.1.0
+    VERSION 1.9.1
     DESCRIPTION "MaxCompression — Revolutionary file compression library"
     LANGUAGES C
 )
@@ -62,4 +62,20 @@ message(STATUS "║  C Compiler:      ${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_
 message(STATUS "║  Build type:      ${CMAKE_BUILD_TYPE}")
 message(STATUS "╚══════════════════════════════════════════════╝")
 message(STATUS "")
+# ─── Install targets ─────────────────────────────────────────────────
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/maxcomp DESTINATION include)
+install(TARGETS maxcomp_static ARCHIVE DESTINATION lib)
+if(BUILD_SHARED_LIBS)
+    install(TARGETS maxcomp_shared LIBRARY DESTINATION lib)
+endif()
+if(MCX_BUILD_CLI)
+    install(TARGETS mcx RUNTIME DESTINATION bin)
+endif()
+
+# ─── pkg-config ──────────────────────────────────────────────────────
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/maxcomp.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/maxcomp.pc
+    @ONLY
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/maxcomp.pc DESTINATION lib/pkgconfig)
