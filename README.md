@@ -1,4 +1,9 @@
-# MaxCompression
+# MaxCompression (MCX)
+
+![Version](https://img.shields.io/badge/version-1.9.1-blue)
+![License](https://img.shields.io/badge/license-GPL--3.0-green)
+![Language](https://img.shields.io/badge/language-C99-orange)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
 > A high-performance, lossless compression library written in C99.
 
@@ -14,6 +19,7 @@ routing, SIMD SSE4.1 acceleration) to deliver strong compression ratios at pract
 - ⚡ **Multi-threaded** — OpenMP block parallelism for multi-core CPUs
 - 🔬 **Stride-Delta transform** — detects fixed-width records (strides 1–512) in structured binary
 - 🔤 **RLE2 (RUNA/RUNB)** — exponential zero-run encoding, +5–7% on text vs standard RLE
+- 🔧 **E8/E9 x86 filter** — auto-detects executables, ooffice 2.18×→2.53× (+16%)
 - 📖 **Pure C99** — no dependencies, cross-platform (Linux, macOS, Windows)
 
 ## Quick Start
