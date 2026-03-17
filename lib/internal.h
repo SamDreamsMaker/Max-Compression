@@ -162,6 +162,6 @@ typedef struct {
 #define MCX_DEFAULT_BLOCK_SIZE  (64 * 1024)
 
 /** Maximum block size (1 MB). */
-#define MCX_MAX_BLOCK_SIZE      (1024 * 1024)
+#define MCX_MAX_BLOCK_SIZE      (2 * 1024 * 1024)  /* 2MB blocks — more BWT context */
 
 #endif /* MCX_INTERNAL_H */
