@@ -176,13 +176,12 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                    analysis.type == MCX_DTYPE_TEXT_UTF8 ||
                    analysis.type == MCX_DTYPE_STRUCTURED) {
             /* Text strategy by size:
-             * < 8KB: LZ-HC (BWT overhead too high for tiny files)
-             * 8KB-4MB: BWT + RLE2 + rANS (suffix sort wins)
-             * > 4MB: LZ24 16MB window (long-range matches) */
+             * < 1KB: LZ-HC (BWT overhead too high for tiny files)
+             * >= 1KB: BWT + RLE2 + rANS (suffix sort, per-block with multi-table)
+             * Note: even files > 4MB use BWT — they're split into 1MB blocks
+             * and BWT + multi-table rANS beats LZ24 on text. */
             if (src_size < 1024) {
                 strategy = MCX_STRATEGY_LZ_HC; /* BWT overhead too high for < 1KB */
-            } else if (src_size > 4 * 1024 * 1024) {
-                strategy = MCX_STRATEGY_LZ24;
             } else {
                 strategy = MCX_STRATEGY_DEFAULT;
             }
