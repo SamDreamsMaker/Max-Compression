@@ -272,8 +272,6 @@ size_t mcx_bwt_inverse(uint8_t* dst, size_t primary_idx,
     size_t count[256];
     size_t cumul[256];
     size_t sum;
-    size_t* T;
-    size_t idx;
     size_t i;
     int c;
 
@@ -297,19 +295,21 @@ size_t mcx_bwt_inverse(uint8_t* dst, size_t primary_idx,
         sum += count[c];
     }
 
-    /* Build LF mapping vector T */
-    T = (size_t*)malloc(size * sizeof(size_t));
+    /* Build LF mapping vector T.
+     * Use uint32_t instead of size_t — block size ≤ 16MB fits in 32 bits.
+     * Halves memory (80MB→40MB for 10MB block) and improves cache behavior. */
+    uint32_t* T = (uint32_t*)malloc(size * sizeof(uint32_t));
     if (T == NULL) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
 
     for (i = 0; i < size; i++) {
-        T[i] = cumul[src[i]]++;
+        T[i] = (uint32_t)cumul[src[i]]++;
     }
 
     /* Reconstruct original data tracing backwards from true row 0.
      * The missing sentinel is conceptually at primary_idx. */
-    size_t r = 0;
+    uint32_t r = 0;
     for (i = 0; i < size; i++) {
-        size_t idx_L = (r < primary_idx) ? r : r - 1;
+        uint32_t idx_L = (r < (uint32_t)primary_idx) ? r : r - 1;
         dst[size - 1 - i] = src[idx_L];
         r = T[idx_L] + 1;
     }
