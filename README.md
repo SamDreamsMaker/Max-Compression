@@ -128,7 +128,7 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 |------|------|---------|----------|-------|-------------|----------|-------|
 | dickens | 10 MB | 2.65× | 3.64× | 3.60× | **4.07×** 🏆 | +12% | +13% |
 | xml | 5 MB | 8.07× | 12.12× | 11.79× | **12.81×** 🏆 | +6% | +9% |
-| ooffice | 6 MB | 1.99× | 2.15× | 2.54× | **2.18×** | +2% | -14% |
+| ooffice | 6 MB | 1.99× | 2.15× | 2.54× | **2.53×** 🆕 | +18% | -0.4% |
 | reymont | 6.5 MB | 3.64× | 5.32× | 5.03× | **5.95×** 🏆 | +12% | +18% |
 | sao | 7 MB | 1.36× | 1.47× | 1.64× | **1.48×** | +1% | -10% |
 | x-ray | 8 MB | 1.40× | 2.09× | 1.89× | **2.05×** | -2% | +8% |
@@ -142,7 +142,7 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 > **MCX beats gzip -9 on 12/12 files (100%), bzip2 -9 on 11/12 (92%), xz -9 on 8/12 (67%).**
 > Only x-ray remains 2% behind bzip2 (near-random 16-bit medical data).
 > **nci achieves 24.15× compression** — 30% better than bzip2, 25% better than xz!
-> xz wins on binary-heavy files (ooffice, sao, samba, mozilla) where LZMA2 excels.
+> xz wins on binary-heavy files (sao, samba, mozilla) where LZMA2 excels. ooffice now matched with E8/E9 filter!
 > All results verified with roundtrip decompression.
 
 Run the full suite yourself:
@@ -191,6 +191,7 @@ python benchmarks/pro_bench.py --iter 5 --threads 1 --export-md benchmark_result
 | **CM-rANS** | Context-mixing rANS; order-1+ context modelling for maximum compression at L15-19. |
 | **BWT (SA-IS)** | Suffix-array induced sorting Burrows-Wheeler transform. O(n) time and space. |
 | **Stride-Delta** | Auto-detects fixed-width record structures (strides 1–256) via correlation analysis. Applies delta coding for near-zero output. Devastating on tabular/columnar binary data. |
+| **E8/E9 x86 Filter** | BCJ-style preprocessing for x86 executables. Converts relative CALL/JMP addresses to absolute for better BWT sorting. Auto-detected (≥0.5% E8/E9 opcodes). ooffice: +16%! |
 | **RLE2 (RUNA/RUNB)** | Exponential zero-run encoding using bijective base-2 numbering. Encodes N zeros in ~log₂(N) symbols instead of N bytes. 5–8% better than linear RLE on BWT+MTF output. |
 | **LZ24** | LZ77 with 24-bit offsets (16 MB window), hash chains (depth 64), and lazy evaluation. For long-range matching on large files. |
 | **Multi-stream LZ77** | Separates literals, literal-lengths, match-lengths, and offsets into independent FSE streams. |
@@ -238,6 +239,7 @@ const char* mcx_get_error_name(size_t result);
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **v1.9.0** | 2026-03-17 | E8/E9 x86 filter: ooffice 2.18×→**2.53×** (+16%), matches xz! 71% faster multi-rANS |
 | **v1.8.0** | 2026-03-17 | Sequential K-means init: **BEATS bzip2** on alice29 (43168 < 43207!), kennedy **50.12×** |
 | **v1.7.8** | 2026-03-17 | Adaptive multi-table rANS: matched bzip2 on alice29, BEATS on lcet10 and plrabn12 |
 | **v1.6** | 2026-03-17 | Multi-table rANS: first time near bzip2 on text |
