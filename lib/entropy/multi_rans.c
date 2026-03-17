@@ -47,18 +47,19 @@ static void mt_normalize(const uint32_t raw[256], uint32_t total, uint16_t freq[
 }
 
 /* Compute cost of encoding a group with a given frequency table (in bits) */
-/* Precomputed -log2(f/MT_SCALE) × 256 for fast integer cost.
- * cost[f] ≈ -log2(f/16384) × 256 = (14 - log2(f)) × 256.
+/* Precomputed -log2(f/MT_SCALE) × 65536 for fast integer cost.
+ * Higher precision (32-bit) avoids rounding errors that affect
+ * group assignments vs float log2.
  * Index 0 = can't encode (huge cost). */
-static uint16_t g_cost_lut[MT_SCALE + 1];
+static uint32_t g_cost_lut[MT_SCALE + 1];
 static int g_cost_lut_ready = 0;
 
 static void init_cost_lut(void) {
     if (g_cost_lut_ready) return;
-    g_cost_lut[0] = 0xFFFF; /* can't encode */
+    g_cost_lut[0] = 0xFFFFFFFF; /* can't encode */
     for (int f = 1; f <= MT_SCALE; f++) {
         double bits = log2((double)MT_SCALE / f);
-        g_cost_lut[f] = (uint16_t)(bits * 256 + 0.5);
+        g_cost_lut[f] = (uint32_t)(bits * 65536 + 0.5);
     }
     g_cost_lut_ready = 1;
 }
