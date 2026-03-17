@@ -612,7 +612,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             } else if (genome.entropy_coder == 1) {
                 /* For large text blocks in L20+, try multi-table rANS (like bzip2's
                  * multi-table Huffman). Falls back to single rANS if multi is larger. */
-                if (level >= 20 && stage_size > 32768 && genome.use_bwt) {
+                if (level >= 12 && stage_size > 32768 && genome.use_bwt && !genome.use_delta) {
                     /* Try both single and multi-table rANS, keep smaller */
                     size_t avail = max_out - payload_offset;
                     uint8_t* alt_buf = (uint8_t*)malloc(avail);
