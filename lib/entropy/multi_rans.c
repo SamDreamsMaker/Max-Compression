@@ -22,7 +22,7 @@
 #include "entropy.h"
 
 #define MT_GROUP_SIZE  50    /* bzip2 uses 50 — optimal for most files */
-#define MT_MAX_TABLES  4     /* 4 tables is optimal for most files */
+#define MT_MAX_TABLES  4     /* 4 tables optimal for most files */
 #define MT_PRECISION   MCX_RANS_PRECISION   /* 14-bit — matches rANS */
 #define MT_SCALE       MCX_RANS_SCALE
 #define MT_STATE_LOWER MCX_RANS_STATE_LOWER
@@ -153,8 +153,10 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
     uint32_t ng32 = (uint32_t)num_groups;
     memcpy(dst + pos, &ng32, 4); pos += 4;
     
-    /* Write tables using per-table bitmap format:
-     * Per table: 32-byte bitmap + 2 bytes per active symbol. */
+    /* Write tables using per-table bitmap + 1-byte freq format:
+     * Per table: 32-byte bitmap + 1 byte per active symbol.
+     * Freq is stored as 8-bit value (0-255), reconstructed by decoder
+     * to full precision via normalization. */
     for (int t = 0; t < n_tables; t++) {
         if (pos + 32 > dst_cap) {
             free(grp_freq); free(assign);
