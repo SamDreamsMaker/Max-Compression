@@ -22,7 +22,7 @@
 #include "entropy.h"
 
 #define MT_GROUP_SIZE  50    /* bzip2 uses 50 bytes per group */
-#define MT_MAX_TABLES  6     /* bzip2 uses up to 6 tables */
+#define MT_MAX_TABLES  4     /* 4 tables is optimal for most files */
 #define MT_SCALE       MCX_RANS_SCALE
 
 /* Normalize raw counts to sum = MT_SCALE */
