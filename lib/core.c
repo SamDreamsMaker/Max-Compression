@@ -21,6 +21,7 @@
 #include "lz/mcx_lz.h"
 #include "babel/babel_transform.h"
 #include "babel/babel_stride.h"
+#include "entropy/adaptive_ac.h"
 
 /* RLE2 (RUNA/RUNB) */
 extern size_t mcx_rle2_encode(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
@@ -394,23 +395,55 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
                 size_t fse_size = mcx_fse_compress(fse_buf + 1, fse_cap, lz_buf, lz_size);
 
-                if (fse_size > 0 && fse_size < block_src_size) {
-                    fse_buf[0] = 0xAC; /* LZ24 + FSE */
-                    free(lz_buf);
-                } else if (lz_size < block_src_size) {
-                    fse_buf[0] = 0xAD; /* LZ24 raw */
-                    memcpy(fse_buf + 1, lz_buf, lz_size);
-                    fse_size = lz_size;
-                    free(lz_buf);
-                } else {
-                    fse_buf[0] = 0x00; /* STORE fallback */
-                    memcpy(fse_buf + 1, in + src_offset, block_src_size);
-                    fse_size = block_src_size;
-                    free(lz_buf);
+                /* Also try adaptive AC on LZ24 output */
+                size_t aac_cap = lz_size + lz_size / 4 + 1024;
+                uint8_t* aac_buf = (uint8_t*)malloc(aac_cap + 1);
+                size_t aac_size = 0;
+                if (aac_buf) {
+                    aac_size = mcx_adaptive_ac_compress(aac_buf + 1, aac_cap, lz_buf, lz_size);
+                    if (aac_size > 0) aac_buf[0] = 0xAF; /* LZ24+AAC */
                 }
 
-                block_sizes[b] = fse_size + 1;
-                block_buffers[b] = fse_buf;
+                /* Pick best: FSE vs AAC vs raw LZ24 vs store */
+                size_t best_size = block_src_size;
+                uint8_t best_type = 0x00;
+
+                if (fse_size > 0 && fse_size < best_size) {
+                    best_size = fse_size; best_type = 0xAC;
+                }
+                if (aac_size > 0 && aac_size < best_size) {
+                    best_size = aac_size; best_type = 0xAF;
+                }
+                if (lz_size < best_size) {
+                    best_size = lz_size; best_type = 0xAD;
+                }
+
+                if (best_type == 0xAC) {
+                    fse_buf[0] = 0xAC;
+                    block_sizes[b] = fse_size + 1;
+                    block_buffers[b] = fse_buf;
+                    free(lz_buf);
+                    if (aac_buf) free(aac_buf);
+                } else if (best_type == 0xAF) {
+                    block_sizes[b] = aac_size + 1;
+                    block_buffers[b] = aac_buf;
+                    free(lz_buf); free(fse_buf);
+                    aac_buf = NULL;
+                } else if (best_type == 0xAD) {
+                    fse_buf[0] = 0xAD;
+                    memcpy(fse_buf + 1, lz_buf, lz_size);
+                    block_sizes[b] = lz_size + 1;
+                    block_buffers[b] = fse_buf;
+                    free(lz_buf);
+                    if (aac_buf) free(aac_buf);
+                } else {
+                    fse_buf[0] = 0x00;
+                    memcpy(fse_buf + 1, in + src_offset, block_src_size);
+                    block_sizes[b] = block_src_size + 1;
+                    block_buffers[b] = fse_buf;
+                    free(lz_buf);
+                    if (aac_buf) free(aac_buf);
+                }
             } else {
                 /* BWT Path (DEFAULT, BEST, BABEL, or STRIDE) */
                 
@@ -985,6 +1018,32 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                                                       lz_buf, lz_size, block_dst_size);
                     free(lz_buf);
 
+                    if (decomp != block_dst_size) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        continue;
+                    }
+                } else if (block_type == 0xAF) {
+                    /* 0xAF = LZ24 + Adaptive AC */
+                    size_t lz_cap = mcx_lz24_compress_bound(block_dst_size);
+                    uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
+                    if (!lz_buf) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        continue;
+                    }
+                    size_t lz_size = mcx_adaptive_ac_decompress(lz_buf, lz_cap,
+                                                                 in + chunk_src_offset + 1,
+                                                                 chunk_comp_size - 1);
+                    if (lz_size == 0) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        free(lz_buf);
+                        continue;
+                    }
+                    size_t decomp = mcx_lz24_decompress(out + dst_offset, block_dst_size,
+                                                         lz_buf, lz_size, block_dst_size);
+                    free(lz_buf);
                     if (decomp != block_dst_size) {
                         #pragma omp critical
                         { omp_err = 1; }
