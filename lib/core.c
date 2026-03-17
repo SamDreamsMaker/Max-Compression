@@ -25,6 +25,8 @@
 /* RLE2 (RUNA/RUNB) */
 extern size_t mcx_rle2_encode(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
 extern size_t mcx_rle2_decode(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
+extern size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
+extern size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
 #include <stdio.h>
 #ifdef _OPENMP
 #include <omp.h>
@@ -608,7 +610,30 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             if (genome.entropy_coder == 2) {
                 entropy_size = mcx_cmrans_compress(out1 + payload_offset, max_out - payload_offset, stage_in, stage_size);
             } else if (genome.entropy_coder == 1) {
-                entropy_size = mcx_rans_compress(out1 + payload_offset, max_out - payload_offset, stage_in, stage_size);
+                /* For large text blocks in L20+, try multi-table rANS (like bzip2's
+                 * multi-table Huffman). Falls back to single rANS if multi is larger. */
+                if (level >= 20 && stage_size > 32768 && genome.use_bwt) {
+                    /* Try both single and multi-table rANS, keep smaller */
+                    size_t avail = max_out - payload_offset;
+                    uint8_t* alt_buf = (uint8_t*)malloc(avail);
+                    if (alt_buf) {
+                        size_t single_sz = mcx_rans_compress(out1 + payload_offset, avail, stage_in, stage_size);
+                        size_t multi_sz = mcx_multi_rans_compress(alt_buf, avail, stage_in, stage_size);
+                        if (!mcx_is_error(multi_sz) && (mcx_is_error(single_sz) || multi_sz < single_sz)) {
+                            memcpy(out1 + payload_offset, alt_buf, multi_sz);
+                            entropy_size = multi_sz;
+                            genome.cm_learning = 6; /* Signal multi-table to decoder */
+                            out1[0] = mcx_encode_genome(&genome);
+                        } else {
+                            entropy_size = single_sz;
+                        }
+                        free(alt_buf);
+                    } else {
+                        entropy_size = mcx_rans_compress(out1 + payload_offset, avail, stage_in, stage_size);
+                    }
+                } else {
+                    entropy_size = mcx_rans_compress(out1 + payload_offset, max_out - payload_offset, stage_in, stage_size);
+                }
             } else {
                 entropy_size = mcx_huffman_compress(out1 + payload_offset, max_out - payload_offset, stage_in, stage_size, NULL);
             }
@@ -930,7 +955,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             size_t rle_size = bwt_target_size; /* Default if no BWT/MTF/RLE */
             /* Read RLE size if MTF+RLE is used, OR if STRIDE RLE2 flag is set */
             int has_rle_header = genome.use_mtf_rle || 
-                                 (genome.cm_learning == 7 && genome.entropy_coder != 2 && !genome.use_mtf_rle);
+                                 (genome.cm_learning >= 6 && genome.entropy_coder != 2 && !genome.use_mtf_rle);
             if (has_rle_header) {
                 if (payload_offset + 4 > chunk_comp_size) {
                     #pragma omp critical
@@ -970,8 +995,14 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 dec_res = mcx_cmrans_decompress(
                     buf1, rle_size + 1024, in + chunk_src_offset + payload_offset, chunk_comp_size - payload_offset);
             } else if (genome.entropy_coder == 1) {
-                dec_res = mcx_rans_decompress(
-                    buf1, rle_size + 1024, in + chunk_src_offset + payload_offset, chunk_comp_size - payload_offset);
+                if (genome.cm_learning == 6) {
+                    /* Multi-table rANS */
+                    dec_res = mcx_multi_rans_decompress(
+                        buf1, rle_size + 1024, in + chunk_src_offset + payload_offset, chunk_comp_size - payload_offset);
+                } else {
+                    dec_res = mcx_rans_decompress(
+                        buf1, rle_size + 1024, in + chunk_src_offset + payload_offset, chunk_comp_size - payload_offset);
+                }
             } else {
                 dec_res = mcx_huffman_decompress(
                     buf1, rle_size + 1024, in + chunk_src_offset + payload_offset, chunk_comp_size - payload_offset);
@@ -989,8 +1020,10 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
 
             if (genome.use_mtf_rle) {
                 size_t rle_dec;
-                /* Check cm_learning=7 flag for RLE2 (RUNA/RUNB) decoding */
-                if (genome.cm_learning == 7 && genome.entropy_coder != 2) {
+                /* Check cm_learning>=6 flag for RLE2 (RUNA/RUNB) decoding.
+                 * cm_learning=6: multi-rANS + RLE2
+                 * cm_learning=7: single rANS + RLE2 */
+                if (genome.cm_learning >= 6 && genome.entropy_coder != 2) {
                     rle_dec = mcx_rle2_decode(buf2, bwt_target_size + 1024, stage_out, stage_size);
                 } else {
                     rle_dec = mcx_rle_decode(buf2, bwt_target_size + 1024, stage_out, stage_size);
@@ -1004,7 +1037,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 mcx_mtf_decode(buf2, rle_dec);
                 stage_out = buf2;
                 stage_size = rle_dec;
-            } else if (genome.cm_learning == 7 && genome.entropy_coder != 2) {
+            } else if (genome.cm_learning >= 6 && genome.entropy_coder != 2) {
                 /* STRIDE without BWT/MTF but with RLE2 (sparse zero-run case).
                  * Read rle32 size prefix, then decode RLE2. */
                 uint32_t rle32_val;

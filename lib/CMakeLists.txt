@@ -23,6 +23,7 @@ set(MCX_LIB_SOURCES
     preprocess/rle2.c
     babel/babel_dict.c
     entropy/adaptive_ac.c
+    entropy/multi_rans.c
 )
 
 # ─── Static library (always built) ──────────────────────────────────
