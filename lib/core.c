@@ -152,7 +152,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     analysis = mcx_analyze(in, src_size);
 
     /* ── Choose strategy based on level (and analysis for BWT levels) ── */
-    if (level <= 3) {
+    if (level == 25) {
+        /* Level 25: Force LZ24 strategy (16MB window) — used by multi-trial */
+        strategy = MCX_STRATEGY_LZ24;
+    } else if (level <= 3) {
         strategy = MCX_STRATEGY_LZ_FAST; /* v1.0: Fast LZ77 — always try, fall back in block loop */
     } else if (level <= 9) {
         strategy = MCX_STRATEGY_LZ_HC;   /* v1.0: Lazy LZ77 — always try, fall back in block loop */
@@ -683,15 +686,16 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     }
 
     /* ── Multi-trial for L20+: try alternative strategies, keep smallest ── */
-    if (level >= 20 && strategy != MCX_STRATEGY_STORE 
-        && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST) {
+    if (level >= 20 && level <= 22 && strategy != MCX_STRATEGY_STORE 
+        && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST
+        && strategy != MCX_STRATEGY_LZ24) {
         uint8_t* alt_buf = (uint8_t*)malloc(dst_cap);
         if (alt_buf) {
             /* Skip LZ-HC trial for text — BWT always wins on text */
             if (analysis.type != MCX_DTYPE_TEXT_ASCII &&
                 analysis.type != MCX_DTYPE_TEXT_UTF8 &&
                 analysis.type != MCX_DTYPE_STRUCTURED) {
-                /* Try LZ-HC (L9) — might beat BWT on binary data */
+                /* Try LZ-HC (L9, 64KB window) — might beat BWT on binary data */
                 size_t alt_size = mcx_compress(alt_buf, dst_cap, src, src_size, 9);
                 if (!mcx_is_error(alt_size) && alt_size < offset) {
                     memcpy(dst, alt_buf, alt_size);
