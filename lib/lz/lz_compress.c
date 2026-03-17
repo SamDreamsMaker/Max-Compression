@@ -224,8 +224,6 @@ size_t mcx_lz_compress(
  *  the longest match within the 64KB window.
  * ═══════════════════════════════════════════════════════════════════ */
 
-#define HC_CHAIN_DEPTH  8
-
 size_t mcx_lz_compress_hc(
     void* dst, size_t dst_cap,
     const void* src, size_t src_size, int level)
@@ -237,7 +235,8 @@ size_t mcx_lz_compress_hc(
     const uint8_t* match_limit = ip_end - MCX_LZ_LAST_LITERALS;
     const uint8_t* mflimit = ip_end - MCX_LZ_MIN_MATCH;
 
-    (void)level;
+    /* Scale chain depth with level: L4=4, L6=8, L9=16 */
+    int chain_depth = (level <= 4) ? 4 : (level <= 6) ? 8 : 16;
 
     if (src_size < MCX_LZ_MIN_MATCH + MCX_LZ_LAST_LITERALS) {
         op = lz_write_last_literals(op, op_end, ip, src_size);
@@ -272,7 +271,7 @@ size_t mcx_lz_compress_hc(
         size_t best_offset = 0;
 
         uint32_t candidate = prev;
-        for (int depth = 0; depth < HC_CHAIN_DEPTH && candidate > 0; depth++) {
+        for (int depth = 0; depth < chain_depth && candidate > 0; depth++) {
             size_t off = (size_t)(cur_pos - candidate);
             if (off > MCX_LZ_MAX_OFFSET) break; /* Outside window */
 
@@ -309,7 +308,7 @@ size_t mcx_lz_compress_hc(
             const uint8_t* best_ref2 = NULL;
             size_t best_off2 = 0;
 
-            for (int depth = 0; depth < HC_CHAIN_DEPTH && cand2 > 0; depth++) {
+            for (int depth = 0; depth < chain_depth && cand2 > 0; depth++) {
                 size_t off2 = (size_t)(next_pos - cand2);
                 if (off2 > MCX_LZ_MAX_OFFSET) break;
 

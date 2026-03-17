@@ -154,7 +154,7 @@ Single-threaded, Intel Xeon E-2386G @ 3.50GHz:
 | Level | Compress | Decompress | Use case |
 |-------|----------|------------|----------|
 | L3 (LZ) | 4-6 MB/s | 12-20 MB/s | Fast compression, moderate ratio |
-| L9 (LZ-HC) | 4-5 MB/s | 11-20 MB/s | Better ratio, still fast |
+| L9 (LZ-HC) | 3-5 MB/s | 11-20 MB/s | Hash chains, +3-8% vs L3 |
 | L12 (BWT) | 0.3-12 MB/s | 3-20 MB/s | High ratio, slower on text |
 | L20 (Smart) | 0.1 MB/s | 2.6-4.4 MB/s | Maximum ratio, multi-trial |
 
