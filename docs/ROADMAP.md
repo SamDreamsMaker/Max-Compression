@@ -29,6 +29,19 @@ MCX beats bzip2 on 10/12 Silesia files and xz on 9/12. Dominates on text and str
 | **Parallel compression** | pigz, pzstd | Nx speedup (no ratio gain) | Medium |
 | **SIMD optimization** | zstd, lz4 | 2-4x speed improvement | Medium |
 
+## Key Finding: Order-2 Context Model
+
+Entropy analysis on mozilla (50MB binary archive):
+- H0 = 6.22 bits/byte → 1.29x (current rANS achieves ~this)
+- H1 = 4.68 bits/byte → 1.71x (24.7% better than H0)
+- H2 = 2.51 bits/byte → 3.19x (59.7% better than H0!)
+- Current BWT L20: 2.92x
+- xz -9: 3.83x (≈ order 3-4)
+
+**An adaptive order-2 context model could beat BWT on binary data (3.19x vs 2.92x).**
+But static tables cost 14MB overhead (65536 contexts × ~70 active symbols each).
+Solution: adaptive coding (encoder/decoder build model on-the-fly, zero table overhead).
+
 ## Short-term Goals (v2.0)
 1. [ ] Improve LZ-HC with hash chains (better match finding)
 2. [ ] ARM/ARM64 BCJ filter (broadens platform support)
