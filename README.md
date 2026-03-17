@@ -146,6 +146,19 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 > xz wins on binary archives (sao, samba, mozilla) where LZMA2's large dictionary excels.
 > All results verified with roundtrip decompression.
 
+### Speed Benchmarks
+
+Single-threaded, Intel Xeon E-2386G @ 3.50GHz:
+
+| Level | Compress | Decompress | Use case |
+|-------|----------|------------|----------|
+| L3 (LZ) | 4-6 MB/s | 12-20 MB/s | Fast compression, moderate ratio |
+| L9 (LZ-HC) | 4-5 MB/s | 11-20 MB/s | Better ratio, still fast |
+| L12 (BWT) | 0.3-12 MB/s | 3-20 MB/s | High ratio, slower on text |
+| L20 (Smart) | 0.1 MB/s | 2.6-4.4 MB/s | Maximum ratio, multi-trial |
+
+> L20 is slower because it tries multiple strategies (BWT, LZ-HC, E8/E9) and keeps the best. Decompression is always fast regardless of level used for compression.
+
 Run the full suite yourself:
 
 ```bash
