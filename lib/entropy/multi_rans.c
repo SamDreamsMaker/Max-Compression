@@ -22,7 +22,7 @@
 #include "entropy.h"
 
 #define MT_GROUP_SIZE  50    /* bzip2 uses 50 — optimal for most files */
-#define MT_MAX_TABLES  4     /* 4 tables optimal for most files */
+#define MT_MAX_TABLES  6     /* Max tables to try (adaptive picks best of 4-5) */
 #define MT_PRECISION   MCX_RANS_PRECISION   /* 14-bit — matches rANS */
 #define MT_SCALE       MCX_RANS_SCALE
 #define MT_STATE_LOWER MCX_RANS_STATE_LOWER
@@ -57,6 +57,11 @@ static double group_cost(const uint8_t* data, size_t len, const uint16_t freq[25
     return cost;
 }
 
+/* Internal: compress with a specific number of tables */
+static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
+                                   const uint8_t* src, size_t src_size,
+                                   int max_tables);
+
 size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
                                 const uint8_t* src, size_t src_size)
 {
@@ -66,6 +71,27 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
     if (src_size < MT_GROUP_SIZE * 4) {
         return mcx_rans_compress(dst, dst_cap, src, src_size);
     }
+    
+    /* Adaptive: try 4 and 5 tables, keep the smaller result */
+    size_t sz4 = mt_compress_ntables(dst, dst_cap, src, src_size, 4);
+    
+    uint8_t* alt = (uint8_t*)malloc(dst_cap);
+    if (alt) {
+        size_t sz5 = mt_compress_ntables(alt, dst_cap, src, src_size, 5);
+        if (!mcx_is_error(sz5) && (mcx_is_error(sz4) || sz5 < sz4)) {
+            memcpy(dst, alt, sz5);
+            free(alt);
+            return sz5;
+        }
+        free(alt);
+    }
+    return sz4;
+}
+
+static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
+                                   const uint8_t* src, size_t src_size,
+                                   int max_tables)
+{
     
     int num_groups = (int)((src_size + MT_GROUP_SIZE - 1) / MT_GROUP_SIZE);
     
@@ -81,7 +107,7 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
     
     /* Step 2: Determine optimal number of tables via iterative refinement.
      * Start with the global distribution, then split. */
-    int n_tables = MT_MAX_TABLES;
+    int n_tables = max_tables;
     if (num_groups < n_tables) n_tables = num_groups;
     
     /* Initialize tables: divide groups into n_tables equal chunks */
