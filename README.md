@@ -49,7 +49,7 @@ cd build && ctest --output-on-failure
 | Level | Strategy | Pipeline | Use Case |
 |-------|----------|----------|----------|
 | 1–3   | LZ77 greedy + tANS | Fast LZ matching → 4-stream interleaved FSE | Real-time, streaming |
-| 4–9   | LZ77 lazy HC + tANS | Hash-chain match finder → FSE | General purpose |
+| 4–9   | LZ77 lazy HC + tANS | Depth-8 hash chains → lazy eval → FSE | General purpose |
 | 10–14 | BWT + MTF + RLE + rANS | Suffix-array BWT → Move-to-Front → Run-Length → rANS | High ratio |
 | 15–19 | BWT + MTF + RLE + CM-rANS | Same + Context-Mixing entropy coder | Maximum ratio (archival) |
 | **20+** | **🧠 Smart Mode** | **Auto-detect → optimal pipeline per block** | **Best overall** |
@@ -63,10 +63,11 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 | **Structured binary** (xls, fax, bmp, wav) | Stride auto-correlation (1–512) | Stride-Delta → rANS | Exploits fixed-width records |
 | **Text** (ASCII/UTF-8) | Byte distribution analysis | BWT + MTF + RLE2 + rANS | Global suffix sorting + exponential zero-runs |
 | **Tiny text** (< 1 KB) | Size threshold | LZ77 HC + tANS | Avoids BWT overhead on very small files |
-| **Generic binary** | Fallback | LZ24 (16 MB window) + FSE | Long-range matching |
+| **x86 executables** | E8/E9 opcode density ≥ 0.5% | E8/E9 BCJ filter → BWT pipeline | Converts relative→absolute addresses |
+| **Generic binary** | Fallback | Multi-trial (BWT vs LZ-HC) | Picks smaller result per file |
 | **Incompressible** | Entropy > 7.5 bits/byte | STORE | No expansion |
 
-## Benchmarks (v1.3.1)
+## Benchmarks (v1.9.1)
 
 ### Canterbury Corpus — MCX vs The Competition
 

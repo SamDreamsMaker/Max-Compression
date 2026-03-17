@@ -224,7 +224,7 @@ size_t mcx_lz_compress(
  *  the longest match within the 64KB window.
  * ═══════════════════════════════════════════════════════════════════ */
 
-#define HC_CHAIN_DEPTH  8   /* Max candidates to check per position */
+#define HC_CHAIN_DEPTH  8
 
 size_t mcx_lz_compress_hc(
     void* dst, size_t dst_cap,
