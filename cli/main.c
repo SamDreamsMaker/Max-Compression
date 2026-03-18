@@ -33,6 +33,7 @@ static void print_usage(void)
         "  mcx info       <input.mcx>\n"
         "  mcx cat        <input.mcx>   # decompress to stdout\n"
         "  mcx bench      <input>       # benchmark all levels\n"
+        "  mcx test                     # run self-tests\n"
         "  mcx --version\n"
         "  mcx --help\n"
         "\n"
@@ -582,6 +583,44 @@ int main(int argc, char* argv[])
             return 1;
         }
         return cmd_bench(argv[2]);
+
+    } else if (strcmp(argv[1], "test") == 0) {
+        printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
+        int pass = 0, fail = 0;
+        int levels[] = {1, 3, 6, 9, 12, 20, 24, 26};
+        int n_levels = sizeof(levels) / sizeof(levels[0]);
+        
+        /* Test pattern: repeated text */
+        const char* text = "The quick brown fox jumps over the lazy dog. ";
+        size_t tlen = strlen(text);
+        uint8_t src[4096];
+        for (size_t i = 0; i < sizeof(src); i++)
+            src[i] = text[i % tlen];
+        
+        uint8_t comp[8192], dec[4096];
+        
+        for (int i = 0; i < n_levels; i++) {
+            int lv = levels[i];
+            size_t csz = mcx_compress(comp, sizeof(comp), src, sizeof(src), lv);
+            if (mcx_is_error(csz)) {
+                printf("  L%-2d  FAIL (compress error)\n", lv);
+                fail++;
+                continue;
+            }
+            size_t dsz = mcx_decompress(dec, sizeof(dec), comp, csz);
+            if (mcx_is_error(dsz) || dsz != sizeof(src) || memcmp(src, dec, sizeof(src)) != 0) {
+                printf("  L%-2d  FAIL (roundtrip error)\n", lv);
+                fail++;
+                continue;
+            }
+            printf("  L%-2d  OK  %zu → %zu (%.2fx)\n", lv, sizeof(src), csz,
+                   (double)sizeof(src) / csz);
+            pass++;
+        }
+        
+        printf("\n%d/%d passed%s\n", pass, pass + fail,
+               fail ? " — FAILURES DETECTED" : " — all OK");
+        return fail > 0 ? 1 : 0;
 
     } else {
         fprintf(stderr, "Unknown command: '%s'\n\n", argv[1]);
