@@ -252,7 +252,10 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
     if (window_log > 26) window_log = 26; /* 64MB max */
     
     uint32_t window_size = 1u << window_log;
-    int hash_log = (window_log < 18) ? window_log : 18; /* max 256K hash */
+    /* Scale hash table with window: min(window_log+2, 22) for good distribution */
+    int hash_log = window_log + 2;
+    if (hash_log > 22) hash_log = 22; /* 4M entries max (16MB) */
+    if (hash_log < 16) hash_log = 16; /* 64K entries min */
     
     BTMatchFinder bt;
     if (bt_init(&bt, src, src_size, window_size, hash_log, bt_depth) != 0)

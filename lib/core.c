@@ -836,8 +836,11 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 }
             }
             /* Try LZRC (L26) — v2.0 LZ+RC with 16MB window.
-             * Best on binary archives (mozilla), skip on pure text (BWT always wins). */
-            if (analysis.type != MCX_DTYPE_TEXT_ASCII &&
+             * Best on binary archives, skip on pure text (BWT always wins).
+             * Limit to ≤16MB — BT match finder uses ~8 bytes/position, 
+             * 50MB file with 16MB window = 128MB tree + slow. */
+            if (src_size <= (16 << 20) &&
+                analysis.type != MCX_DTYPE_TEXT_ASCII &&
                 analysis.type != MCX_DTYPE_TEXT_UTF8) {
                 size_t alt_lzrc = mcx_compress(alt_buf, dst_cap, src, src_size, 26);
                 if (!mcx_is_error(alt_lzrc) && alt_lzrc < offset) {
