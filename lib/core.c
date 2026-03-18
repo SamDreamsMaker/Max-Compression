@@ -349,7 +349,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 size_t aac_cap = lz_size + lz_size / 4 + 1024;
                 uint8_t* aac_buf = (uint8_t*)malloc(aac_cap + 1);
                 size_t aac_size = 0;
-                if (aac_buf && level >= 9) { /* Only for L9+ (AAC decompress is slow) */
+                if (aac_buf && level >= 7) { /* AAC for L7+: ~5% better ratio, slower decompress */
                     aac_size = mcx_adaptive_ac_compress(aac_buf + 1, aac_cap, lz_buf, lz_size);
                     if (aac_size > 0) aac_buf[0] = 0xAE; /* LZ16+AAC */
                 }
