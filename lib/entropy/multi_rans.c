@@ -528,15 +528,16 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
     size_t bits_pos = 0;
     size_t max_bits = (src_size - pos) / 2;
     
+    /* Optimized decode loop: avoid per-symbol division and branch */
+    int g = 0;
+    int g_remaining = MT_GROUP_SIZE;
+    int t = assign[0];
+    /* Determine initial state parity */
+    int use_st2 = (orig_size - 1) & 1;
+    
     for (size_t i = 0; i < orig_size; i++) {
-        int g = (int)(i / MT_GROUP_SIZE);
-        int t = assign[g];
-        
-        /* Select state: must mirror encoder's ((src_size - i) & 1) pattern.
-         * Encoder at position i uses state ((src_size - i) & 1).
-         * For decode position i, the matching encoder position was also i,
-         * so use ((orig_size - 1 - i) & 1) to get the same state. */
-        uint32_t* st = ((orig_size - 1 - i) & 1) ? &state2 : &state1;
+        uint32_t* st = use_st2 ? &state2 : &state1;
+        use_st2 ^= 1;
         
         uint16_t slot = (uint16_t)(*st & (MT_SCALE - 1));
         uint8_t sym = lookup[t][slot];
@@ -547,11 +548,18 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
         *st = f * (*st >> MT_PRECISION) + slot - cf;
         
         /* Renormalize */
-        while (*st < MT_STATE_LOWER && bits_pos < max_bits) {
+        if (*st < MT_STATE_LOWER && bits_pos < max_bits) {
             *st = (*st << 16) | bits[bits_pos++];
         }
         
         dst[i] = sym;
+        
+        /* Update group counter (avoids division) */
+        if (--g_remaining == 0) {
+            g++;
+            g_remaining = MT_GROUP_SIZE;
+            if (g < num_groups) t = assign[g];
+        }
     }
     
     free(assign);
