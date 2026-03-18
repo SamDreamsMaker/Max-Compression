@@ -562,8 +562,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                         else if (strategy == MCX_STRATEGY_LZ_HC) eff_level = 9;
                     }
                     if (level >= 20 && strategy == MCX_STRATEGY_DEFAULT) {
-                        /* Text in smart mode: force optimal genome.
-                         * Skip the optimizer — we know the answer:
+                        /* Smart mode: force optimal genome.
                          * BWT + MTF + RLE2 + rANS, no delta. */
                         genome.use_bwt = 1;
                         genome.use_mtf_rle = 1;
@@ -575,9 +574,20 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     }
                 }
                 
+            /* Fix genome optimizer: force BWT + MTF at L10-L14.
+             * The optimizer sometimes picks bwt=0 (raw rANS) which defeats
+             * the purpose of L10+ levels. ooffice went from 1.20x to 2.18x. */
+            if (level >= 10 && level <= 14 && strategy == MCX_STRATEGY_DEFAULT) {
+                if (!genome.use_bwt) {
+                    genome.use_bwt = 1;
+                    genome.use_mtf_rle = 1;
+                }
+            }
+
             /* Fix genome optimizer delta bug: if the optimizer picked delta=1
-             * but data is text (< 5% bytes >= 128), disable delta.
-             * Delta on text destroys BWT-friendly patterns. */
+             * but data is mostly text-like (< 5% bytes >= 128), disable delta.
+             * Delta on text/low-entropy data destroys BWT-friendly patterns.
+             * But some binary data (like kennedy.xls) genuinely benefits from delta. */
             if (genome.use_delta && genome.use_bwt) {
                 size_t high128 = 0;
                 size_t check_len = block_in_size > 4096 ? 4096 : block_in_size;
