@@ -345,6 +345,17 @@ size_t mcx_lz_compress_hc(
             }
         }
 
+        /* Backward extension: extend match into literal run */
+        {
+            const uint8_t* bref = (const uint8_t*)src + ((uint32_t)(ip - (const uint8_t*)src) - best_offset);
+            while (ip > anchor && bref > (const uint8_t*)src &&
+                   ip[-1] == bref[-1]) {
+                ip--;
+                bref--;
+                best_len++;
+            }
+        }
+
         /* Write sequence */
         op = lz_write_sequence(op, op_end, anchor, (size_t)(ip - anchor),
                                (uint16_t)best_offset, best_len);
