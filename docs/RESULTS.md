@@ -85,15 +85,23 @@
 | ooffice | — | 3.1 | — | 3.2 |
 | samba | — | 6.3 | — | 6.3 |
 
-## LZRC v2.0 Prototype
+## LZRC v2.0 (Level 26)
 
-Preliminary results with binary tree match finder + range coder:
+Binary tree match finder (16 MB window) + adaptive range coder + lazy evaluation + 4 rep distances + LZMA-style matched literal coding.
 
-| File | L20 (BWT) | LZRC (16 MB window) | Change |
-|------|-----------|---------------------|--------|
-| mozilla | 2.93× | **3.07×** | **+5%** |
-| samba | 5.03× | 4.90× | -3% |
-| ooffice | 2.53× | 2.16× | -15% |
-| dickens | 4.07× | 3.13× | -23% |
+| File | L20 (BWT) | L26 (LZRC) | Change | Compress Speed |
+|------|-----------|------------|--------|----------------|
+| alice29 | 3.53× | 2.99× | -15% | 0.8 MB/s |
+| fields.c | 3.39× | 3.66× | **+8%** | 0.4 MB/s |
+| grammar | 2.46× | 2.98× | **+21%** | 0.5 MB/s |
+| sum | 2.84× | 3.38× | **+19%** | 1.6 MB/s |
+| ooffice | 2.53× | 2.24× | -11% | 0.9 MB/s |
+| dickens | 4.07× | 3.19× | -22% | 0.7 MB/s |
+| samba | 5.03× | 5.06× | **+0.6%** | 0.9 MB/s |
+| mozilla | 2.93× | **3.22×** | **+10%** | 0.9 MB/s |
 
-LZRC outperforms BWT on mozilla (binary archive). Multi-trial integration will select the best strategy per file.
+**Key findings:**
+- LZRC **wins on binary** (mozilla +10%, sum +19%, grammar +21%, samba +0.6%)
+- BWT **wins on text** (alice29, dickens — BWT exploits long-range context better)
+- Multi-trial at L20 tries both and keeps the smallest result per block
+- mozilla 3.22× is the **best LZ result ever** for MCX, approaching xz's 3.85×

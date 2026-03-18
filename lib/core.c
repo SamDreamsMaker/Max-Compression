@@ -22,6 +22,7 @@
 #include "babel/babel_transform.h"
 #include "babel/babel_stride.h"
 #include "entropy/adaptive_ac.h"
+#include "preprocess/preprocess.h"
 #include "lz/lzrc.h"
 
 /* RLE2 (RUNA/RUNB) */
