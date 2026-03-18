@@ -22,7 +22,7 @@ set(MCX_LIB_SOURCES
     babel/babel_stride.c
     preprocess/rle2.c
 preprocess/e8e9.c
-    babel/babel_dict.c
+    # babel/babel_dict.c  # Moved to experimental/
     entropy/adaptive_ac.c
     entropy/multi_rans.c
 )
