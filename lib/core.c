@@ -215,7 +215,8 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             /* Generic binary / unknown:
              * L20+: Use LZRC for binary data (3.22x vs 2.93x on mozilla).
              * Lower levels: BWT (LZRC only available at L26+).
-             * Multi-trial at L20 will also try BWT and keep best. */
+             * Multi-trial at L20 will also try BWT and keep best.
+             * For files > 16MB: use HC match finder (faster, only ~2% worse). */
             if (level >= 20 && src_size >= 1024) {
                 strategy = MCX_STRATEGY_LZRC;
             } else {
@@ -487,7 +488,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                                                         in + src_offset, block_src_size,
                                                         wlog, 8);
                 } else {
-                    /* Level 26: BT match finder (best ratio) */
+                    /* Level 26 or L20 small files: BT match finder (best ratio) */
                     lzrc_size = mcx_lzrc_compress(lzrc_buf + 1, lzrc_cap,
                                                     in + src_offset, block_src_size,
                                                     wlog, 32);
