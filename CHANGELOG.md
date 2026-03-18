@@ -1,100 +1,127 @@
 # Changelog
 
-All notable changes to MaxCompression are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+All notable changes to MaxCompression are documented in this file.
 
----
+## [1.9.3] — 2026-03-18
 
-## [1.1.0] - 2026-02-26
+### Added
+- **LZRC v2.0 prototype** — LZ + range coder with binary tree match finder (16 MB window). mozilla: 3.07× (best LZ result, +5% vs BWT L20).
+- Adaptive arithmetic coding (AAC) on LZ output at L9+ — order-1 model with Fenwick-tree accelerated decoding.
+- 64 MB block size — up from 32 MB. webster +2.1%, mozilla +0.3%.
 
-### New Features
+### Fixed
+- **L12 genome optimizer** — was skipping BWT on binary files. Silesia L12 total: 2.91× → 4.16× (+43%). nci: 3.29× → 25.65× (+680%).
+- CLI version string now derived from header constants (was hardcoded).
+- Fenwick tree decoder — merged `find` + `query` into single tree walk. Decompress +2–5%.
 
-- **Multi-stream LZ77+FSE engine** (`lib/lz/lz_multistream.c`):
-  Separates LZ77 output into 4 independent FSE-coded streams (literals, literal
-  lengths, match lengths, variable-length offsets). Each stream has its own
-  frequency table → better entropy approximation → improved compression ratio.
-  Accessible via `mcx_lzfse_compress` / `mcx_lzfse_decompress`.
+### Changed
+- AAC only active at L9+ (was L6+). L6 keeps FSE for faster decompression (19 MB/s vs 3 MB/s).
+- Multi-rANS speed: precomputed log2 LUT + sparse symbol lists + uint16 freqs. 41.5s → 12.1s on mr (-71%).
 
-- **Repcode stack** (inside multi-stream engine):
-  Last 3 match offsets are cached (`rep[3] = {1, 4, 8}`). When the next match
-  reuses a recent offset, a single-byte repcode (0/1/2) is emitted instead of a
-  full offset. Effective on structured and text data.
+## [1.9.2] — 2026-03-18
 
-- **SIMD SSE4.1 dual-hash match finding**:
-  `mcx_simd_hash_dual()` computes two independent Knuth hashes in a single
-  `_mm_mullo_epi32` pass. Both hash tables are probed and updated every step;
-  the longer (or closer) match is selected. Cache-line prefetch (`MCX_PREFETCH`)
-  issued 16 positions ahead hides L2 latency.
+### Added
+- **Adaptive arithmetic coding** (AAC) — order-1 AC for LZ output. kennedy L9: 4.87× → 9.04× (+86%).
+- E8/E9 x86 filter — auto-detects executables (≥0.5% E8/E9 opcodes). ooffice: 2.18× → 2.53× (+16%).
 
-- **Real tANS entropy coder** (`lib/entropy/fse.c`):
-  Replaced the former canonical Huffman stub with a complete table-based
-  Asymmetric Numeral Systems (tANS / FSE) implementation:
-  - `mcx_fse_normalize_freq`: normalises symbol counts to TABLE_SIZE = 1024
-  - `mcx_fse_build_enc_table` / `mcx_fse_build_dec_table`: spread-based table
-    construction matching the Yann Collet FSE reference layout
-  - Encoder/decoder loops with bit-level arithmetic
-  - **Magic byte 0xFD** distinguishes new tANS format from legacy Huffman
+## [1.9.1] — 2026-03-17
 
-- **4-stream interleaved tANS**:
-  Four independent ANS states (`state[4]`) encode/decode in round-robin. The
-  resulting instruction-level parallelism gives a 2-4x decompression throughput
-  improvement over single-state tANS. **Magic byte 0xFE**.
+### Added
+- LZ-HC hash chains (depth 8/16). alice29 L9: 2.14× → 2.31× (+8%).
+- CLI uses one-shot API for files ≤256 MB. alice29 CLI: 1.91× → 3.53×.
 
-### Bug Fixes
+### Changed
+- Block size: 32 MB (up from 16 MB).
 
-- **Fitness function** (`lib/optimizer/genetic.c`): was computing `p * (1/p) = 1`
-  instead of `p * log2(1/p)`. The genetic optimizer now correctly maximises
-  Shannon entropy and produces meaningful genome selection.
+## [1.9.0] — 2026-03-17
 
-- **HIGH_ENTROPY strategy ordering** (`lib/core.c`): the incompressibility
-  early-exit was placed before the level selector, silently forcing STORE even at
-  L1-9. Moved after the level check so LZ levels always attempt compression (LZ77
-  can exploit long-range periodicity invisible to byte histograms).
+### Added
+- **E8/E9 x86 filter** with auto-detection and multi-trial.
+- 32 MB blocks.
 
-- **LZ77-raw block type 0xAB** (`lib/core.c`): when FSE does not improve on the
-  LZ77 output the compressor previously discarded the LZ77 result and stored raw
-  original data. It now stores the LZ77 output directly (block type 0xAB), and
-  the decompressor handles it accordingly.
+## [1.8.1] — 2026-03-17
 
-- **`mcx_lz_fast_ctx` struct alignment** (`include/maxcomp/maxcomp.h`): fixed
-  `dict` field declaration to match the dual-probe layout in `mcx_lz_fast.h`.
+### Added
+- Multi-rANS speed optimizations: precomputed LUT, sparse active lists, uint16 group freqs. Total: 41.5s → 12.1s (-71%).
 
-- **Debug file dumps removed** (`lib/model/context.c`): hardcoded
-  `fopen("c:\\MaxCompression\\good_tables.bin", ...)` calls are gone.
+## [1.8.0] — 2026-03-17
 
-- **Version string aligned**: `mcx_version_string()` now returns `"1.1.0"` to
-  match `MCX_VERSION_MAJOR/MINOR/PATCH` and `CMakeLists.txt`.
+### Added
+- Sequential K-means initialization for multi-table rANS. alice29: 43268 → 43144 bytes. **Beats bzip2** (43207).
+- 15 K-means iterations (was 10).
 
-- **`bench_fast.c` timer** (`tests/bench_fast.c`): replaced `clock()` (15 ms
-  resolution on Windows) with `QueryPerformanceCounter` for accurate MB/s figures.
+## [1.7.8] — 2026-03-17
 
-### New Tests
+### Added
+- **Varint frequency tables** for multi-rANS. Saves ~300 bytes per block. kennedy: 46.92× → 48.73×.
+- Adaptive table count (4, 5, or 6 tables, keeps smallest).
 
-- `tests/test_lzfse.c`: 6 round-trip scenarios for the multi-stream engine
-  (zeros, cycling pattern, repeated text, structured+random, small 32B, 512K text)
-- `tests/test_bwt_levels.c`: validates L3/L9/L10/L15/L22 on text, binary, and
-  zeros; confirms BWT ratios (L15 text: 3.52x) and correct STORE for
-  incompressible data at BWT levels.
-- `tests/bench_fast.c`: native speed harness for `mcx_lz_fast` with QPC timing.
+## [1.7.7] — 2026-03-17
 
-### Block Type Reference (LZ path, `core.c`)
+### Added
+- Bitmap table format for multi-rANS (32-byte bitmap + varint freqs per active symbol).
 
-| Byte | Meaning |
-|------|---------|
-| `0x00` | STORE — neither LZ nor FSE compressed |
-| `0xAA` | LZ77 output compressed with FSE |
-| `0xAB` | LZ77 output stored raw (FSE couldn't improve) |
+## [1.7.5] — 2026-03-17
 
----
+### Changed
+- Block size: 16 MB (up from 8 MB). Beats bzip2 on 11/12 Silesia files.
 
-## [1.0.0] - 2026-02-24 (initial release)
+## [1.7.1] — 2026-03-17
 
-- LZ77 greedy compressor (L1-3) and lazy HC compressor (L4-9)
-- BWT + MTF + RLE + rANS pipeline (L10-14)
-- CM-rANS context model (L15-22)
-- SA-IS Burrows-Wheeler transform
-- Genetic optimizer for pipeline genome selection
-- Block-parallel compression via OpenMP
-- CLI tool (`mcx compress` / `mcx decompress`)
-- Python (ctypes) and Rust (FFI) bindings
-- Calgary / Canterbury / Silesia benchmark suite
+### Fixed
+- Route ALL data types to BWT first (binary was incorrectly routed to LZ24). xml: 6.80× → 12.45× (+83%).
+
+## [1.7.0] — 2026-03-17
+
+### Fixed
+- Text routing: removed 4 MB → LZ24 rule. dickens: 2.21× → 3.69× (+67%).
+
+## [1.6.0] — 2026-03-17
+
+### Added
+- **Multi-table rANS** — 4 frequency tables with K-means clustering, group size 50. Near bzip2 on text.
+
+## [1.5.1] — 2026-03-17
+
+### Added
+- RLE2 on stride-delta output. ptt5: 8.83× → 10.19× (+15%).
+
+## [1.5.0] — 2026-03-16
+
+### Added
+- **Delta-fix** — forced `delta=0` for text. +13–35% on ALL text files.
+- **Auto-RLE2** for all BWT levels (L10+). L12 = L20 on text.
+- BWT threshold lowered 8 KB → 1 KB.
+- rANS precision bumped to 14-bit.
+
+## [1.4.0] — 2026-03-16
+
+### Added
+- **Stride-Delta + BWT + RLE2 pipeline**. kennedy.xls: 46.91× (2.2× better than xz).
+
+## [1.3.0] — 2026-03-16
+
+### Added
+- **RLE2 (RUNA/RUNB)** — exponential zero-run encoding. +5–7% on text.
+- Smart Mode (L20+) with auto data-type routing.
+
+## [1.2.0] — 2026-03-16
+
+### Added
+- LZ24 (16 MB window, hash chains, lazy evaluation).
+- Stride-delta transform with auto-detection.
+
+## [1.1.0] — 2026-03-14
+
+### Added
+- 4-stream interleaved tANS (+64% decompress speed).
+- CM-rANS (order-1 context-mixing entropy coder).
+
+## [1.0.0] — 2026-03-12
+
+### Added
+- Initial release.
+- LZ77 (greedy + lazy), BWT (SA-IS), tANS/FSE, rANS.
+- Genetic pipeline optimizer.
+- Multi-stream LZ77 with repcode stack.
+- SIMD SSE4.1 hash computation.

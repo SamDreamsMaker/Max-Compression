@@ -1,97 +1,102 @@
-# MCX v2.0 Design — Closing the Gap to xz/LZMA2
+# MCX v2.0 Design — LZ + Context-Mixed Range Coder
 
-## Current State (v1.9.3)
+**Status:** In development  
+**Goal:** Close the compression gap with xz/LZMA2 on binary data
 
-MCX beats bzip2 on 100% of tested files and xz on 75%.
-The remaining gaps are on binary/mixed data:
-- mozilla: 2.93× vs xz 3.83× (-24%)
-- samba: 5.03× vs xz 5.74× (-12%)
-- sao: 1.48× vs xz 1.64× (-10%)
+## Motivation
 
-## Why xz Wins on Binary
+MCX v1.x uses BWT for high-ratio compression. BWT excels on text and structured data, but has an inherent limitation on binary archives: it requires the entire block to be sorted, limiting the effective "context" to the block size. LZMA2 (used by xz) uses a sliding window up to 64 MB with context-mixed entropy coding, which is fundamentally better for binary data with long-range repetitions.
 
-LZMA2 has three structural advantages:
+**Current gaps (v1.9.3 vs xz -9):**
+- mozilla: 2.93× vs 3.83× (-24%)
+- samba: 5.03× vs 5.74× (-12%)
+- sao: 1.48× vs 1.64× (-10%)
 
-### 1. Large Dictionary (64MB+)
-- LZMA2 uses a sliding window up to 64MB-1.5GB
-- Matches references up to 1.5GB apart
-- MCX BWT is limited to block size (64MB) — but this is comparable
+## Architecture
 
-### 2. Context-Mixed Literal Coding
-- After a match, LZMA2 predicts literals using:
-  - Previous byte
-  - Match distance (literals near recently-matched positions are correlated)
-  - Position context
-- MCX's AAC only uses previous byte (order-1)
-- This is worth ~5-15% on binary data
+```
+Input → Binary Tree Match Finder (16 MB+ window)
+              │
+              ├─ Match: encode (length, distance) with adaptive models
+              │   ├─ Length: bit-tree coding (4–273)
+              │   ├─ Distance: slot-based (64 slots + extra bits + alignment)
+              │   └─ Rep match: reuse last distance (1 bit)
+              │
+              └─ Literal: context-dependent byte coding
+                  └─ 16 contexts (prev_byte >> 5, after_match flag)
+              │
+              ▼
+         Adaptive Range Coder (Subbotin-style, carry-based)
+```
 
-### 3. Match-Length/Distance Context
-- LZMA2 uses adaptive probability models for match lengths and distances
-- Separate probability tables based on match position and length range
-- MCX uses fixed-width fields (2-byte offsets, varint lengths)
+## Components
 
-## v2.0 Architecture Options
+### Binary Tree Match Finder (`lib/lz/bt_match.c`)
+- Position-indexed binary search tree
+- O(log n) match finding per position
+- Configurable window (up to 64 MB) and tree depth
+- Hash table for 4-byte prefix → tree root
 
-### Option A: LZ + Context Mixer (LZMA2-like)
-Replace the LZ+AAC pipeline with a proper context-mixed LZ codec:
-- **Pros**: Directly addresses the gap, proven approach
-- **Cons**: Major rewrite, months of work, reinventing LZMA2
-- **Estimated gain**: +15-25% on binary files
+### Range Coder (`lib/entropy/range_coder.c`)
+- 32-bit range, carry-based output
+- Bit-tree encoding for all symbols
+- 11-bit probability with shift-5 adaptation
 
-### Option B: PPM (Prediction by Partial Matching)
-Context-based byte prediction with escape mechanism:
-- **Pros**: Simple concept, excellent on text
-- **Cons**: Slow, high memory, doesn't help binary much
-- **Estimated gain**: +5% text, 0% binary
+### Distance Model (`lib/entropy/lz_models.h`)
+- 64 distance slots (covers 64 MB+ offsets)
+- Slots 0–3: no extra bits
+- Slots 4–17: 1–6 context-coded extra bits
+- Slots 18+: direct bits (fixed 50/50) + 4 alignment bits
 
-### Option C: Asymmetric Numeral Systems + Context Mixing
-Keep the ANS backend but add:
-1. Order-2/3 context model for BWT output → better than multi-rANS
-2. Match-dependent literal prediction for LZ output
-- **Pros**: Incremental improvement, keeps existing architecture
-- **Cons**: Limited gains (~5%)
+### LZRC Compressor (`lib/lz/lzrc.c`)
+- Complete encoder + decoder with verified roundtrip
+- Rep match support (last distance reuse)
+- Context: 256 literal contexts + 16 post-match contexts
 
-### Option D: Neural Network Compression (cmix-like)
-Ensemble of context models + mixing:
-- **Pros**: Potentially SOTA compression ratio
-- **Cons**: Extremely slow (KB/s), impractical for general use
+## Prototype Results
 
-## Recommended Path: Option A (LZ + Context Mixer)
+With 1 MB window (w=20) and 16 MB window (w=24):
 
-### Phase 1: Range Coder Foundation (2 weeks)
-- Implement byte-aligned range coder (32-bit state)
-- Bit-level encoding with adaptive binary models
-- Probability update with exponential smoothing
+| File | L9 (AAC) | L20 (BWT) | LZRC v2.0 | xz -9 |
+|------|----------|-----------|-----------|-------|
+| mozilla | 2.60× | 2.93× | **3.07×** | 3.83× |
+| samba | 3.64× | 5.03× | 4.90× | 5.74× |
+| ooffice | 1.86× | 2.53× | 2.16× | 2.54× |
+| dickens | 2.34× | 4.07× | 3.13× | 3.60× |
+| alice29 | 2.34× | 3.53× | 2.93× | 3.14× |
 
-### Phase 2: LZ Match Finder (3 weeks)
-- Binary tree match finder (O(log n) per position)
-- Optional hash chains for speed mode
-- 64MB-256MB sliding window
+**Key finding:** LZRC beats L20 BWT on mozilla (+5%) — the first time any LZ approach in MCX outperforms BWT on a large binary file.
 
-### Phase 3: Context-Mixed Literal Coding (4 weeks)
-- Literal coding using:
-  - High nibble/low nibble split
-  - Match distance context
-  - Previous byte context
-  - Position-dependent context
-- Context mixing via logistic mixing (weighted average in log domain)
+## Development Phases
 
-### Phase 4: Distance/Length Models (2 weeks)
-- Distance slots (like LZMA2's 64 distance slots)
-- Distance alignment bits
-- Length encoding with context-dependent models
+### Phase 1: Foundation ✅
+- [x] Range coder (Subbotin-style, carry-based)
+- [x] Bit-tree encoding/decoding
+- [x] Distance slot model (64 slots)
+- [x] Basic length model (3-tier: short/medium/extra)
 
-### Phase 5: Integration & Testing (3 weeks)
-- New block type for LZ-CM output
-- Multi-trial: L20 tries BWT, LZ-CM, LZ-AAC, keeps best
-- Full corpus testing
+### Phase 2: Match Finder ✅
+- [x] Binary tree match finder
+- [x] Configurable window size (up to 64 MB)
+- [x] Hash-based initial lookup + tree walk
 
-### Total: ~3 months of focused work
+### Phase 3: Integration ✅
+- [x] LZRC encoder with rep matches
+- [x] LZRC decoder with full roundtrip verification
+- [x] Context-dependent literal coding
 
-## Alternative Quick Wins (v1.9.x)
+### Phase 4: Optimization (Next)
+- [ ] Optimal parsing (price-based match/literal decisions)
+- [ ] Multiple rep distances (rep0, rep1, rep2, rep3)
+- [ ] Match-distance-dependent literal contexts
+- [ ] Lazy evaluation with 2-byte lookahead
 
-These could be done before v2.0:
-1. **ELF/Alpha BCJ filter**: Like E8/E9 but for ELF binaries → helps mozilla
-2. **Parallel BWT**: Multi-threaded SA-IS for faster compression
-3. **divsufsort integration**: 2-3× faster BWT construction
-4. **WASM port**: Browser-based compression/decompression
+### Phase 5: Integration into MCX
+- [ ] New block type for LZRC data
+- [ ] Multi-trial at L20: try BWT, LZRC, keep smaller
+- [ ] E8/E9 filter before LZRC for executables
+
+### Phase 6: Advanced (Future)
+- [ ] Context-mixed literal coding (use match distance as context)
+- [ ] Aligned offset coding for specific distance ranges
+- [ ] Position-dependent models for heterogeneous data
