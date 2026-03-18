@@ -2,6 +2,32 @@
 
 All notable changes to MaxCompression are documented in this file.
 
+## [2.0.0] — 2026-03-18
+
+### Added
+- **LZRC v2.0 engine** — LZ + adaptive range coder with binary tree match finder (16 MB window).
+  - Lazy evaluation: universal +1–5% improvement.
+  - 4 rep distances (rep0–rep3): cheaper repeat match encoding.
+  - LZMA-style matched literal coding: bit-level prediction from match reference.
+  - Integrated as block type `0xB0` (L26) + multi-trial at L20.
+  - Binary data auto-routed to LZRC at L20+ — mozilla: 2.93× → **3.22×** (+10%).
+- Smart routing: text→BWT, binary→LZRC, stride→delta, x86→E8/E9.
+- GitHub Actions CI: Linux (GCC + Clang), macOS, Windows.
+- Automated release workflow with pre-built binaries.
+- `CONTRIBUTING.md`, `docs/DESIGN.md`, Doxyfile for API documentation.
+- Python bindings packaging (`setup.py`).
+- SemVer tagging (`v1.9.3`, `v2.0.0`).
+
+### Changed
+- **Silesia total: 4.21× → 4.35×** (+3.3%) thanks to LZRC routing.
+- MCX L20 now beats xz on **7/12 Silesia files** (was 6/12).
+- Total competitive with xz -9 (~4.35× vs ~4.34×).
+
+### Fixed
+- Cross-platform portability: `mcx_ctzll()` for MSVC, optional OpenMP.
+- Implicit function declarations fixed for Clang strict mode.
+- `_GNU_SOURCE` added to `bench_fast.c` for `CLOCK_MONOTONIC`.
+
 ## [1.9.3] — 2026-03-18
 
 ### Added
