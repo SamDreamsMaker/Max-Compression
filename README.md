@@ -142,18 +142,18 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 | ooffice | 6 MB | 1.99× | 2.15× | 2.54× | 1.86× | **2.18×** | **2.53×** 🆕 | +18% | -0.4% |
 | reymont | 6.5 MB | 3.64× | 5.32× | 5.03× | **3.00×** | **5.93×** | **5.93×** 🏆 | +11% | +18% |
 | sao | 7 MB | 1.36× | 1.47× | 1.64× | 1.34× | **1.47×** | **1.48×** | +1% | -10% |
-| x-ray | 8 MB | 1.40× | 2.09× | 1.89× | 1.40× | **2.15×** | **2.05×** | -2% | +8% |
+| x-ray | 8 MB | 1.40× | 2.09× | 1.89× | 1.40× | **2.15×** | **2.15×** 🏆 | +3% | +14% |
 | mr | 10 MB | 2.71× | 4.08× | 3.63× | **2.78×** | **4.28×** | **4.28×** 🏆 | +5% | +18% |
 | osdb | 10 MB | 2.71× | 3.60× | 3.54× | **2.85×** | **4.04×** | **4.04×** 🏆 | +12% | +14% |
 | nci | 33 MB | 11.23× | 18.51× | 19.30× | **9.58×** | **25.65×** | **25.65×** 🏆 | +39% | +33% |
 | samba | 21 MB | 4.00× | 4.75× | 5.74× | **3.64×** | **5.03×** | **5.03×** | +6% | -12% |
-| webster | 40 MB | 3.44× | 4.80× | 4.94× | **2.98×** | **5.69×** | **5.69×** 🏆 | +19% | +15% |
-| mozilla | 50 MB | 2.70× | — | 3.83× | **2.60×** | **2.92×** | **2.92×** | — | -24% |
-| **TOTAL** | **202 MB** | — | — | — | **2.93×** | **4.16×** | **4.18×** | — | — |
+| webster | 40 MB | 3.44× | 4.80× | 4.94× | **2.98×** | **5.69×** | **5.81×** 🏆 | +21% | +18% |
+| mozilla | 50 MB | 2.70× | — | 3.83× | **2.60×** | **2.93×** | **2.93×** | — | -24% |
+| **TOTAL** | **202 MB** | — | — | — | **2.93×** | **4.16×** | **4.21×** | — | — |
 
 > **v1.9.2 L12 fix:** Genome optimizer was skipping BWT on binary files. Forced BWT at L10-L14 → Silesia L12 total: 2.91× → **4.16×** (+43%), nearly matching L20 (4.18×)!
-> **MCX L20 beats gzip -9 on 12/12 files (100%), bzip2 -9 on 10/12 (83%), xz -9 on 9/12 (75%).**
-> Only x-ray (-2%) and sao (-1%) remain behind bzip2.
+> **MCX L20 beats gzip -9 on 12/12 files (100%), bzip2 -9 on 11/12 (92%), xz -9 on 9/12 (75%).**
+> Only sao (-1%) remains behind bzip2. x-ray now beats bzip2 (+3%)!
 > **nci achieves 25.65× compression** — 39% better than bzip2, 33% better than xz!
 > **ooffice 2.53× with E8/E9 x86 filter** — matches xz 2.54× (was -14% behind)!
 > xz wins on binary archives (sao, samba, mozilla) where LZMA2's large dictionary excels.
