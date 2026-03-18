@@ -356,7 +356,6 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
                 /* Pick best: FSE vs rANS vs AAC vs raw LZ vs store */
                 size_t best_size = block_src_size; /* Store threshold */
-                uint8_t* best_buf = NULL;
                 uint8_t best_type = 0x00;
 
                 if (fse_size > 0 && fse_size < best_size) {
@@ -610,8 +609,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 if (!buf0 || !buf1 || !buf2 || !out1) {
                     #pragma omp critical
                     { omp_err = 1; }
-                    if (buf0) free(buf0); if (buf1) free(buf1); 
-                    if (buf2) free(buf2); if (out1) free(out1);
+                    if (buf0) free(buf0);
+                    if (buf1) free(buf1);
+                    if (buf2) free(buf2);
+                    if (out1) free(out1);
                     if (babel_buf) free(babel_buf);
                     continue;
                 }

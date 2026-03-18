@@ -180,7 +180,7 @@ size_t mcx_cmrans_compress(uint8_t* dst, size_t dst_cap,
     size_t           out16_cap;
     size_t           out16_pos;
     uint32_t         state;
-    size_t           header_size;
+    /* size_t header_size; — unused */
     size_t           total_out;
     size_t           i;
     size_t           j;
@@ -303,7 +303,7 @@ size_t mcx_cmrans_decompress(uint8_t* dst, size_t dst_cap,
 {
     cmrans_tables_t* tables;
     cmrans_lookup_t* lut;
-    size_t           header_size;
+    /* size_t header_size; — unused */
     uint32_t         orig_size32;
     size_t           orig_size;
     uint32_t         state;

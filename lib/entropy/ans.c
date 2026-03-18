@@ -143,7 +143,6 @@ size_t mcx_rans_compress(uint8_t* dst, size_t dst_cap,
     uint16_t* out16;
     size_t    out16_cap;
     size_t    out16_pos;
-    uint32_t  state;
     size_t    header_size;
     size_t    i;
     size_t    total_size;
@@ -314,8 +313,6 @@ size_t mcx_rans_decompress(uint8_t* dst, size_t dst_cap,
     uint32_t orig_size32;
     size_t   orig_size;
     mcx_rans_table_t table;
-    uint32_t raw_freq_as_u32[256];
-    uint32_t state;
     size_t   stream_pos;
     size_t   stream_end;
     size_t   header_size;
