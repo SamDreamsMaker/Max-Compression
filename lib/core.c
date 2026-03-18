@@ -209,9 +209,15 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         } else if (analysis.type == MCX_DTYPE_HIGH_ENTROPY) {
             strategy = MCX_STRATEGY_STORE;
         } else {
-            /* Generic binary / unknown: BWT is often better than LZ24.
-             * The multi-trial at the end will also try L9 (LZ-HC) and keep best. */
-            strategy = MCX_STRATEGY_DEFAULT;
+            /* Generic binary / unknown:
+             * L20+: Use LZRC for binary data (3.22x vs 2.93x on mozilla).
+             * Lower levels: BWT (LZRC only available at L26+).
+             * Multi-trial at L20 will also try BWT and keep best. */
+            if (level >= 20 && src_size >= 1024) {
+                strategy = MCX_STRATEGY_LZRC;
+            } else {
+                strategy = MCX_STRATEGY_DEFAULT;
+            }
         }
     }
 
@@ -812,7 +818,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     /* ── Multi-trial for L20+: try alternative strategies, keep smallest ── */
     if (level >= 20 && level <= 22 && strategy != MCX_STRATEGY_STORE 
         && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST
-        && strategy != MCX_STRATEGY_LZ24 && strategy != MCX_STRATEGY_LZRC) {
+        && strategy != MCX_STRATEGY_LZ24) {
         uint8_t* alt_buf = (uint8_t*)malloc(dst_cap);
         if (alt_buf) {
             /* Skip LZ-HC trial for text — BWT always wins on text */
@@ -840,9 +846,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             }
             /* Try LZRC (L26) — v2.0 LZ+RC with 16MB window.
              * Best on binary archives, skip on pure text (BWT always wins).
-             * Limit to ≤16MB — BT match finder uses ~8 bytes/position, 
-             * 50MB file with 16MB window = 128MB tree + slow. */
-            if (src_size <= (16 << 20) &&
+             * Skip if LZRC is already the primary strategy.
+             * Limit to ≤16MB — BT match finder uses ~8 bytes/position. */
+            if (strategy != MCX_STRATEGY_LZRC &&
+                src_size <= (16 << 20) &&
                 analysis.type != MCX_DTYPE_TEXT_ASCII &&
                 analysis.type != MCX_DTYPE_TEXT_UTF8) {
                 size_t alt_lzrc = mcx_compress(alt_buf, dst_cap, src, src_size, 26);
