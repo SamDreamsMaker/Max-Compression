@@ -1,4 +1,4 @@
-.TH MCX 1 "March 2026" "MaxCompression 2.0.0" "User Commands"
+.TH MCX 1 "March 2026" "MaxCompression 2.1.0" "User Commands"
 .SH NAME
 mcx \- high\-ratio lossless data compression tool
 .SH SYNOPSIS
@@ -10,6 +10,17 @@ mcx \- high\-ratio lossless data compression tool
 .B mcx decompress
 [\fB\-o\fR \fIOUTPUT\fR]
 \fIINPUT\fR
+.br
+.B mcx info
+\fIINPUT\fR
+.br
+.B mcx cat
+\fIINPUT\fR
+.br
+.B mcx bench
+\fIINPUT\fR
+.br
+.B mcx test
 .SH DESCRIPTION
 .B mcx
 compresses and decompresses files using the MaxCompression (MCX) format.
@@ -34,8 +45,11 @@ Standard mode (LZ\-HC + adaptive entropy). Speed: 3\-15 MB/s.
 .B 10\-22
 Best mode (BWT + multi\-table rANS). Speed: 1\-5 MB/s.
 .TP
+.B 24
+LZRC fast (hash chain match finder). Speed: 1\-3 MB/s.
+.TP
 .B 26
-Ultra mode (LZRC v2.0 engine). Speed: 0.5\-1.7 MB/s.
+LZRC best (binary tree, 64MB window). Speed: 0.3\-1 MB/s.
 Best ratio on binary data.
 .RE
 .TP
