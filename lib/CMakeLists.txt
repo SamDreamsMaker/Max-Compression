@@ -39,7 +39,9 @@ target_include_directories(maxcomp_static
 set_target_properties(maxcomp_static PROPERTIES
     OUTPUT_NAME maxcomp
 )
-target_link_libraries(maxcomp_static PUBLIC OpenMP::OpenMP_C)
+if(OpenMP_C_FOUND)
+    target_link_libraries(maxcomp_static PUBLIC OpenMP::OpenMP_C)
+endif()
 
 # Link math library on Unix
 if(UNIX)

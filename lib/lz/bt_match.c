@@ -1,3 +1,4 @@
+#include "compat.h"
 /**
  * @file bt_match.c
  * @brief Binary Tree Match Finder implementation.
@@ -22,7 +23,7 @@
 #include <string.h>
 
 #define BT_EMPTY  0xFFFFFFFF
-#define BT_MIN_MATCH  4
+#define BT_MIN_MATCH  3
 
 static inline uint32_t bt_hash4(const uint8_t* p, int hash_log) {
     uint32_t v;
@@ -76,7 +77,7 @@ static inline uint32_t bt_compare(const uint8_t* data, size_t size,
         memcpy(&v1, data + p1 + len, 8);
         memcpy(&v2, data + p2 + len, 8);
         if (v1 != v2) {
-            len += __builtin_ctzll(v1 ^ v2) >> 3;
+            len += mcx_ctzll(v1 ^ v2) >> 3;
             return (len > limit) ? limit : len;
         }
         len += 8;

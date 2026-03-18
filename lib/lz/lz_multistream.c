@@ -1,3 +1,4 @@
+#include "compat.h"
 /**
  * @file lz_multistream.c
  * @brief Multi-stream LZ77 + FSE entropy coder — Phase 4 (Repcode stack).
@@ -70,7 +71,7 @@ static inline size_t ms_match_len(const uint8_t* a, const uint8_t* b, size_t max
             _BitScanForward64(&idx, va ^ vb);
             return n + (idx >> 3);
 #else
-            return n + (__builtin_ctzll(va ^ vb) >> 3);
+            return n + (mcx_ctzll(va ^ vb) >> 3);
 #endif
         }
         n += 8;

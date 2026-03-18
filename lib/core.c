@@ -36,7 +36,9 @@ extern size_t mcx_e8e9_decode(uint8_t* data, size_t size);
 
 #include <stdio.h>
 #ifdef _OPENMP
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 #endif
 
 /* ═══════════════════════════════════════════════════════════════════════

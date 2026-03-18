@@ -1,3 +1,4 @@
+#include "compat.h"
 /**
  * @file lz_compress.c
  * @brief LZ77 compressor v1.1 — Upgraded with:
@@ -44,7 +45,7 @@ static inline size_t lz_count_match(const uint8_t* p1, const uint8_t* p2, size_t
             _BitScanForward64(&idx, v1 ^ v2);
             return len + (idx >> 3);
 #else
-            return len + (__builtin_ctzll(v1 ^ v2) >> 3);
+            return len + (mcx_ctzll(v1 ^ v2) >> 3);
 #endif
         }
         len += 8;

@@ -1,3 +1,4 @@
+#include "compat.h"
 /**
  * @file lz24.c
  * @brief LZ77 with 24-bit offsets and hash chains for high-ratio text compression.
@@ -37,7 +38,7 @@ static inline size_t lz24_count_match(const uint8_t* p1, const uint8_t* p2, size
         memcpy(&v1, p1 + len, 8);
         memcpy(&v2, p2 + len, 8);
         if (v1 != v2) {
-            return len + (__builtin_ctzll(v1 ^ v2) >> 3);
+            return len + (mcx_ctzll(v1 ^ v2) >> 3);
         }
         len += 8;
     }

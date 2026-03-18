@@ -16,8 +16,13 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-# ─── OpenMP ──────────────────────────────────────────────────────────
-find_package(OpenMP REQUIRED)
+# ─── OpenMP (optional — parallel block compression) ─────────────────
+find_package(OpenMP QUIET)
+if(OpenMP_C_FOUND)
+    message(STATUS "OpenMP found — parallel compression enabled")
+else()
+    message(STATUS "OpenMP not found — single-threaded mode")
+endif()
 
 # ─── Build Options ───────────────────────────────────────────────────
 option(BUILD_SHARED_LIBS   "Build shared library (DLL/so/dylib)"   ON)
