@@ -5,6 +5,7 @@
   </p>
   <p align="center">
     <a href="https://github.com/SamDreamsMaker/Max-Compression/actions"><img src="https://img.shields.io/github/actions/workflow/status/SamDreamsMaker/Max-Compression/ci.yml?style=flat-square&label=CI" alt="CI"></a>
+    <a href="https://github.com/SamDreamsMaker/Max-Compression/releases"><img src="https://img.shields.io/github/v/tag/SamDreamsMaker/Max-Compression?style=flat-square&label=version" alt="Version"></a>
     <a href="#benchmarks"><img src="https://img.shields.io/badge/Silesia_corpus-4.35×-blue?style=flat-square" alt="Silesia"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="License"></a>
     <img src="https://img.shields.io/badge/language-C99-orange?style=flat-square" alt="C99">
