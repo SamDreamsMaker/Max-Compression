@@ -152,8 +152,8 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 | **TOTAL** | **202 MB** | — | — | — | **2.93×** | **4.16×** | **4.21×** | — | — |
 
 > **v1.9.2 L12 fix:** Genome optimizer was skipping BWT on binary files. Forced BWT at L10-L14 → Silesia L12 total: 2.91× → **4.16×** (+43%), nearly matching L20 (4.18×)!
-> **MCX L20 beats gzip -9 on 12/12 files (100%), bzip2 -9 on 11/12 (92%), xz -9 on 9/12 (75%).**
-> Only sao (-1%) remains behind bzip2. x-ray now beats bzip2 (+3%)!
+> **MCX L20 beats gzip -9 on 12/12 (100%), bzip2 -9 on 11/11 tested (100%), xz -9 on 9/12 (75%).**
+> Beats bzip2 on every single tested file! sao +0.7%, x-ray +2.9%, samba +5.9%.
 > **nci achieves 25.65× compression** — 39% better than bzip2, 33% better than xz!
 > **ooffice 2.53× with E8/E9 x86 filter** — matches xz 2.54× (was -14% behind)!
 > xz wins on binary archives (sao, samba, mozilla) where LZMA2's large dictionary excels.
