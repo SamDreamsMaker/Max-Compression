@@ -263,7 +263,7 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
                           const uint8_t* src, size_t src_size,
                           int window_log, int bt_depth) {
     if (!dst || !src || src_size == 0 || dst_cap < 10) return 0;
-    if (window_log < 10) window_log = 10;
+    if (window_log < 20) window_log = 20; /* Min 1MB — BT tree wrapping issues below */
     if (window_log > 26) window_log = 26; /* 64MB max */
     
     uint32_t window_size = 1u << window_log;
