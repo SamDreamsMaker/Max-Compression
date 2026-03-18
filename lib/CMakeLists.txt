@@ -25,6 +25,7 @@ preprocess/e8e9.c
     # babel/babel_dict.c  # Moved to experimental/
     entropy/adaptive_ac.c
     entropy/multi_rans.c
+    entropy/range_coder.c
 )
 
 # ─── Static library (always built) ──────────────────────────────────
