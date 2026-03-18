@@ -252,7 +252,10 @@ size_t mcx_lz_compress_hc(
         return op ? (size_t)(op - (uint8_t*)dst) : 0;
     }
 
-    int hash_log = MCX_LZ_HASH_LOG;
+    int hash_log = MCX_LZ_HASH_LOG_HC;
+    /* Scale down for small inputs */
+    while (hash_log > 16 && (1u << hash_log) > src_size * 8)
+        hash_log--;
     int hash_size = 1 << hash_log;
     uint32_t* ht = (uint32_t*)calloc(hash_size, sizeof(uint32_t));
     /* Chain array: chain[pos % window] → previous position with same hash.

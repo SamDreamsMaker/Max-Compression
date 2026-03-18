@@ -38,7 +38,8 @@ extern "C" {
 
 #define MCX_LZ_MIN_MATCH       4
 #define MCX_LZ_LAST_LITERALS   5
-#define MCX_LZ_HASH_LOG       18     /* 256K entries (was 16 = 64K) */
+#define MCX_LZ_HASH_LOG       18     /* Default 256K entries */
+#define MCX_LZ_HASH_LOG_HC    20     /* 1M entries for HC modes (L4+) */
 #define MCX_LZ_HASH_SIZE      (1 << MCX_LZ_HASH_LOG)
 #define MCX_LZ_MAX_OFFSET     65535  /* 16-bit offset for compatibility */
 #define MCX_LZ_SKIP_TRIGGER    6
