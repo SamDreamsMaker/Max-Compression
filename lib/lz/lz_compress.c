@@ -237,7 +237,7 @@ size_t mcx_lz_compress_hc(
     const uint8_t* mflimit = ip_end - MCX_LZ_MIN_MATCH;
 
     /* Scale chain depth with level: L4=4, L6=8, L9=16 */
-    int chain_depth = (level <= 4) ? 4 : (level <= 6) ? 8 : 32;
+    int chain_depth = (level <= 4) ? 4 : (level <= 6) ? 8 : 64;
 
     if (src_size < MCX_LZ_MIN_MATCH + MCX_LZ_LAST_LITERALS) {
         op = lz_write_last_literals(op, op_end, ip, src_size);
