@@ -54,13 +54,15 @@ Direct LZRC (LZ + Range Coder, no BWT fallback):
 
 | Level | Strategy | Silesia Total | Speed |
 |-------|----------|---------------|-------|
-| L1 | LZ greedy | ~2.0× | 50+ MB/s |
-| L3 | LZ greedy+Huffman | ~2.5× | 20+ MB/s |
-| L6 | LZ lazy+FSE | ~2.8× | 5-10 MB/s |
-| L9 | LZ lazy+AAC | ~3.2× | 2-4 MB/s |
+| L1 | LZ greedy + rANS | ~2.1× | 30-50 MB/s |
+| L3 | LZ greedy + rANS | ~2.1× | 30-50 MB/s |
+| L6 | LZ-HC + rANS | ~2.4× | 5-15 MB/s |
+| L7-L8 | LZ-HC + AAC | ~2.4× | 3-10 MB/s |
+| L9 | LZ-HC (d=64) + AAC | ~2.4× | 2-5 MB/s |
 | L12 | BWT+genetic | ~4.16× | 0.3-12 MB/s |
 | L20 | Smart (BWT+LZRC+multi) | **4.35×** | 0.1-0.5 MB/s |
-| L26 | LZRC direct | ~3.5× | 0.4-0.8 MB/s |
+| L24 | LZRC-HC (fast) | ~3.2× | 1-3 MB/s |
+| L26 | LZRC-BT (best) | ~3.5× | 0.3-1 MB/s |
 
 ## Key Improvements in v2.0–v2.1
 
