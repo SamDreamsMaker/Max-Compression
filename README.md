@@ -139,7 +139,7 @@ All benchmarks: single-threaded, in-memory, roundtrip-verified. System `gzip`, `
 
 | File | Size | gzip -9 | bzip2 -9 | xz -6 | MCX L9 | MCX L20 |
 |------|------|---------|----------|--------|--------|---------|
-| alice29.txt | 152 KB | 2.81× | 3.52× | 3.14× | 2.34× | **3.53×** |
+| alice29.txt | 152 KB | 2.81× | 3.52× | 3.14× | 2.36× | **3.53×** |
 | asyoulik.txt | 125 KB | 2.56× | 3.16× | 2.81× | 2.34× | **3.15×** |
 | lcet10.txt | 427 KB | 2.95× | 3.96× | 3.57× | 2.97× | **3.98×** |
 | plrabn12.txt | 482 KB | 2.48× | 3.31× | 2.91× | 2.50× | **3.33×** |
@@ -174,7 +174,7 @@ The [Silesia corpus](https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia) is 
 | nci | 33 MB | 11.23× | 18.51× | 19.30× | **25.65×** | +39% | +33% |
 | samba | 21 MB | 4.00× | 4.75× | 5.74× | **5.03×** | +6% | -12% |
 | webster | 40 MB | 3.44× | 4.80× | 4.94× | **5.81×** | +21% | +18% |
-| mozilla | 50 MB | 2.70× | — | 3.83× | **3.21×** 🆕 | — | -16% |
+| mozilla | 50 MB | 2.70× | — | 3.83× | **3.22×** 🆕 | — | -16% |
 
 **Summary:**
 - Beats **gzip -9** on 12/12 files (100%)
@@ -182,7 +182,7 @@ The [Silesia corpus](https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia) is 
 - Beats **xz -9** on 9/12 files (75%)
 
 > xz leads on two binary-heavy files (sao, samba) where LZMA2's large sliding window provides an advantage.
-> 🆕 **v2.0:** New LZRC engine (LZ + range coder, 16 MB window) reduces mozilla gap from -24% to -16%. Use `mcx compress -l 26` for LZRC mode.
+> 🆕 **v2.1:** LZRC engine (LZ + range coder) with embedded libdivsufsort (BWT 2× faster). Use `mcx compress -l 26` for LZRC mode, or `-l 24` for 3× faster LZRC.
 
 ### Speed
 
