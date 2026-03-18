@@ -31,47 +31,7 @@ void rc_enc_init(RCEncoder* e, uint8_t* dst, size_t cap) {
     e->cache = 0;
 }
 
-static void rc_enc_normalize(RCEncoder* e) {
-    while (e->range < RC_TOP_VALUE) {
-        if ((e->low & 0xFF000000U) != 0xFF000000U) {
-            /* Output cache byte + carry */
-            uint8_t carry = (uint8_t)(e->low >> 32);
-            if (e->pos < e->cap) e->buf[e->pos++] = e->cache + carry;
-            while (e->ff_count > 0) {
-                if (e->pos < e->cap) e->buf[e->pos++] = 0xFF + carry;
-                e->ff_count--;
-            }
-            e->cache = (uint8_t)(e->low >> 24);
-        } else {
-            e->ff_count++;
-        }
-        e->low = (e->low << 8) & 0xFFFFFFFFU;
-        e->range <<= 8;
-    }
-}
-
-void rc_enc_bit(RCEncoder* e, uint16_t* prob, int bit) {
-    uint32_t bound = (e->range >> RC_PROB_BITS) * (*prob);
-
-    if (bit == 0) {
-        e->range = bound;
-        *prob += (RC_PROB_MAX - *prob) >> RC_MOVE_BITS;
-    } else {
-        e->low += bound;
-        e->range -= bound;
-        *prob -= *prob >> RC_MOVE_BITS;
-    }
-    rc_enc_normalize(e);
-}
-
-void rc_enc_byte(RCEncoder* e, uint16_t* probs, uint8_t byte) {
-    uint32_t ctx = 1;
-    for (int i = 7; i >= 0; i--) {
-        int bit = (byte >> i) & 1;
-        rc_enc_bit(e, &probs[ctx], bit);
-        ctx = (ctx << 1) | bit;
-    }
-}
+/* rc_enc_normalize, rc_enc_bit, rc_enc_byte are now inline in range_coder.h */
 
 void rc_enc_matched_byte(RCEncoder* e, uint16_t* probs, uint8_t byte, uint8_t match_byte) {
     /* LZMA-style matched literal encoding.
@@ -136,7 +96,7 @@ uint8_t rc_dec_matched_byte(RCDecoder* d, uint16_t* probs, uint8_t match_byte) {
 size_t rc_enc_flush(RCEncoder* e) {
     /* Output remaining bytes */
     for (int i = 0; i < 5; i++) {
-        rc_enc_normalize(e);
+        rc_enc_normalize_inline(e);
         /* Force shift */
         if (e->pos < e->cap) {
             uint8_t carry = (uint8_t)(e->low >> 32);

@@ -11,6 +11,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* ── Constants ──────────────────────────────────────────────────── */
+#define RC_PROB_BITS  11
+#define RC_PROB_MAX   (1 << RC_PROB_BITS)
+#define RC_MOVE_BITS  5
+#define RC_TOP_VALUE  0x01000000U
+
 /* ── Encoder State ──────────────────────────────────────────────── */
 
 typedef struct {
@@ -37,12 +43,51 @@ typedef struct {
 
 void rc_enc_init(RCEncoder* e, uint8_t* dst, size_t cap);
 void rc_enc_encode(RCEncoder* e, uint32_t cum_freq, uint32_t freq, uint32_t total);
-void rc_enc_bit(RCEncoder* e, uint16_t* prob, int bit);
-void rc_enc_byte(RCEncoder* e, uint16_t* probs, uint8_t byte);
 void rc_enc_matched_byte(RCEncoder* e, uint16_t* probs, uint8_t byte, uint8_t match_byte);
 void rc_enc_literal(RCEncoder* e, uint16_t probs[16][256],
                      uint8_t byte, uint8_t prev_byte, int after_match);
 size_t rc_enc_flush(RCEncoder* e);
+
+/* Inline encoder hot path */
+static inline void rc_enc_normalize_inline(RCEncoder* e) {
+    while (e->range < RC_TOP_VALUE) {
+        if ((e->low & 0xFF000000U) != 0xFF000000U) {
+            uint8_t carry = (uint8_t)(e->low >> 32);
+            if (e->pos < e->cap) e->buf[e->pos++] = e->cache + carry;
+            while (e->ff_count > 0) {
+                if (e->pos < e->cap) e->buf[e->pos++] = 0xFF + carry;
+                e->ff_count--;
+            }
+            e->cache = (uint8_t)(e->low >> 24);
+        } else {
+            e->ff_count++;
+        }
+        e->low = (e->low << 8) & 0xFFFFFFFFU;
+        e->range <<= 8;
+    }
+}
+
+static inline void rc_enc_bit(RCEncoder* e, uint16_t* prob, int bit) {
+    uint32_t bound = (e->range >> RC_PROB_BITS) * (*prob);
+    if (bit == 0) {
+        e->range = bound;
+        *prob += (RC_PROB_MAX - *prob) >> RC_MOVE_BITS;
+    } else {
+        e->low += bound;
+        e->range -= bound;
+        *prob -= *prob >> RC_MOVE_BITS;
+    }
+    rc_enc_normalize_inline(e);
+}
+
+static inline void rc_enc_byte(RCEncoder* e, uint16_t* probs, uint8_t byte) {
+    uint32_t ctx = 1;
+    for (int i = 7; i >= 0; i--) {
+        int bit = (byte >> i) & 1;
+        rc_enc_bit(e, &probs[ctx], bit);
+        ctx = (ctx << 1) | bit;
+    }
+}
 
 /* ── Decoder API ────────────────────────────────────────────────── */
 
@@ -52,10 +97,6 @@ uint8_t rc_dec_literal(RCDecoder* d, uint16_t probs[16][256],
                         uint8_t prev_byte, int after_match);
 
 /* Inline hot-path decoder functions for cross-TU inlining */
-#define RC_PROB_BITS  11
-#define RC_PROB_MAX   (1 << RC_PROB_BITS)
-#define RC_MOVE_BITS  5
-#define RC_TOP_VALUE  0x01000000U
 
 static inline void rc_dec_normalize_inline(RCDecoder* d) {
     while (d->range < RC_TOP_VALUE) {
