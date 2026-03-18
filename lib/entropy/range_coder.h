@@ -39,6 +39,7 @@ void rc_enc_init(RCEncoder* e, uint8_t* dst, size_t cap);
 void rc_enc_encode(RCEncoder* e, uint32_t cum_freq, uint32_t freq, uint32_t total);
 void rc_enc_bit(RCEncoder* e, uint16_t* prob, int bit);
 void rc_enc_byte(RCEncoder* e, uint16_t* probs, uint8_t byte);
+void rc_enc_matched_byte(RCEncoder* e, uint16_t* probs, uint8_t byte, uint8_t match_byte);
 void rc_enc_literal(RCEncoder* e, uint16_t probs[16][256],
                      uint8_t byte, uint8_t prev_byte, int after_match);
 size_t rc_enc_flush(RCEncoder* e);
@@ -48,6 +49,8 @@ size_t rc_enc_flush(RCEncoder* e);
 void rc_dec_init(RCDecoder* d, const uint8_t* src, size_t size);
 int rc_dec_bit(RCDecoder* d, uint16_t* prob);
 uint8_t rc_dec_byte(RCDecoder* d, uint16_t* probs);
+uint8_t rc_dec_matched_byte(RCDecoder* d, uint16_t* probs, uint8_t match_byte);
+uint8_t rc_dec_matched_byte(RCDecoder* d, uint16_t* probs, uint8_t match_byte);
 uint8_t rc_dec_literal(RCDecoder* d, uint16_t probs[16][256],
                         uint8_t prev_byte, int after_match);
 

@@ -51,11 +51,14 @@ typedef struct {
     /* is_match[context] — 0=literal, 1=match */
     uint16_t is_match[LZRC_CTX_TOTAL];
     
-    /* Literal model: 32 groups × 256 symbols (bit-tree)
-     * Groups 0-7: normal literal (prev_byte >> 5)
-     * Groups 8-15: post-match literal (prev_byte >> 5)
-     * Groups 16-31: post-match with match byte context (match_byte >> 4) */
-    uint16_t lit_probs[32][256];
+    /* Literal model:
+     * Normal: 8 groups (prev_byte >> 5) × 256 symbols (bit-tree)
+     * Matched: 8 groups (prev_byte >> 5) × 768 symbols (LZMA-style matched literal)
+     *   - probs[0..255]: normal tree
+     *   - probs[256..511]: matched state, match_bit=0
+     *   - probs[512..767]: matched state, match_bit=1 */
+    uint16_t lit_probs[8][256];          /* Normal literals */
+    uint16_t match_lit_probs[8][768];    /* Matched literals (3 sub-trees) */
     
     /* Length model: choice + short(8) + choice2 + medium(8) + extra(256) */
     uint16_t len_choice;
@@ -76,7 +79,8 @@ typedef struct {
 
 static void lzrc_model_init(LZRCModel* m) {
     rc_prob_init(m->is_match, LZRC_CTX_TOTAL);
-    rc_prob_init(&m->lit_probs[0][0], 32 * 256);
+    rc_prob_init(&m->lit_probs[0][0], 8 * 256);
+    rc_prob_init(&m->match_lit_probs[0][0], 8 * 768);
     rc_prob_init(&m->len_choice, 1);
     rc_prob_init(m->len_short, 8);
     rc_prob_init(&m->len_choice2, 1);
@@ -330,14 +334,13 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
                  * then use current match instead */
                 int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
                 rc_enc_bit(&enc, &model->is_match[ctx], 0);
-                int lit_ctx;
+                int lit_grp = prev >> 5;
                 if (after_match && (pos - 1) >= rep_dist[0]) {
                     uint8_t match_byte = src[pos - 1 - rep_dist[0]];
-                    lit_ctx = 16 + (match_byte >> 4);
+                    rc_enc_matched_byte(&enc, model->match_lit_probs[lit_grp], src[pos - 1], match_byte);
                 } else {
-                    lit_ctx = after_match ? 8 + (prev >> 5) : (prev >> 5);
+                    rc_enc_byte(&enc, model->lit_probs[lit_grp], src[pos - 1]);
                 }
-                rc_enc_byte(&enc, model->lit_probs[lit_ctx], src[pos - 1]);
                 prev = src[pos - 1];
                 after_match = 0;
                 
@@ -381,14 +384,13 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
             /* Literal */
             int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
             rc_enc_bit(&enc, &model->is_match[ctx], 0);
-            int lit_ctx;
+            int lit_grp = prev >> 5;
             if (after_match && pos >= rep_dist[0]) {
                 uint8_t match_byte = src[pos - rep_dist[0]];
-                lit_ctx = 16 + (match_byte >> 4);
+                rc_enc_matched_byte(&enc, model->match_lit_probs[lit_grp], src[pos], match_byte);
             } else {
-                lit_ctx = after_match ? 8 + (prev >> 5) : (prev >> 5);
+                rc_enc_byte(&enc, model->lit_probs[lit_grp], src[pos]);
             }
-            rc_enc_byte(&enc, model->lit_probs[lit_ctx], src[pos]);
             prev = src[pos];
             after_match = 0;
         }
@@ -470,14 +472,13 @@ size_t mcx_lzrc_decompress(uint8_t* dst, size_t dst_cap,
             after_match = 1;
         } else {
             /* Literal */
-            int lit_ctx;
+            int lit_grp = prev >> 5;
             if (after_match && pos >= rep_dist[0]) {
                 uint8_t match_byte = dst[pos - rep_dist[0]];
-                lit_ctx = 16 + (match_byte >> 4);
+                dst[pos] = rc_dec_matched_byte(&dec, model->match_lit_probs[lit_grp], match_byte);
             } else {
-                lit_ctx = after_match ? 8 + (prev >> 5) : (prev >> 5);
+                dst[pos] = rc_dec_byte(&dec, model->lit_probs[lit_grp]);
             }
-            dst[pos] = rc_dec_byte(&dec, model->lit_probs[lit_ctx]);
             prev = dst[pos];
             pos++;
             after_match = 0;

@@ -72,10 +72,64 @@ void rc_enc_byte(RCEncoder* e, uint16_t* probs, uint8_t byte) {
     }
 }
 
+void rc_enc_matched_byte(RCEncoder* e, uint16_t* probs, uint8_t byte, uint8_t match_byte) {
+    /* LZMA-style matched literal encoding.
+     * Uses match_byte bits to select between sub-trees.
+     * probs needs 512 entries (indices 0x100..0x1FF used for matched context).
+     * When actual bit matches predicted bit, we stay in "matched" state.
+     * When they differ, we fall back to normal tree. */
+    uint32_t ctx = 1;
+    uint32_t match_ctx = match_byte;
+    int same = 1; /* Still matching predicted bits */
+    
+    for (int i = 7; i >= 0; i--) {
+        int bit = (byte >> i) & 1;
+        int match_bit = (match_ctx >> 7) & 1;
+        match_ctx <<= 1;
+        
+        uint32_t prob_idx;
+        if (same) {
+            /* In matched state: offset by 0x100 + match_bit * 0x100 */
+            prob_idx = ctx + (match_bit ? 0x200 : 0x100);
+        } else {
+            prob_idx = ctx;
+        }
+        
+        rc_enc_bit(e, &probs[prob_idx], bit);
+        ctx = (ctx << 1) | bit;
+        
+        if (bit != match_bit) same = 0;
+    }
+}
+
 void rc_enc_literal(RCEncoder* e, uint16_t probs[16][256],
                      uint8_t byte, uint8_t prev_byte, int after_match) {
     int ctx_idx = (prev_byte >> 4) | (after_match ? 8 : 0);
     rc_enc_byte(e, probs[ctx_idx], byte);
+}
+
+uint8_t rc_dec_matched_byte(RCDecoder* d, uint16_t* probs, uint8_t match_byte) {
+    uint32_t ctx = 1;
+    uint32_t match_ctx = match_byte;
+    int same = 1;
+    
+    for (int i = 7; i >= 0; i--) {
+        int match_bit = (match_ctx >> 7) & 1;
+        match_ctx <<= 1;
+        
+        uint32_t prob_idx;
+        if (same) {
+            prob_idx = ctx + (match_bit ? 0x200 : 0x100);
+        } else {
+            prob_idx = ctx;
+        }
+        
+        int bit = rc_dec_bit(d, &probs[prob_idx]);
+        ctx = (ctx << 1) | bit;
+        
+        if (bit != match_bit) same = 0;
+    }
+    return (uint8_t)(ctx & 0xFF);
 }
 
 size_t rc_enc_flush(RCEncoder* e) {
