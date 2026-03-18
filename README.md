@@ -202,18 +202,18 @@ MCX prioritizes compression ratio over speed. For speed-critical applications, u
 ```
 Input → [Block Analyzer] → Strategy Selection
                                │
-              ┌────────────────┼────────────────┐
-              ▼                ▼                 ▼
-         LZ Pipeline     BWT Pipeline     Stride-Delta
-         (L1–L9)         (L10–L19)        (L20 auto)
-              │                │                 │
-         LZ77 Match      SA-IS BWT          Delta at
-         Finding         + MTF + RLE2       detected
-              │                │             stride
-         tANS / FSE /    rANS /              │
-         Adaptive AC     Multi-table      RLE2 + rANS
-              │          rANS                │
-              └────────────────┼────────────────┘
+         ┌─────────┬──────────┼──────────┬──────────┐
+         ▼         ▼          ▼          ▼          ▼
+    LZ Pipeline  BWT Pipe  Stride-Δ   LZRC-HC    LZRC-BT
+    (L1–L9)      (L10–19)  (L20 auto) (L24)      (L26)
+         │         │          │          │          │
+    LZ77 Match  divsufsort  Delta @   HC Match   BT Match
+    Finding     +MTF+RLE2   stride    Finder     Finder
+         │         │          │          │          │
+    tANS/FSE/   Multi-tbl  RLE2+rANS  Adaptive  Adaptive
+    Adaptive AC  rANS                  Range RC   Range RC
+         │         │          │          │          │
+         └─────────┴──────────┼──────────┴──────────┘
                                ▼
                     [Block Multiplexer]
                     OpenMP Parallelism
