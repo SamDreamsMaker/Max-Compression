@@ -594,7 +594,7 @@ int main(int argc, char* argv[])
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
         int pass = 0, fail = 0;
-        int levels[] = {1, 3, 6, 9, 12, 20, 24, 26};
+        int levels[] = {1, 3, 6, 7, 9, 12, 20, 24, 26};
         int n_levels = sizeof(levels) / sizeof(levels[0]);
         
         /* Test pattern: repeated text */
