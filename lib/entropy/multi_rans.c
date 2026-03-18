@@ -535,30 +535,54 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
     /* Determine initial state parity */
     int use_st2 = (orig_size - 1) & 1;
     
-    for (size_t i = 0; i < orig_size; i++) {
-        uint32_t* st = use_st2 ? &state2 : &state1;
-        use_st2 ^= 1;
+    /* Unrolled 2-at-a-time decode: process both states per iteration.
+     * This improves CPU pipeline utilization since state1/state2 are independent. */
+    {
+        size_t i = 0;
+        uint16_t mask = MT_SCALE - 1;
         
-        uint16_t slot = (uint16_t)(*st & (MT_SCALE - 1));
-        uint8_t sym = lookup[t][slot];
-        uint16_t f = tables[t][sym];
-        uint16_t cf = cum[t][sym];
-        
-        /* Advance state */
-        *st = f * (*st >> MT_PRECISION) + slot - cf;
-        
-        /* Renormalize */
-        if (*st < MT_STATE_LOWER && bits_pos < max_bits) {
-            *st = (*st << 16) | bits[bits_pos++];
+        /* Align start parity */
+        if (use_st2 && i < orig_size) {
+            uint16_t slot = (uint16_t)(state2 & mask);
+            uint8_t sym = lookup[t][slot];
+            state2 = tables[t][sym] * (state2 >> MT_PRECISION) + slot - cum[t][sym];
+            if (state2 < MT_STATE_LOWER && bits_pos < max_bits)
+                state2 = (state2 << 16) | bits[bits_pos++];
+            dst[i++] = sym;
+            if (--g_remaining == 0) { g++; g_remaining = MT_GROUP_SIZE; if (g < num_groups) t = assign[g]; }
         }
         
-        dst[i] = sym;
+        /* Main 2-at-a-time loop: state1 then state2 */
+        while (i + 1 < orig_size) {
+            /* State 1 */
+            uint16_t slot1 = (uint16_t)(state1 & mask);
+            uint8_t sym1 = lookup[t][slot1];
+            state1 = tables[t][sym1] * (state1 >> MT_PRECISION) + slot1 - cum[t][sym1];
+            if (state1 < MT_STATE_LOWER && bits_pos < max_bits)
+                state1 = (state1 << 16) | bits[bits_pos++];
+            dst[i] = sym1;
+            if (--g_remaining == 0) { g++; g_remaining = MT_GROUP_SIZE; if (g < num_groups) t = assign[g]; }
+            
+            /* State 2 */
+            uint16_t slot2 = (uint16_t)(state2 & mask);
+            uint8_t sym2 = lookup[t][slot2];
+            state2 = tables[t][sym2] * (state2 >> MT_PRECISION) + slot2 - cum[t][sym2];
+            if (state2 < MT_STATE_LOWER && bits_pos < max_bits)
+                state2 = (state2 << 16) | bits[bits_pos++];
+            dst[i + 1] = sym2;
+            if (--g_remaining == 0) { g++; g_remaining = MT_GROUP_SIZE; if (g < num_groups) t = assign[g]; }
+            
+            i += 2;
+        }
         
-        /* Update group counter (avoids division) */
-        if (--g_remaining == 0) {
-            g++;
-            g_remaining = MT_GROUP_SIZE;
-            if (g < num_groups) t = assign[g];
+        /* Handle odd trailing symbol */
+        if (i < orig_size) {
+            uint16_t slot = (uint16_t)(state1 & mask);
+            uint8_t sym = lookup[t][slot];
+            state1 = tables[t][sym] * (state1 >> MT_PRECISION) + slot - cum[t][sym];
+            if (state1 < MT_STATE_LOWER && bits_pos < max_bits)
+                state1 = (state1 << 16) | bits[bits_pos++];
+            dst[i] = sym;
         }
     }
     
