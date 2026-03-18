@@ -355,10 +355,22 @@ size_t mcx_bwt_inverse(uint8_t* dst, size_t primary_idx,
      * Branchless sentinel adjustment: idx_L = r - (r >= primary_idx) */
     uint32_t r = 0;
     uint32_t pidx32 = (uint32_t)primary_idx;
-    for (i = 0; i < size; i++) {
-        uint32_t idx_L = r - (r >= pidx32);
-        dst[size - 1 - i] = src[idx_L];
-        r = T[idx_L] + 1;
+#if defined(__GNUC__) || defined(__clang__)
+    if (size > 256 * 1024) { /* Prefetch helps when T > L2 cache */
+        for (i = 0; i < size; i++) {
+            uint32_t idx_L = r - (r >= pidx32);
+            dst[size - 1 - i] = src[idx_L];
+            r = T[idx_L] + 1;
+            __builtin_prefetch(&T[r - (r >= pidx32)], 0, 0);
+        }
+    } else
+#endif
+    {
+        for (i = 0; i < size; i++) {
+            uint32_t idx_L = r - (r >= pidx32);
+            dst[size - 1 - i] = src[idx_L];
+            r = T[idx_L] + 1;
+        }
     }
 
     free(T);
