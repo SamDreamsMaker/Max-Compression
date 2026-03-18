@@ -382,34 +382,26 @@ static int cmd_info(const char* input)
     printf("File:             %s\n", input);
     printf("Compressed size:  %zu bytes (%.1f KB)\n", src_size, src_size / 1024.0);
 
-    /* Parse frame header if valid */
-    if (src_size >= 20 && src[0] == 0x4D && src[1] == 0x43 && src[2] == 0x58 && src[3] == 0x01) {
-        uint8_t version = src[4];
-        uint8_t flags = src[5];
-        uint8_t level = src[6];
-        uint8_t strat = src[7];
-        
-        printf("Format:           MCX v%u\n", version);
-        printf("Level:            %u\n", level);
-        printf("Strategy:         %s\n", strategy_name(strat));
-        
-        if (flags & 0x01) {
-            uint64_t orig = 0;
-            memcpy(&orig, src + 8, 8);
-            printf("Original size:    %llu bytes (%.1f KB)\n", (unsigned long long)orig, orig / 1024.0);
-            printf("Ratio:            %.2fx (%.1f%% smaller)\n",
-                   (double)orig / src_size, 100.0 * (1.0 - (double)src_size / orig));
-        }
-        if (flags & 0x04) printf("Filters:          E8/E9 x86\n");
-    } else {
-        unsigned long long orig_size = mcx_get_decompressed_size(src, src_size);
-        if (orig_size > 0) {
-            printf("Original size:    %llu bytes\n", orig_size);
-            printf("Ratio:            %.2fx\n", (double)orig_size / (double)src_size);
-        } else {
-            printf("Error: Not a valid MCX file\n");
-        }
+    mcx_frame_info info;
+    size_t r = mcx_get_frame_info(&info, src, src_size);
+    if (mcx_is_error(r)) {
+        printf("Error: Not a valid MCX file\n");
+        free(src);
+        return 1;
     }
+
+    printf("Format:           MCX v%u\n", info.version);
+    printf("Level:            %u\n", info.level);
+    printf("Strategy:         %s\n", strategy_name(info.strategy));
+
+    if (info.original_size > 0) {
+        printf("Original size:    %llu bytes (%.1f KB)\n",
+               info.original_size, info.original_size / 1024.0);
+        printf("Ratio:            %.2fx (%.1f%% smaller)\n",
+               (double)info.original_size / src_size,
+               100.0 * (1.0 - (double)src_size / info.original_size));
+    }
+    if (info.flags & 0x04) printf("Filters:          E8/E9 x86\n");
 
     free(src);
     return 0;

@@ -132,6 +132,32 @@ MCXAPI unsigned long long mcx_get_decompressed_size(
     size_t      src_size
 );
 
+/**
+ * Frame information structure.
+ * Populated by mcx_get_frame_info() from a compressed frame header.
+ */
+typedef struct {
+    unsigned long long original_size; /**< Decompressed size (0 if unknown) */
+    unsigned version;                 /**< Format version */
+    unsigned level;                   /**< Compression level used */
+    unsigned strategy;                /**< Strategy ID (see internal.h) */
+    unsigned flags;                   /**< Frame flags */
+} mcx_frame_info;
+
+/**
+ * Read frame information from a compressed buffer.
+ *
+ * @param info      Output frame info structure
+ * @param src       Compressed data (only header is read)
+ * @param src_size  Size of compressed data in bytes
+ * @return          0 on success, or an error (check with mcx_is_error)
+ */
+MCXAPI size_t mcx_get_frame_info(
+    mcx_frame_info* info,
+    const void*     src,
+    size_t          src_size
+);
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  Streaming API — Incremental processing
  * ═══════════════════════════════════════════════════════════════════════ */

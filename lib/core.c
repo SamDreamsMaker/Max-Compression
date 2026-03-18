@@ -1412,6 +1412,23 @@ unsigned long long mcx_get_decompressed_size(const void* src, size_t src_size)
     return 0;
 }
 
+size_t mcx_get_frame_info(mcx_frame_info* info, const void* src, size_t src_size)
+{
+    if (info == NULL || src == NULL || src_size < MCX_FRAME_HEADER_SIZE)
+        return MCX_ERROR(MCX_ERR_GENERIC);
+
+    mcx_frame_header_t header;
+    if (read_frame_header((const uint8_t*)src, src_size, &header) != 0)
+        return MCX_ERROR(MCX_ERR_INVALID_MAGIC);
+
+    info->original_size = (header.flags & MCX_FLAG_HAS_ORIG_SIZE) ? header.original_size : 0;
+    info->version = header.version;
+    info->level = header.level;
+    info->strategy = header.strategy;
+    info->flags = header.flags;
+    return 0;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  Streaming Compression API
  * ═══════════════════════════════════════════════════════════════════════ */
