@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maxcomp"
-version = "2.0.0"
+version = "2.1.0"
 description = "High-ratio lossless data compression library"
-readme = "../../README.md"
+readme = "README.md"
 license = {text = "GPL-3.0"}
 authors = [{name = "Dreams-Makers Studio", email = "contact@dreams-makers.com"}]
 requires-python = ">=3.7"
