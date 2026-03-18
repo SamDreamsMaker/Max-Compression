@@ -18,8 +18,11 @@
 #define NUM_SYM     256
 #define MAX_TOTAL   (1 << 14)
 
+/* Fenwick tree (Binary Indexed Tree) for O(log N) prefix sum + update.
+ * tree[i] stores partial sums; prefix_sum(i) and update(i, delta) are O(log 256) = O(8). */
 typedef struct {
     uint16_t freq[NUM_SYM];
+    uint16_t tree[NUM_SYM + 1]; /* 1-indexed Fenwick tree */
     uint32_t total;
 } CtxModel;
 
@@ -27,10 +30,42 @@ typedef struct {
     CtxModel c[NUM_CTX];
 } Model;
 
+/* Fenwick tree operations (1-indexed, size NUM_SYM) */
+static inline void fenwick_update(uint16_t* tree, int i, int delta) {
+    for (i++; i <= NUM_SYM; i += i & (-i))
+        tree[i] += delta;
+}
+
+static inline uint32_t fenwick_query(const uint16_t* tree, int i) {
+    uint32_t s = 0;
+    for (; i > 0; i -= i & (-i))
+        s += tree[i];
+    return s;
+}
+
+/* Find largest i where prefix_sum(i) <= target — O(log N) */
+static inline int fenwick_find(const uint16_t* tree, uint32_t target) {
+    int pos = 0;
+    for (int pw = 128; pw > 0; pw >>= 1) {
+        if (pos + pw <= NUM_SYM && tree[pos + pw] <= target) {
+            pos += pw;
+            target -= tree[pos];
+        }
+    }
+    return pos; /* 0-indexed symbol */
+}
+
+static void rebuild_fenwick(CtxModel* c) {
+    memset(c->tree, 0, sizeof(c->tree));
+    for (int i = 0; i < NUM_SYM; i++)
+        fenwick_update(c->tree, i, c->freq[i]);
+}
+
 static void model_init(Model* m) {
     for (int c = 0; c < NUM_CTX; c++) {
         for (int s = 0; s < NUM_SYM; s++) m->c[c].freq[s] = 1;
         m->c[c].total = NUM_SYM;
+        rebuild_fenwick(&m->c[c]);
     }
 }
 
@@ -38,12 +73,14 @@ static void model_update(Model* m, int ctx, int sym) {
     CtxModel* c = &m->c[ctx];
     c->freq[sym] += 4;
     c->total += 4;
+    fenwick_update(c->tree, sym, 4);
     if (c->total >= MAX_TOTAL) {
         c->total = 0;
         for (int i = 0; i < NUM_SYM; i++) {
             c->freq[i] = (c->freq[i] >> 1) | 1;
             c->total += c->freq[i];
         }
+        rebuild_fenwick(c);
     }
 }
 
@@ -164,22 +201,19 @@ static void dec_update(Decoder* d, uint32_t cumfreq, uint32_t freq, uint32_t tot
 
 static void encode_symbol(Encoder* e, Model* m, int ctx, int sym) {
     CtxModel* c = &m->c[ctx];
-    uint32_t cum = 0;
-    for (int i = 0; i < sym; i++) cum += c->freq[i];
+    uint32_t cum = fenwick_query(c->tree, sym); /* prefix_sum(0..sym-1) */
     enc_encode(e, cum, c->freq[sym], c->total);
     model_update(m, ctx, sym);
 }
 
 static int decode_symbol(Decoder* d, Model* m, int ctx) {
     CtxModel* c = &m->c[ctx];
+    
     uint32_t target = dec_getfreq(d, c->total);
     
-    uint32_t cum = 0;
-    int sym = 0;
-    for (int i = 0; i < NUM_SYM; i++) {
-        if (cum + c->freq[i] > target) { sym = i; break; }
-        cum += c->freq[i];
-    }
+    /* Fenwick tree find — O(log 256) = O(8) */
+    int sym = fenwick_find(c->tree, target);
+    uint32_t cum = fenwick_query(c->tree, sym);
     
     dec_update(d, cum, c->freq[sym], c->total);
     model_update(m, ctx, sym);
