@@ -44,11 +44,21 @@ static void print_usage(void)
         "  20:    Smart mode — auto-selects best (recommended)\n"
         "  Default: %d\n"
         "\n"
+        "Levels:\n"
+        "  L1-L3   Fast LZ77 (speed priority)\n"
+        "  L6-L9   LZ-HC with lazy matching + entropy coding\n"
+        "  L12-L14 BWT + genome optimizer\n"
+        "  L20     Best: auto-routes text→BWT, binary→LZRC (BT)\n"
+        "  L24     LZRC fast: hash chain (~3x faster than L26)\n"
+        "  L26     LZRC direct: binary tree (best LZ ratio)\n"
+        "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
         "  mcx compress -l 9 myfile.txt         # good ratio, decent speed\n"
         "  mcx compress -l 20 bigfile.bin       # best compression\n"
+        "  mcx compress -l 24 bigfile.bin       # fast LZRC (binary)\n"
         "  mcx decompress myfile.txt.mcx\n"
+        "  mcx bench myfile.txt                 # compare all levels\n"
         "\n",
         mcx_version_string(),
         MCX_LEVEL_DEFAULT
