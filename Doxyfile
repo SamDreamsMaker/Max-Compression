@@ -1,0 +1,21 @@
+# Doxyfile for MaxCompression API Documentation
+
+PROJECT_NAME           = "MaxCompression"
+PROJECT_NUMBER         = "2.0.1"
+PROJECT_BRIEF          = "High-performance lossless compression library"
+OUTPUT_DIRECTORY       = docs/api
+INPUT                  = include/maxcomp/maxcomp.h lib/lz/lzrc.h
+FILE_PATTERNS          = *.h
+RECURSIVE              = NO
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = NO
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_MAN           = NO
+HTML_OUTPUT            = html
+OPTIMIZE_OUTPUT_FOR_C  = YES
+TYPEDEF_HIDES_STRUCT   = YES
+SORT_MEMBER_DOCS       = NO
+SHOW_INCLUDE_FILES     = NO
+QUIET                  = YES
+WARNINGS               = YES
