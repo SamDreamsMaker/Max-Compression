@@ -396,28 +396,39 @@ size_t mcx_rans_decompress(uint8_t* dst, size_t dst_cap,
     stream_end = src_size;
 
     /* Decode symbols forward.
-     * state1 handles even indices, state2 handles odd indices. */
-    for (i = 0; i < orig_size; i++) {
+     * state1 handles even indices, state2 handles odd indices.
+     * Unrolled 2-at-a-time for better pipelining. */
+    {
         uint32_t mask = MCX_RANS_SCALE - 1;
-        uint32_t* state_ptr = (i & 1) ? &state2 : &state1;
-        
-        uint32_t slot = *state_ptr & mask;
-        uint8_t  sym  = table.lookup[slot];
-        uint16_t freq = table.freq[sym];
-        uint16_t cumf = table.cumfreq[sym];
-
-        dst[i] = sym;
-
-        /* Core rANS decode step */
-        *state_ptr = (uint32_t)freq * (*state_ptr >> MCX_RANS_PRECISION)
-                   + (*state_ptr & mask)
-                   - cumf;
-
-        /* Renormalize */
-        while (*state_ptr < MCX_RANS_STATE_LOWER && stream_pos + 1 < stream_end) {
-            memcpy(&val, src + stream_pos, 2);
-            *state_ptr = (*state_ptr << 16) | val;
-            stream_pos += 2;
+        size_t pairs = orig_size / 2;
+        for (i = 0; i < pairs; i++) {
+            /* Even symbol (state1) */
+            uint32_t slot1 = state1 & mask;
+            uint8_t  sym1  = table.lookup[slot1];
+            dst[i * 2] = sym1;
+            state1 = (uint32_t)table.freq[sym1] * (state1 >> MCX_RANS_PRECISION)
+                    + (state1 & mask) - table.cumfreq[sym1];
+            while (state1 < MCX_RANS_STATE_LOWER && stream_pos + 1 < stream_end) {
+                memcpy(&val, src + stream_pos, 2);
+                state1 = (state1 << 16) | val;
+                stream_pos += 2;
+            }
+            /* Odd symbol (state2) */
+            uint32_t slot2 = state2 & mask;
+            uint8_t  sym2  = table.lookup[slot2];
+            dst[i * 2 + 1] = sym2;
+            state2 = (uint32_t)table.freq[sym2] * (state2 >> MCX_RANS_PRECISION)
+                    + (state2 & mask) - table.cumfreq[sym2];
+            while (state2 < MCX_RANS_STATE_LOWER && stream_pos + 1 < stream_end) {
+                memcpy(&val, src + stream_pos, 2);
+                state2 = (state2 << 16) | val;
+                stream_pos += 2;
+            }
+        }
+        /* Handle odd trailing symbol */
+        if (orig_size & 1) {
+            uint32_t slot1 = state1 & mask;
+            dst[orig_size - 1] = table.lookup[slot1];
         }
     }
 
