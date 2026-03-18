@@ -45,7 +45,7 @@ fi
 
 # MCX levels
 for L in 6 12 20 26; do
-    "$MCX" compress -l $L "$FILE" -o /tmp/_cmp_mcx.mcx 2>/dev/null
+    "$MCX" compress -l $L "$FILE" -o /tmp/_cmp_mcx.mcx >/dev/null 2>&1
     MX=$(stat -c%s /tmp/_cmp_mcx.mcx 2>/dev/null || stat -f%z /tmp/_cmp_mcx.mcx)
     printf "%-12s  %10d  %8.2fx  %5.1f%%\n" "mcx -l$L" "$MX" "$(echo "$SIZE $MX" | awk '{printf "%.2f", $1/$2}')" "$(echo "$SIZE $MX" | awk '{printf "%.1f", 100*(1-$2/$1)}')"
     rm -f /tmp/_cmp_mcx.mcx
