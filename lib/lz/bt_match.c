@@ -167,10 +167,16 @@ int bt_find(BTMatchFinder* bt, BTMatch* matches, int max_matches) {
 }
 
 void bt_skip(BTMatchFinder* bt, uint32_t n) {
+    /* Insert positions into tree with reduced depth (we don't need matches) */
+    int saved_depth = bt->max_depth;
+    bt->max_depth = 4; /* Much shallower during skip — just maintain connectivity */
+    
     BTMatch dummy[1];
     for (uint32_t i = 0; i < n && bt->pos < bt->data_size; i++) {
-        bt_find(bt, dummy, 1); /* Insert into tree but discard matches */
+        bt_find(bt, dummy, 1);
     }
+    
+    bt->max_depth = saved_depth;
 }
 
 void bt_free(BTMatchFinder* bt) {
