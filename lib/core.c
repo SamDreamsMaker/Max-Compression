@@ -336,6 +336,15 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 /* Entropy Pass: try FSE on LZ output, then fall back gracefully */
                 size_t fse_size = mcx_fse_compress(fse_buf + 1, fse_cap, lz_buf, lz_size);
 
+                /* Also try rANS — 0.5-1% better than FSE on LZ output */
+                size_t rans_cap = lz_size + lz_size / 4 + 1024;
+                uint8_t* rans_buf = (uint8_t*)malloc(rans_cap + 1);
+                size_t rans_size = 0;
+                if (rans_buf) {
+                    rans_size = mcx_rans_compress(rans_buf + 1, rans_cap, lz_buf, lz_size);
+                    if (rans_size > 0) rans_buf[0] = 0xA8; /* LZ16+rANS */
+                }
+
                 /* Also try adaptive AC on LZ output — 7% better than FSE on binary */
                 size_t aac_cap = lz_size + lz_size / 4 + 1024;
                 uint8_t* aac_buf = (uint8_t*)malloc(aac_cap + 1);
@@ -345,7 +354,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     if (aac_size > 0) aac_buf[0] = 0xAE; /* LZ16+AAC */
                 }
 
-                /* Pick best: FSE vs AAC vs raw LZ vs store */
+                /* Pick best: FSE vs rANS vs AAC vs raw LZ vs store */
                 size_t best_size = block_src_size; /* Store threshold */
                 uint8_t* best_buf = NULL;
                 uint8_t best_type = 0x00;
@@ -353,6 +362,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 if (fse_size > 0 && fse_size < best_size) {
                     best_size = fse_size;
                     best_type = 0xAA; /* LZ+FSE */
+                }
+                if (rans_size > 0 && rans_size < best_size) {
+                    best_size = rans_size;
+                    best_type = 0xA8; /* LZ+rANS */
                 }
                 if (aac_size > 0 && aac_size < best_size) {
                     best_size = aac_size;
@@ -369,12 +382,21 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     block_buffers[b] = fse_buf;
                     free(lz_buf);
                     if (aac_buf) free(aac_buf);
+                    if (rans_buf) free(rans_buf);
+                } else if (best_type == 0xA8) {
+                    block_sizes[b] = rans_size + 1;
+                    block_buffers[b] = rans_buf;
+                    free(lz_buf);
+                    free(fse_buf);
+                    if (aac_buf) free(aac_buf);
+                    rans_buf = NULL;
                 } else if (best_type == 0xAE) {
                     block_sizes[b] = aac_size + 1;
                     block_buffers[b] = aac_buf;
                     free(lz_buf);
                     free(fse_buf);
-                    aac_buf = NULL; /* Don't double-free */
+                    if (rans_buf) free(rans_buf);
+                    aac_buf = NULL;
                 } else if (best_type == 0xAB) {
                     fse_buf[0] = 0xAB;
                     memcpy(fse_buf + 1, lz_buf, lz_size);
@@ -382,6 +404,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     block_buffers[b] = fse_buf;
                     free(lz_buf);
                     if (aac_buf) free(aac_buf);
+                    if (rans_buf) free(rans_buf);
                 } else {
                     /* Store original */
                     fse_buf[0] = 0x00;
@@ -390,6 +413,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     block_buffers[b] = fse_buf;
                     free(lz_buf);
                     if (aac_buf) free(aac_buf);
+                    if (rans_buf) free(rans_buf);
                 }
 
             } else if (strategy == MCX_STRATEGY_LZ24) {
@@ -417,6 +441,15 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
                 size_t fse_size = mcx_fse_compress(fse_buf + 1, fse_cap, lz_buf, lz_size);
 
+                /* Also try rANS on LZ24 output */
+                size_t rans24_cap = lz_size + lz_size / 4 + 1024;
+                uint8_t* rans24_buf = (uint8_t*)malloc(rans24_cap + 1);
+                size_t rans24_size = 0;
+                if (rans24_buf) {
+                    rans24_size = mcx_rans_compress(rans24_buf + 1, rans24_cap, lz_buf, lz_size);
+                    if (rans24_size > 0) rans24_buf[0] = 0xA9; /* LZ24+rANS */
+                }
+
                 /* Also try adaptive AC on LZ24 output */
                 size_t aac_cap = lz_size + lz_size / 4 + 1024;
                 uint8_t* aac_buf = (uint8_t*)malloc(aac_cap + 1);
@@ -426,12 +459,15 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     if (aac_size > 0) aac_buf[0] = 0xAF; /* LZ24+AAC */
                 }
 
-                /* Pick best: FSE vs AAC vs raw LZ24 vs store */
+                /* Pick best: FSE vs rANS vs AAC vs raw LZ24 vs store */
                 size_t best_size = block_src_size;
                 uint8_t best_type = 0x00;
 
                 if (fse_size > 0 && fse_size < best_size) {
                     best_size = fse_size; best_type = 0xAC;
+                }
+                if (rans24_size > 0 && rans24_size < best_size) {
+                    best_size = rans24_size; best_type = 0xA9;
                 }
                 if (aac_size > 0 && aac_size < best_size) {
                     best_size = aac_size; best_type = 0xAF;
@@ -446,10 +482,18 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     block_buffers[b] = fse_buf;
                     free(lz_buf);
                     if (aac_buf) free(aac_buf);
+                    if (rans24_buf) free(rans24_buf);
+                } else if (best_type == 0xA9) {
+                    block_sizes[b] = rans24_size + 1;
+                    block_buffers[b] = rans24_buf;
+                    free(lz_buf); free(fse_buf);
+                    if (aac_buf) free(aac_buf);
+                    rans24_buf = NULL;
                 } else if (best_type == 0xAF) {
                     block_sizes[b] = aac_size + 1;
                     block_buffers[b] = aac_buf;
                     free(lz_buf); free(fse_buf);
+                    if (rans24_buf) free(rans24_buf);
                     aac_buf = NULL;
                 } else if (best_type == 0xAD) {
                     fse_buf[0] = 0xAD;
@@ -458,6 +502,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     block_buffers[b] = fse_buf;
                     free(lz_buf);
                     if (aac_buf) free(aac_buf);
+                    if (rans24_buf) free(rans24_buf);
                 } else {
                     fse_buf[0] = 0x00;
                     memcpy(fse_buf + 1, in + src_offset, block_src_size);
@@ -465,6 +510,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     block_buffers[b] = fse_buf;
                     free(lz_buf);
                     if (aac_buf) free(aac_buf);
+                    if (rans24_buf) free(rans24_buf);
                 }
             } else if (strategy == MCX_STRATEGY_LZRC) {
                 /* LZRC Path: v2.0 LZ + Range Coder */
@@ -1078,8 +1124,8 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                     { omp_err = 1; }
                     continue;
                 }
-            } else if (block_type == 0xAA || block_type == 0xAB) {
-                    /* 0xAA = LZ77 + FSE, 0xAB = LZ77 raw (FSE didn't compress further) */
+            } else if (block_type == 0xAA || block_type == 0xAB || block_type == 0xA8) {
+                    /* 0xAA = LZ77 + FSE, 0xA8 = LZ77 + rANS, 0xAB = LZ77 raw */
                     size_t lz_cap = mcx_lz_compress_bound(block_dst_size);
                     uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
                     if (!lz_buf) {
@@ -1093,6 +1139,10 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                         lz_size = mcx_fse_decompress(lz_buf, lz_cap,
                                                      in + chunk_src_offset + 1,
                                                      chunk_comp_size - 1);
+                    } else if (block_type == 0xA8) {
+                        lz_size = mcx_rans_decompress(lz_buf, lz_cap,
+                                                      in + chunk_src_offset + 1,
+                                                      chunk_comp_size - 1);
                     } else {
                         /* 0xAB: LZ77 output stored raw */
                         lz_size = chunk_comp_size - 1;
@@ -1142,7 +1192,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                         { omp_err = 1; }
                         continue;
                     }
-                } else if (block_type == 0xAC || block_type == 0xAD) {
+                } else if (block_type == 0xAC || block_type == 0xAD || block_type == 0xA9) {
                     size_t lz_cap = mcx_lz24_compress_bound(block_dst_size);
                     uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
                     if (!lz_buf) {
@@ -1156,6 +1206,10 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                         lz_size = mcx_fse_decompress(lz_buf, lz_cap,
                                                      in + chunk_src_offset + 1,
                                                      chunk_comp_size - 1);
+                    } else if (block_type == 0xA9) {
+                        lz_size = mcx_rans_decompress(lz_buf, lz_cap,
+                                                      in + chunk_src_offset + 1,
+                                                      chunk_comp_size - 1);
                     } else {
                         lz_size = chunk_comp_size - 1;
                         if (lz_size > lz_cap) lz_size = 0;
