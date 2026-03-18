@@ -8,7 +8,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="License"></a>
     <img src="https://img.shields.io/badge/language-C99-orange?style=flat-square" alt="C99">
     <img src="https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-lightgrey?style=flat-square" alt="Platform">
-    <img src="https://img.shields.io/badge/version-1.9.3-purple?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/version-2.0.0-purple?style=flat-square" alt="Version">
   </p>
 </p>
 
@@ -113,6 +113,7 @@ MCX provides a range of compression levels trading speed for ratio:
 | 9 | LZ77 lazy + adaptive arithmetic | ●●○○○ | ●●●●○ | Best LZ ratio |
 | 10–14 | BWT + MTF + RLE2 + multi-rANS | ●○○○○ | ●●●●○ | Text, structured data |
 | **20** | **Smart Mode (auto-detect)** | ●○○○○ | ●●●●● | **Recommended for max ratio** |
+| 26 | LZRC (LZ + range coder) | ●○○○○ | ●●●●● | Best for binary archives |
 
 ### Smart Mode (Level 20)
 
@@ -170,14 +171,15 @@ The [Silesia corpus](https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia) is 
 | nci | 33 MB | 11.23× | 18.51× | 19.30× | **25.65×** | +39% | +33% |
 | samba | 21 MB | 4.00× | 4.75× | 5.74× | **5.03×** | +6% | -12% |
 | webster | 40 MB | 3.44× | 4.80× | 4.94× | **5.81×** | +21% | +18% |
-| mozilla | 50 MB | 2.70× | — | 3.83× | **2.93×** | — | -24% |
+| mozilla | 50 MB | 2.70× | — | 3.83× | **3.21×** 🆕 | — | -16% |
 
 **Summary:**
 - Beats **gzip -9** on 12/12 files (100%)
 - Beats **bzip2 -9** on 11/11 tested files (100%)
 - Beats **xz -9** on 9/12 files (75%)
 
-> xz leads on three binary-heavy files (sao, samba, mozilla) where LZMA2's large sliding window provides an advantage. MCX v2.0 will address this with a new LZ + range coder engine featuring 16 MB+ match windows.
+> xz leads on two binary-heavy files (sao, samba) where LZMA2's large sliding window provides an advantage.
+> 🆕 **v2.0:** New LZRC engine (LZ + range coder, 16 MB window) reduces mozilla gap from -24% to -16%. Use `mcx compress -l 26` for LZRC mode.
 
 ### Speed
 
