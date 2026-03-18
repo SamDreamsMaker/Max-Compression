@@ -13,6 +13,7 @@ set(MCX_LIB_SOURCES
     entropy/fse.c
     optimizer/genetic.c
     lz/lz_compress.c
+    lz/bt_match.c
     lz/lz_decompress.c
     lz/lz_multistream.c
     lz/lz24.c
