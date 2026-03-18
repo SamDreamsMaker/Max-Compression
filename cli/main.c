@@ -28,8 +28,8 @@ static void print_usage(void)
         "MaxCompression v%s\n"
         "\n"
         "Usage:\n"
-        "  mcx compress  [-l LEVEL] <input> [-o output.mcx]\n"
-        "  mcx decompress <input.mcx> [-o output]\n"
+        "  mcx compress  [-l LEVEL] [-q] <input> [-o output.mcx]\n"
+        "  mcx decompress [-q] <input.mcx> [-o output]\n"
         "  mcx info       <input.mcx>\n"
         "  mcx cat        <input.mcx>   # decompress to stdout\n"
         "  mcx bench      <input>       # benchmark all levels\n"
@@ -135,6 +135,8 @@ static void make_decompress_output(char* out, size_t out_cap, const char* input)
 
 /* ─── Commands ───────────────────────────────────────────────────────── */
 
+static int g_quiet = 0;  /* Suppress non-error output */
+
 static int cmd_compress(const char* input, const char* output, int level)
 {
     FILE* fin = fopen(input, "rb");
@@ -189,7 +191,7 @@ static int cmd_compress(const char* input, const char* output, int level)
             return 1;
         }
 
-        printf("Compressing '%s' (%zu bytes) at level %d...\n", input, src_size, level);
+        if (!g_quiet) printf("Compressing '%s' (%zu bytes) at level %d...\n", input, src_size, level);
 
         size_t comp_size = mcx_compress(dst_buf, dst_cap, src_buf, src_size, level);
         free(src_buf);
@@ -223,7 +225,7 @@ static int cmd_compress(const char* input, const char* output, int level)
 
         fseek(fin, 0, SEEK_SET);
 
-        printf("Compressing '%s' (%zu bytes) at level %d... (Streaming API)\n", input, src_size, level);
+        if (!g_quiet) printf("Compressing '%s' (%zu bytes) at level %d... (Streaming API)\n", input, src_size, level);
 
         mcx_in_buffer in_b = { in_buf, 0, 0 };
         mcx_out_buffer out_b = { out_buf, OUT_CHUNK_SIZE, 0 };
@@ -269,10 +271,10 @@ static int cmd_compress(const char* input, const char* output, int level)
     double ratio = (double)src_size / (double)total_out;
     double savings = (1.0 - (double)total_out / (double)src_size) * 100.0;
 
-    printf("Done!\n");
-    printf("  Input:  %zu bytes\n", src_size);
-    printf("  Output: %zu bytes -> '%s'\n", total_out, output);
-    printf("  Ratio:  %.2fx (%.1f%% smaller)\n", ratio, savings);
+    if (!g_quiet) printf("Done!\n");
+    if (!g_quiet) printf("  Input:  %zu bytes\n", src_size);
+    if (!g_quiet) printf("  Output: %zu bytes -> '%s'\n", total_out, output);
+    if (!g_quiet) printf("  Ratio:  %.2fx (%.1f%% smaller)\n", ratio, savings);
 
     fclose(fin);
     fclose(fout);
@@ -337,7 +339,7 @@ static int cmd_decompress(const char* input, const char* output)
         return 1;
     }
 
-    printf("Decompressing '%s' (%zu bytes)...\n", input, src_size);
+    if (!g_quiet) printf("Decompressing '%s' (%zu bytes)...\n", input, src_size);
 
     size_t total_out = mcx_decompress(dst_buf, (size_t)orig_size + 1024, src_buf, src_size);
     free(src_buf);
@@ -351,8 +353,8 @@ static int cmd_decompress(const char* input, const char* output)
     fwrite(dst_buf, 1, total_out, fout);
     free(dst_buf);
 
-    printf("Done!\n");
-    printf("  Decompressed: %zu bytes -> '%s'\n", total_out, output);
+    if (!g_quiet) printf("Done!\n");
+    if (!g_quiet) printf("  Decompressed: %zu bytes -> '%s'\n", total_out, output);
 
     fclose(fin);
     fclose(fout);
@@ -521,6 +523,8 @@ int main(int argc, char* argv[])
                 level = atoi(argv[++i]);
             } else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) {
                 output = argv[++i];
+            } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
+                g_quiet = 1;
             } else if (argv[i][0] != '-') {
                 input = argv[i];
             }
@@ -539,6 +543,8 @@ int main(int argc, char* argv[])
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) {
                 output = argv[++i];
+            } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
+                g_quiet = 1;
             } else if (argv[i][0] != '-') {
                 input = argv[i];
             }
