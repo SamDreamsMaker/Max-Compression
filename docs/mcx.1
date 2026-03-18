@@ -1,0 +1,89 @@
+.TH MCX 1 "March 2026" "MaxCompression 2.0.0" "User Commands"
+.SH NAME
+mcx \- high\-ratio lossless data compression tool
+.SH SYNOPSIS
+.B mcx compress
+[\fB\-l\fR \fILEVEL\fR]
+[\fB\-o\fR \fIOUTPUT\fR]
+\fIINPUT\fR
+.br
+.B mcx decompress
+[\fB\-o\fR \fIOUTPUT\fR]
+\fIINPUT\fR
+.SH DESCRIPTION
+.B mcx
+compresses and decompresses files using the MaxCompression (MCX) format.
+It achieves compression ratios competitive with xz/LZMA2 while beating
+bzip2 on all file types.
+.PP
+MCX uses a hybrid approach: BWT (Burrows\-Wheeler Transform) for text
+and structured data, LZRC (LZ + Range Coder) for binary archives.
+Smart detection automatically selects the best strategy.
+.SH OPTIONS
+.TP
+.BR \-l ", " \-\-level =\fILEVEL\fR
+Compression level (1\-26). Default: 3.
+.RS
+.TP
+.B 1\-3
+Fast mode (LZ77 + FSE). Speed: 15\-50 MB/s.
+.TP
+.B 6\-9
+Standard mode (LZ\-HC + adaptive entropy). Speed: 3\-15 MB/s.
+.TP
+.B 10\-22
+Best mode (BWT + multi\-table rANS). Speed: 1\-5 MB/s.
+.TP
+.B 26
+Ultra mode (LZRC v2.0 engine). Speed: 0.5\-1.7 MB/s.
+Best ratio on binary data.
+.RE
+.TP
+.BR \-o ", " \-\-output =\fIFILE\fR
+Output file path. If not specified, appends .mcx for compression
+or removes .mcx for decompression.
+.SH EXAMPLES
+.TP
+Compress a file at maximum level:
+.B mcx compress \-l 20 data.bin \-o data.mcx
+.TP
+Decompress:
+.B mcx decompress data.mcx \-o data.bin
+.TP
+Fast compression:
+.B mcx compress \-l 1 largefile.tar
+.SH COMPRESSION RATIOS
+Typical results on the Silesia benchmark corpus (211 MB):
+.PP
+.TS
+l l l l l.
+Tool	Ratio	Speed (comp)	Speed (decomp)
+_
+mcx L20	4.35x	0.5\-1.7 MB/s	12\-19 MB/s
+xz \-9e	4.34x	2\-5 MB/s	50\-80 MB/s
+bzip2 \-9	3.37x	5\-8 MB/s	5\-10 MB/s
+gzip \-9	2.73x	15\-30 MB/s	200+ MB/s
+.TE
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Error (invalid input, I/O error, decompression failure).
+.SH FILES
+MCX files use the
+.B .mcx
+extension and begin with magic bytes
+.BR "MCX\\x01" .
+.SH BUGS
+Report bugs at <https://github.com/SamDreamsMaker/Max\-Compression/issues>.
+.SH AUTHOR
+Dreams\-Makers Studio <contact@dreams\-makers.com>
+.SH SEE ALSO
+.BR gzip (1),
+.BR bzip2 (1),
+.BR xz (1),
+.BR zstd (1)
+.SH LICENSE
+GPL\-3.0. See LICENSE file for details.
