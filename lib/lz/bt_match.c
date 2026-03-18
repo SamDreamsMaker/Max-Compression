@@ -23,7 +23,7 @@
 #include <string.h>
 
 #define BT_EMPTY  0xFFFFFFFF
-#define BT_MIN_MATCH  3
+#define BT_MIN_MATCH  4
 
 static inline uint32_t bt_hash4(const uint8_t* p, int hash_log) {
     uint32_t v;

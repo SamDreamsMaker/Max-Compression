@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 /**
  * @file bench_fast.c
  * @brief Phase J — Native C Speed Harness for mcx_lz_fast

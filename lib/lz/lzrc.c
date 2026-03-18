@@ -44,7 +44,7 @@
 #define LZRC_ALIGN_SIZE (1 << LZRC_ALIGN_BITS)
 
 /* Max match length = 4 + 8 + 8 + 256 = 276 */
-#define LZRC_MIN_MATCH  3
+#define LZRC_MIN_MATCH  4
 #define LZRC_MAX_MATCH  273
 
 typedef struct {
