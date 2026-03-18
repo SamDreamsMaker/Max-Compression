@@ -27,6 +27,7 @@ static void print_usage(void)
         "  mcx compress  [-l LEVEL] <input> [-o output.mcx]\n"
         "  mcx decompress <input.mcx> [-o output]\n"
         "  mcx info       <input.mcx>\n"
+        "  mcx bench      <input>       # benchmark all levels\n"
         "  mcx --version\n"
         "  mcx --help\n"
         "\n"
@@ -371,6 +372,80 @@ static int cmd_info(const char* input)
     return 0;
 }
 
+/* ─── Bench command ──────────────────────────────────────────────────── */
+
+#ifdef _GNU_SOURCE
+#include <time.h>
+#else
+#define _GNU_SOURCE
+#include <time.h>
+#endif
+
+static int cmd_bench(const char* input)
+{
+    size_t src_size;
+    uint8_t* src = read_file(input, &src_size);
+    if (!src) return 1;
+
+    printf("Benchmarking '%s' (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
+    printf("%-6s %10s %10s %8s %10s %10s\n",
+           "Level", "Compressed", "Ratio", "Saving", "Comp MB/s", "Dec MB/s");
+    printf("─────────────────────────────────────────────────────────────\n");
+
+    int levels[] = {1, 3, 6, 9, 12, 20, 26};
+    int n_levels = sizeof(levels) / sizeof(levels[0]);
+
+    size_t comp_cap = mcx_compress_bound(src_size);
+    uint8_t* comp = (uint8_t*)malloc(comp_cap);
+    uint8_t* dec = (uint8_t*)malloc(src_size + 64);
+    if (!comp || !dec) {
+        fprintf(stderr, "Error: out of memory\n");
+        free(src); free(comp); free(dec);
+        return 1;
+    }
+
+    for (int i = 0; i < n_levels; i++) {
+        int level = levels[i];
+        struct timespec t0, t1;
+
+        /* Compress */
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        size_t comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+
+        if (mcx_is_error(comp_size)) {
+            printf("L%-5d  ERROR: %s\n", level, mcx_get_error_name(comp_size));
+            continue;
+        }
+
+        double comp_time = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) * 1e-9;
+        double comp_speed = src_size / comp_time / 1048576.0;
+
+        /* Decompress */
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        size_t dec_size = mcx_decompress(dec, src_size + 64, comp, comp_size);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+
+        double dec_time = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) * 1e-9;
+        double dec_speed = src_size / dec_time / 1048576.0;
+
+        /* Verify */
+        int ok = (!mcx_is_error(dec_size) && dec_size == src_size &&
+                  memcmp(src, dec, src_size) == 0);
+
+        double ratio = (double)src_size / comp_size;
+        double saving = 100.0 * (1.0 - (double)comp_size / src_size);
+
+        printf("L%-5d %10zu %9.2fx %7.1f%% %9.1f %9.1f %s\n",
+               level, comp_size, ratio, saving, comp_speed, dec_speed,
+               ok ? "" : " FAIL!");
+    }
+
+    printf("\n");
+    free(src); free(comp); free(dec);
+    return 0;
+}
+
 /* ─── Main ───────────────────────────────────────────────────────────── */
 
 int main(int argc, char* argv[])
@@ -436,6 +511,13 @@ int main(int argc, char* argv[])
             return 1;
         }
         return cmd_info(argv[2]);
+
+    } else if (strcmp(argv[1], "bench") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Error: no input file specified\n");
+            return 1;
+        }
+        return cmd_bench(argv[2]);
 
     } else {
         fprintf(stderr, "Unknown command: '%s'\n\n", argv[1]);
