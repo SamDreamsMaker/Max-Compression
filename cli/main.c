@@ -31,6 +31,7 @@ static void print_usage(void)
         "  mcx compress  [-l LEVEL] <input> [-o output.mcx]\n"
         "  mcx decompress <input.mcx> [-o output]\n"
         "  mcx info       <input.mcx>\n"
+        "  mcx cat        <input.mcx>   # decompress to stdout\n"
         "  mcx bench      <input>       # benchmark all levels\n"
         "  mcx --version\n"
         "  mcx --help\n"
@@ -562,6 +563,26 @@ int main(int argc, char* argv[])
             return 1;
         }
         return cmd_info(argv[2]);
+
+    } else if (strcmp(argv[1], "cat") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Error: no input file specified\n");
+            return 1;
+        }
+        /* Decompress to stdout */
+        size_t src_size;
+        uint8_t* src = read_file(argv[2], &src_size);
+        if (!src) return 1;
+        unsigned long long orig = mcx_get_decompressed_size(src, src_size);
+        if (orig == 0) { fprintf(stderr, "Error: not a valid MCX file\n"); free(src); return 1; }
+        uint8_t* dec = (uint8_t*)malloc((size_t)orig + 1024);
+        if (!dec) { fprintf(stderr, "Error: out of memory\n"); free(src); return 1; }
+        size_t dsz = mcx_decompress(dec, (size_t)orig + 1024, src, src_size);
+        free(src);
+        if (mcx_is_error(dsz)) { fprintf(stderr, "Error: decompression failed\n"); free(dec); return 1; }
+        fwrite(dec, 1, dsz, stdout);
+        free(dec);
+        return 0;
 
     } else if (strcmp(argv[1], "bench") == 0) {
         if (argc < 3) {
