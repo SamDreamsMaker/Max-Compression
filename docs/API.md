@@ -82,15 +82,55 @@ Get a human-readable error description.
 
 **Returns:** Static string describing the error, or `"No error"` if the result is valid.
 
+---
+
+### `mcx_get_frame_info`
+
+```c
+typedef struct {
+    unsigned long long original_size;
+    unsigned version;
+    unsigned level;
+    unsigned strategy;
+    unsigned flags;
+} mcx_frame_info;
+
+size_t mcx_get_frame_info(mcx_frame_info* info,
+                           const void* src, size_t src_size);
+```
+
+Read frame metadata from compressed data without decompressing.
+
+**Parameters:**
+| Parameter | Description |
+|-----------|-------------|
+| `info` | Output structure for frame information |
+| `src` | Compressed data (only header is read) |
+| `src_size` | Size of compressed data |
+
+**Returns:** 0 on success, or an error code (check with `mcx_is_error`).
+
+**Example:**
+```c
+mcx_frame_info info;
+if (!mcx_is_error(mcx_get_frame_info(&info, compressed, comp_size))) {
+    printf("Original: %llu bytes, Level: %u\n",
+           info.original_size, info.level);
+}
+```
+
 ## Compression Levels
 
 | Level | Strategy | Description |
 |-------|----------|-------------|
-| 1–3 | LZ77 greedy | Fast compression, lowest ratio |
-| 4–8 | LZ77 lazy HC | Hash chain match finder, better ratio |
-| 9 | LZ77 + AAC | Adaptive arithmetic coding, best LZ ratio |
+| 1–3 | LZ77 greedy + rANS | Fast compression, lowest ratio |
+| 4–6 | LZ-HC + rANS | Hash chain match finder, better ratio |
+| 7–8 | LZ-HC + AAC | Adaptive arithmetic coding, good ratio |
+| 9 | LZ-HC (d=64) + AAC | Deep chains + AAC, best LZ ratio |
 | 10–14 | BWT + rANS | Burrows-Wheeler transform, high ratio |
 | **20** | **Smart Mode** | **Auto-detect data type, best ratio** |
+| 24 | LZRC-HC | Fast LZRC with hash chains |
+| 26 | LZRC-BT | Best LZRC with binary tree + 64MB window |
 
 **Recommendation:** Use level 20 for maximum compression, level 6 for general purpose, level 3 for speed.
 
