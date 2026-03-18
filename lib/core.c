@@ -472,8 +472,11 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     continue;
                 }
                 
-                /* Use 24-bit window (16MB) for large files, 20-bit (1MB) for small */
-                int wlog = (block_src_size > (1 << 20)) ? 24 : 20;
+                /* Scale window to file size: larger window = better matches but slower.
+                 * Use the smallest power-of-2 window that covers the block. */
+                int wlog = 20; /* 1MB minimum */
+                while (wlog < 24 && (1u << wlog) < block_src_size)
+                    wlog++;
                 int depth = 32; /* BT converges at d=32 — same ratio, faster */
                 
                 size_t lzrc_size = mcx_lzrc_compress(lzrc_buf + 1, lzrc_cap,
