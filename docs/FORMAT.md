@@ -30,7 +30,7 @@ MCX is a frame-based lossless compression format. Each `.mcx` file contains a si
 | 0 | 4 | `magic` | `0x0158434D` (`"MCX\x01"` in little-endian) |
 | 4 | 1 | `version` | Format version (currently `1`) |
 | 5 | 1 | `flags` | Bitfield (see below) |
-| 6 | 1 | `level` | Compression level used (1–25) |
+| 6 | 1 | `level` | Compression level used (1–26) |
 | 7 | 1 | `strategy` | Compression strategy (see below) |
 | 8 | 8 | `original_size` | Uncompressed size in bytes (LE uint64) |
 | 16 | 4 | `header_crc32` | CRC32 of bytes 0–15 |
@@ -80,6 +80,8 @@ The first byte of each block's data identifies the compression method:
 | Byte | Type | Description |
 |------|------|-------------|
 | `0x00` | STORE | Uncompressed (block data follows directly) |
+| `0xA8` | LZ16+rANS | LZ77 (16-bit offsets) + rANS entropy coding |
+| `0xA9` | LZ24+rANS | LZ77 (24-bit offsets) + rANS entropy coding |
 | `0xAA` | LZ16+FSE | LZ77 (16-bit offsets) + FSE entropy coding |
 | `0xAB` | LZ16+RAW | LZ77 (16-bit offsets), no entropy coding |
 | `0xAC` | LZ24+FSE | LZ77 (24-bit offsets) + FSE entropy coding |
