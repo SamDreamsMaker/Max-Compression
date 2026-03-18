@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+        build_type: [Release, Debug]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_C_COMPILER=${{ matrix.compiler }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} -j$(nproc)
+
+      - name: Run tests
+        run: cd build && ctest --output-on-failure --timeout 300
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+
+      - name: Run tests
+        run: cd build && ctest --output-on-failure --timeout 300
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run tests
+        run: cd build && ctest -C Release --output-on-failure --timeout 300
+
+  roundtrip-test:
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+
+      - name: Download Canterbury Corpus
+        run: |
+          mkdir -p /tmp/cantrbry
+          cd /tmp/cantrbry
+          wget -q https://corpus.canterbury.ac.nz/resources/cantrbry.tar.gz
+          tar xzf cantrbry.tar.gz 2>/dev/null || true
+
+      - name: Roundtrip test (all levels)
+        run: |
+          for f in /tmp/cantrbry/*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            for level in 1 3 6 9 12 20; do
+              ./build/bin/mcx compress -l $level "$f" -o "/tmp/${name}.mcx"
+              ./build/bin/mcx decompress "/tmp/${name}.mcx" -o "/tmp/${name}.dec"
+              if diff "$f" "/tmp/${name}.dec" > /dev/null 2>&1; then
+                echo "OK: $name L$level"
+              else
+                echo "FAIL: $name L$level"
+                exit 1
+              fi
+              rm -f "/tmp/${name}.mcx" "/tmp/${name}.dec"
+            done
+          done
+
+  python-bindings:
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build shared library
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+          cmake --build build -j$(nproc)
+
+      - name: Test Python bindings
+        run: |
+          cp build/lib/libmaxcomp.so bindings/python/ 2>/dev/null || cp build/bin/libmaxcomp.so bindings/python/
+          cd bindings/python
+          python3 -c "
+          import maxcomp
+          data = b'Hello World! ' * 1000
+          compressed = maxcomp.compress(data, level=6)
+          restored = maxcomp.decompress(compressed)
+          assert restored == data, 'Roundtrip failed'
+          ratio = len(data) / len(compressed)
+          print(f'Python bindings OK: {len(data)} -> {len(compressed)} ({ratio:.1f}x)')
+          "

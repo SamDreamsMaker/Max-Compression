@@ -94,6 +94,17 @@ add_executable(probe12_stage probe12_stage.c)
 target_link_libraries(probe12_stage PRIVATE maxcomp_static)
 target_include_directories(probe12_stage PRIVATE ${CMAKE_SOURCE_DIR})
 
+# LZRC v2.0 roundtrip tests
+add_executable(test_lzrc test_lzrc.c)
+target_link_libraries(test_lzrc PRIVATE maxcomp_static)
+if(UNIX)
+    target_link_libraries(test_lzrc PRIVATE m pthread)
+endif()
+if(OpenMP_C_FOUND)
+    target_link_libraries(test_lzrc PRIVATE OpenMP::OpenMP_C)
+endif()
+add_test(NAME lzrc_roundtrip COMMAND test_lzrc)
+
 # Phase J: Native speed harness for mcx_lz_fast
 add_executable(bench_fast bench_fast.c
     ${CMAKE_SOURCE_DIR}/lib/lz_fast/mcx_lz_fast_compress.c

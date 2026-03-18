@@ -84,6 +84,7 @@ typedef enum {
     MCX_STRATEGY_BABEL     = 6,   /* Babel XOR predict + rANS (v1.2) */
     MCX_STRATEGY_LZ24      = 8,   /* LZ24 (24-bit offsets, 16MB window) + FSE */
     MCX_STRATEGY_STRIDE    = 7,   /* Stride-delta preprocess + BWT + ANS (v1.2 L23-25) */
+    MCX_STRATEGY_LZRC      = 9,   /* LZ + Range Coder (v2.0, binary tree match finder) */
 } mcx_strategy_t;
 
 /* ═══════════════════════════════════════════════════════════════════════

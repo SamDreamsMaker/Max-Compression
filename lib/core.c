@@ -22,6 +22,7 @@
 #include "babel/babel_transform.h"
 #include "babel/babel_stride.h"
 #include "entropy/adaptive_ac.h"
+#include "lz/lzrc.h"
 
 /* RLE2 (RUNA/RUNB) */
 extern size_t mcx_rle2_encode(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
@@ -163,7 +164,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     analysis = mcx_analyze(in, src_size);
 
     /* ── Choose strategy based on level (and analysis for BWT levels) ── */
-    if (level == 25) {
+    if (level == 26) {
+        /* Level 26: Force LZRC strategy (v2.0 LZ + Range Coder) — used by multi-trial */
+        strategy = MCX_STRATEGY_LZRC;
+    } else if (level == 25) {
         /* Level 25: Force LZ24 strategy (16MB window) — used by multi-trial */
         strategy = MCX_STRATEGY_LZ24;
     } else if (level <= 3) {
@@ -448,6 +452,35 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     block_buffers[b] = fse_buf;
                     free(lz_buf);
                     if (aac_buf) free(aac_buf);
+                }
+            } else if (strategy == MCX_STRATEGY_LZRC) {
+                /* LZRC Path: v2.0 LZ + Range Coder (binary tree match finder) */
+                size_t lzrc_cap = block_src_size * 2 + 4096;
+                uint8_t* lzrc_buf = (uint8_t*)malloc(lzrc_cap + 1);
+                if (!lzrc_buf) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    continue;
+                }
+                
+                /* Use 24-bit window (16MB) for large files, 20-bit (1MB) for small */
+                int wlog = (block_src_size > (1 << 20)) ? 24 : 20;
+                int depth = 64;
+                
+                size_t lzrc_size = mcx_lzrc_compress(lzrc_buf + 1, lzrc_cap,
+                                                      in + src_offset, block_src_size,
+                                                      wlog, depth);
+                
+                if (lzrc_size > 0 && lzrc_size < block_src_size) {
+                    lzrc_buf[0] = 0xB0; /* LZRC block type */
+                    block_sizes[b] = lzrc_size + 1;
+                    block_buffers[b] = lzrc_buf;
+                } else {
+                    /* LZRC didn't help — store raw */
+                    lzrc_buf[0] = 0x00;
+                    memcpy(lzrc_buf + 1, in + src_offset, block_src_size);
+                    block_sizes[b] = block_src_size + 1;
+                    block_buffers[b] = lzrc_buf;
                 }
             } else {
                 /* BWT Path (DEFAULT, BEST, BABEL, or STRIDE) */
@@ -776,7 +809,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     /* ── Multi-trial for L20+: try alternative strategies, keep smallest ── */
     if (level >= 20 && level <= 22 && strategy != MCX_STRATEGY_STORE 
         && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST
-        && strategy != MCX_STRATEGY_LZ24) {
+        && strategy != MCX_STRATEGY_LZ24 && strategy != MCX_STRATEGY_LZRC) {
         uint8_t* alt_buf = (uint8_t*)malloc(dst_cap);
         if (alt_buf) {
             /* Skip LZ-HC trial for text — BWT always wins on text */
@@ -802,9 +835,16 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     offset = alt12;
                 }
             }
-            /* Note: CM-rANS (L15) tested but doesn't help — L20 forced BWT
-             * already beats CM-rANS on binary data (ooffice: 2.19x vs 2.09x).
-             * CM-rANS has 128KB header overhead that negates its context advantage. */
+            /* Try LZRC (L26) — v2.0 LZ+RC with 16MB window.
+             * Best on binary archives (mozilla), skip on pure text (BWT always wins). */
+            if (analysis.type != MCX_DTYPE_TEXT_ASCII &&
+                analysis.type != MCX_DTYPE_TEXT_UTF8) {
+                size_t alt_lzrc = mcx_compress(alt_buf, dst_cap, src, src_size, 26);
+                if (!mcx_is_error(alt_lzrc) && alt_lzrc < offset) {
+                    memcpy(dst, alt_buf, alt_lzrc);
+                    offset = alt_lzrc;
+                }
+            }
             free(alt_buf);
         }
     }
@@ -974,6 +1014,16 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                     continue;
                 }
                 memcpy(out + dst_offset, in + chunk_src_offset + 1, block_dst_size);
+            } else if (block_type == 0xB0) {
+                /* 0xB0 = LZRC (v2.0 LZ + Range Coder) */
+                size_t dec_size = mcx_lzrc_decompress(
+                    out + dst_offset, block_dst_size,
+                    in + chunk_src_offset + 1, chunk_comp_size - 1);
+                if (dec_size != block_dst_size) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    continue;
+                }
             } else if (block_type == 0xAE) {
                 /* 0xAE = LZ77 + Adaptive AC */
                 size_t lz_cap = mcx_lz_compress_bound(block_dst_size);
