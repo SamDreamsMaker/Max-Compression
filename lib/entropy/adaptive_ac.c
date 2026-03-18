@@ -206,14 +206,30 @@ static void encode_symbol(Encoder* e, Model* m, int ctx, int sym) {
     model_update(m, ctx, sym);
 }
 
+/* Combined find + cumulative query — avoids redundant tree walk.
+ * Returns symbol and sets *cum to prefix_sum(0..sym-1). */
+static inline int fenwick_find_cum(const uint16_t* tree, uint32_t target, uint32_t* cum) {
+    int pos = 0;
+    uint32_t sum = 0;
+    for (int pw = 128; pw > 0; pw >>= 1) {
+        if (pos + pw <= NUM_SYM && tree[pos + pw] <= target) {
+            pos += pw;
+            target -= tree[pos];
+            sum += tree[pos];
+        }
+    }
+    *cum = sum;
+    return pos; /* 0-indexed symbol */
+}
+
 static int decode_symbol(Decoder* d, Model* m, int ctx) {
     CtxModel* c = &m->c[ctx];
     
     uint32_t target = dec_getfreq(d, c->total);
     
-    /* Fenwick tree find — O(log 256) = O(8) */
-    int sym = fenwick_find(c->tree, target);
-    uint32_t cum = fenwick_query(c->tree, sym);
+    /* Combined find + cumulative — single tree walk instead of two */
+    uint32_t cum;
+    int sym = fenwick_find_cum(c->tree, target, &cum);
     
     dec_update(d, cum, c->freq[sym], c->total);
     model_update(m, ctx, sym);
