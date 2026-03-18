@@ -64,7 +64,7 @@ typedef struct {
     uint16_t len_medium[8];
     uint16_t len_extra[256];
     
-    /* Distance model: slot tree + special bits + alignment */
+    /* Distance model: slot tree + extra bits + alignment */
     uint16_t dist_tree[LZRC_DIST_TREE];
     uint16_t dist_spec[6][16]; /* extra bits for slots with 1-6 context-coded bits */
     uint16_t dist_align[LZRC_ALIGN_SIZE];
@@ -115,6 +115,14 @@ static void lzrc_enc_length(RCEncoder* e, LZRCModel* m, uint32_t len) {
         uint32_t rem = (len - 16 > 255) ? 255 : len - 16;
         rc_enc_byte(e, m->len_extra, (uint8_t)rem);
     }
+}
+
+/* Length-to-distance context: 0=len4, 1=len5-6, 2=len7-10, 3=len11+ */
+static inline int len_to_dist_ctx(uint32_t len) {
+    if (len <= 4) return 0;
+    if (len <= 6) return 1;
+    if (len <= 10) return 2;
+    return 3;
 }
 
 /* Encode rep index (0-3) as binary tree: 0 vs {1,2,3}, then 1 vs {2,3}, then 2 vs 3 */
