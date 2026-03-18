@@ -5,6 +5,7 @@
 
 #include "genetic.h"
 #include <internal.h>
+#include <preprocess/preprocess.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
