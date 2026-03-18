@@ -2,6 +2,31 @@
 
 All notable changes to MaxCompression are documented in this file.
 
+## [Unreleased] — v2.1.1
+
+### Added
+- **`mcx test` self-test command** — verifies all compression levels in one command.
+- **`-q/--quiet` flag** — suppress non-error output for scripting.
+- **Edge case tests** — boundary conditions, patterns, frame info validation.
+- **GitHub issue templates** (bug report + feature request).
+- **SECURITY.md** — vulnerability disclosure policy.
+- **.editorconfig** — consistent code style across editors.
+- CI status badge and version badge in README.
+
+### Changed
+- **rANS entropy for LZ blocks** — 0.5-2% smaller than FSE at L1-L9.
+  - alice29 L6: 65739→63814 (-2.9%), L9: 64442→62728 (-2.9%).
+- **AAC enabled at L7+** (was L9+) — better ratio at moderate speed.
+- **Larger HC hash table** (1M entries) — L6 -1.4%, L9 -0.9%.
+- **Better greedy hash populating** — L1 -3.7% ratio improvement.
+- **Scaled LZ hash table** with input size — +65% decompress speed on small files.
+- **rANS decoder unrolled** — 2 symbols per iteration.
+- **BWT inverse prefetch** for blocks >256KB (+5% decompress on large files).
+- **RC_UNLIKELY branch hints** for range coder normalize.
+- Updated ROADMAP.md with rejected experiments table.
+- Updated API.md with `mcx_get_frame_info` documentation.
+- Updated man page with `-q/--quiet` flag and L24 level.
+
 ## [2.1.0] — 2026-03-18
 
 ### Added
