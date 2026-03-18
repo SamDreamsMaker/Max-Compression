@@ -2,6 +2,29 @@
 
 All notable changes to MaxCompression are documented in this file.
 
+## [2.0.1] — 2026-03-18
+
+### Added
+- `mcx bench <file>` command — benchmark all compression levels with speed/ratio comparison.
+- Man page (`docs/mcx.1`).
+- Hash chain match finder (`hc_match.c`) — 4× faster alternative for future speed modes.
+- PyPI publish workflow (`.github/workflows/pypi.yml`) + `pyproject.toml`.
+- L26 (LZRC) roundtrip test in CI.
+- Python bindings: `version()` and `compress_bound()` functions.
+
+### Changed
+- **MTF decode +67% faster** — replaced byte loop with `memmove` (29→49 MB/s).
+- **RC decoder inline** — decompress +19–36% (cross-TU inlining of hot path).
+- **RC encoder inline** — compress +57–113%.
+- **BT depth 64→32** — same ratio, ~7% faster compression.
+- Portable bench timing (Windows `QueryPerformanceCounter`, POSIX `clock_gettime`).
+
+### Fixed
+- CI: Windows `__builtin_ctzll` → `mcx_ctzll()` portability.
+- CI: OpenMP optional (`find_package(QUIET)`).
+- CI: `_GNU_SOURCE` for `bench_fast.c`.
+- CI: Missing `preprocess.h` include in `genetic.c`.
+
 ## [2.0.0] — 2026-03-18
 
 ### Added
