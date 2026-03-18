@@ -68,6 +68,7 @@ These approaches were tested and found to be unhelpful:
 | Hybrid LZ+BWT | Always worse | BWT subsumes LZ matches |
 | RC for BWT output | Undecodable | Self-contextual chicken-and-egg |
 | Split-stream LZ+FSE | -8.4% worse | FSE table overhead per stream |
+| Word dictionary (Babel) | +2.6% worse | BWT already captures word patterns |
 | Lazy threshold ≠ +1 | +0 and +2 worse | +1 is sweet spot |
 | Match-dist literal ctx | Mixed | Sometimes helps, sometimes hurts |
 | 8 dist context bits | No gain | 6 bits sufficient |
