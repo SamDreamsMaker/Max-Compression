@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: MaxCompression ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+
+  build-linux:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build static + shared + CLI
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+          cmake --build build -j$(nproc)
+
+      - name: Run tests
+        run: cd build && ctest --output-on-failure --timeout 300
+
+      - name: Package
+        run: |
+          mkdir -p dist/maxcomp-${{ github.ref_name }}-linux-x64
+          cp build/bin/mcx dist/maxcomp-${{ github.ref_name }}-linux-x64/
+          cp build/bin/libmaxcomp.a dist/maxcomp-${{ github.ref_name }}-linux-x64/
+          cp build/lib/libmaxcomp.so dist/maxcomp-${{ github.ref_name }}-linux-x64/ 2>/dev/null || true
+          cp -r include dist/maxcomp-${{ github.ref_name }}-linux-x64/
+          cp LICENSE README.md CHANGELOG.md dist/maxcomp-${{ github.ref_name }}-linux-x64/
+          cd dist && tar czf maxcomp-${{ github.ref_name }}-linux-x64.tar.gz maxcomp-${{ github.ref_name }}-linux-x64/
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/maxcomp-${{ github.ref_name }}-linux-x64.tar.gz
+          asset_name: maxcomp-${{ github.ref_name }}-linux-x64.tar.gz
+          asset_content_type: application/gzip
+
+  build-macos:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: Package
+        run: |
+          mkdir -p dist/maxcomp-${{ github.ref_name }}-macos-x64
+          cp build/bin/mcx dist/maxcomp-${{ github.ref_name }}-macos-x64/
+          cp build/bin/libmaxcomp.a dist/maxcomp-${{ github.ref_name }}-macos-x64/
+          cp -r include dist/maxcomp-${{ github.ref_name }}-macos-x64/
+          cp LICENSE README.md CHANGELOG.md dist/maxcomp-${{ github.ref_name }}-macos-x64/
+          cd dist && tar czf maxcomp-${{ github.ref_name }}-macos-x64.tar.gz maxcomp-${{ github.ref_name }}-macos-x64/
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/maxcomp-${{ github.ref_name }}-macos-x64.tar.gz
+          asset_name: maxcomp-${{ github.ref_name }}-macos-x64.tar.gz
+          asset_content_type: application/gzip
+
+  build-windows:
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          cmake -S . -B build
+          cmake --build build --config Release
+
+      - name: Package
+        run: |
+          mkdir dist\maxcomp-${{ github.ref_name }}-windows-x64
+          copy build\bin\Release\mcx.exe dist\maxcomp-${{ github.ref_name }}-windows-x64\
+          copy build\bin\Release\maxcomp.lib dist\maxcomp-${{ github.ref_name }}-windows-x64\ 2>nul
+          xcopy include dist\maxcomp-${{ github.ref_name }}-windows-x64\include\ /E /I
+          copy LICENSE dist\maxcomp-${{ github.ref_name }}-windows-x64\
+          copy README.md dist\maxcomp-${{ github.ref_name }}-windows-x64\
+          cd dist && 7z a maxcomp-${{ github.ref_name }}-windows-x64.zip maxcomp-${{ github.ref_name }}-windows-x64\
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/maxcomp-${{ github.ref_name }}-windows-x64.zip
+          asset_name: maxcomp-${{ github.ref_name }}-windows-x64.zip
+          asset_content_type: application/zip

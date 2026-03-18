@@ -56,6 +56,7 @@ MCX is a frame-based lossless compression format. Each `.mcx` file contains a si
 | 6 | `BABEL` | Smart Mode (L20+, auto-detect) |
 | 7 | `STRIDE` | Stride-delta preprocessing |
 | 8 | `LZ24` | LZ77 with 24-bit offsets (16 MB window) |
+| 9 | `LZRC` | LZ + Range Coder (v2.0, binary tree match finder) |
 
 ## Block Layout
 
@@ -85,6 +86,7 @@ The first byte of each block's data identifies the compression method:
 | `0xAD` | LZ24+RAW | LZ77 (24-bit offsets), no entropy coding |
 | `0xAE` | LZ16+AAC | LZ77 (16-bit offsets) + adaptive arithmetic coding |
 | `0xAF` | LZ24+AAC | LZ77 (24-bit offsets) + adaptive arithmetic coding |
+| `0xB0` | LZRC | LZ + Range Coder (v2.0, adaptive models) |
 | Other | BWT Genome | BWT pipeline — byte encodes configuration (see below) |
 
 ## BWT Genome Byte
@@ -140,6 +142,32 @@ Used for LZ block types `0xAE` and `0xAF`. Order-1 adaptive model with 256 conte
 ```
 
 The decoder reconstructs the model adaptively — no explicit frequency tables are stored.
+
+## LZRC Format (Block Type `0xB0`)
+
+v2.0 LZ + Range Coder. Uses a binary tree match finder with adaptive range-coded models.
+
+```
+[original_size  : uint32 LE]    — uncompressed block size
+[window_log     : uint8]        — window size as log2 (20=1MB, 24=16MB)
+[rc_data        : ...]          — range-coded token stream
+```
+
+**Token types (range-coded):**
+- **is_match** (1 bit, context-dependent): 0 = literal, 1 = match
+- **Literal**: 8-bit byte coded via bit-tree (16 contexts based on previous byte)
+- **Match**:
+  - **is_rep** (1 bit): 0 = new distance, 1 = repeat distance
+  - **rep_index** (if is_rep=1): binary tree encoding of rep0–rep3
+  - **length**: 3-tier model (short 4–11, medium 12–19, extra 20–275)
+  - **distance** (if is_rep=0): 6-bit slot tree + extra bits + alignment
+
+**Distance slot encoding (64 slots):**
+- Slots 0–3: no extra bits (distances 0–3)
+- Slots 4–17: 1–6 context-coded extra bits
+- Slots 18+: direct bits (fixed 50/50) + 4 alignment bits
+
+All models are adaptive — no tables stored in the stream. Encoder and decoder maintain identical state.
 
 ## E8/E9 x86 Filter
 
