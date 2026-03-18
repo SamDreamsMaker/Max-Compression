@@ -70,7 +70,9 @@ if(BUILD_SHARED_LIBS)
     target_include_directories(maxcomp_shared
         PUBLIC  ${PROJECT_SOURCE_DIR}/include
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/external/divsufsort
     )
+    target_compile_definitions(maxcomp_shared PRIVATE MCX_USE_DIVSUFSORT=1)
     target_compile_definitions(maxcomp_shared
         PRIVATE MCX_BUILDING=1
         PUBLIC  MCX_SHARED=1
