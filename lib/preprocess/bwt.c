@@ -29,6 +29,24 @@
 
 #define SAIS_EMPTY ((int32_t)-1)
 
+/* Cached bucket computation — avoids re-counting the entire input each call */
+static void sais_count(const int32_t* T, int32_t* counts, int32_t n, int32_t K)
+{
+    int32_t i;
+    for (i = 0; i < K; i++) counts[i] = 0;
+    for (i = 0; i < n; i++) counts[T[i]]++;
+}
+
+static void sais_get_buckets_from_counts(const int32_t* counts, int32_t* bkt,
+                                          int32_t K, int end)
+{
+    int32_t i, sum = 0;
+    for (i = 0; i < K; i++) {
+        sum += counts[i];
+        bkt[i] = end ? sum : (sum - counts[i]);
+    }
+}
+
 static void sais_get_buckets(const int32_t* T, int32_t* bkt,
                              int32_t n, int32_t K, int end)
 {
@@ -44,10 +62,10 @@ static void sais_get_buckets(const int32_t* T, int32_t* bkt,
 
 static void sais_induce_L(const int32_t* T, int32_t* SA,
                           const uint8_t* type, int32_t* bkt,
-                          int32_t n, int32_t K)
+                          const int32_t* counts, int32_t n, int32_t K)
 {
     int32_t i, j;
-    sais_get_buckets(T, bkt, n, K, 0);
+    sais_get_buckets_from_counts(counts, bkt, K, 0);
     for (i = 0; i < n; i++) {
         if (SA[i] == SAIS_EMPTY) continue;
         j = SA[i] - 1;
@@ -59,10 +77,10 @@ static void sais_induce_L(const int32_t* T, int32_t* SA,
 
 static void sais_induce_S(const int32_t* T, int32_t* SA,
                           const uint8_t* type, int32_t* bkt,
-                          int32_t n, int32_t K)
+                          const int32_t* counts, int32_t n, int32_t K)
 {
     int32_t i, j;
-    sais_get_buckets(T, bkt, n, K, 1);
+    sais_get_buckets_from_counts(counts, bkt, K, 1);
     for (i = n - 1; i >= 0; i--) {
         if (SA[i] == SAIS_EMPTY) continue;
         j = SA[i] - 1;
@@ -115,8 +133,13 @@ static void sais_core(const int32_t* T, int32_t* SA, int32_t n, int32_t K)
         else                       type[i] = type[i + 1];
     }
 
+    /* Count characters once (avoid re-scanning in each bucket computation) */
+    int32_t* counts = (int32_t*)malloc((size_t)K * sizeof(int32_t));
+    if (!counts) { free(type); free(bkt); return; }
+    sais_count(T, counts, n, K);
+
     /* Step 2: Place LMS suffixes at bucket ends */
-    sais_get_buckets(T, bkt, n, K, 1);
+    sais_get_buckets_from_counts(counts, bkt, K, 1);
     for (i = 0; i < n; i++) SA[i] = SAIS_EMPTY;
 
     n1 = 0;
@@ -130,13 +153,13 @@ static void sais_core(const int32_t* T, int32_t* SA, int32_t n, int32_t K)
     /* No LMS? All same char -> SA = [n-1, n-2, ..., 0] */
     if (n1 == 0) {
         for (i = 0; i < n; i++) SA[i] = n - 1 - i;
-        free(bkt); free(type);
+        free(counts); free(bkt); free(type);
         return;
     }
 
     /* Step 3: Induce L and S */
-    sais_induce_L(T, SA, type, bkt, n, K);
-    sais_induce_S(T, SA, type, bkt, n, K);
+    sais_induce_L(T, SA, type, bkt, counts, n, K);
+    sais_induce_S(T, SA, type, bkt, counts, n, K);
 
     /* Step 4: Compact sorted LMS suffixes */
     n1 = 0;
@@ -178,14 +201,15 @@ static void sais_core(const int32_t* T, int32_t* SA, int32_t n, int32_t K)
     for (i = 0; i < n1; i++) SA1[i] = T1[SA1[i]];
     for (i = n1; i < n; i++) SA[i] = SAIS_EMPTY;
 
-    sais_get_buckets(T, bkt, n, K, 1);
+    sais_get_buckets_from_counts(counts, bkt, K, 1);
     for (i = n1 - 1; i >= 0; i--) {
         j = SA[i]; SA[i] = SAIS_EMPTY;
         SA[--bkt[T[j]]] = j;
     }
-    sais_induce_L(T, SA, type, bkt, n, K);
-    sais_induce_S(T, SA, type, bkt, n, K);
+    sais_induce_L(T, SA, type, bkt, counts, n, K);
+    sais_induce_S(T, SA, type, bkt, counts, n, K);
 
+    free(counts);
     free(bkt);
     free(type);
 }
