@@ -43,7 +43,6 @@ int main(void) {
     uint8_t* rep_text = (uint8_t*)malloc(tlen * 100);
     for (int i = 0; i < 100; i++) memcpy(rep_text + i * tlen, text, tlen);
     fails += test_roundtrip("repetitive_text", rep_text, tlen * 100, 26);
-    free(rep_text);
 
     /* Test 2: Binary pattern */
     uint8_t bin[8192];
@@ -74,6 +73,13 @@ int main(void) {
     uint8_t mixed[16384];
     for (int i = 0; i < 16384; i++) mixed[i] = (uint8_t)(i % 256);
     fails += test_roundtrip("mixed_L20", mixed, sizeof(mixed), 20);
+
+    /* Test 8: L24 LZRC-HC fast mode */
+    fails += test_roundtrip("rep_text_L24", rep_text, tlen * 100, 24);
+    free(rep_text);
+    
+    /* Test 9: L24 on binary */
+    fails += test_roundtrip("binary_L24", bin, sizeof(bin), 24);
 
     printf("\n%s: %d failures\n", fails ? "FAILED" : "ALL PASSED", fails);
     return fails;
