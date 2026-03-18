@@ -1,0 +1,16 @@
+# Doxyfile for MaxCompression API documentation
+
+PROJECT_NAME           = "MaxCompression"
+PROJECT_NUMBER         = "1.9.3"
+PROJECT_BRIEF          = "High-ratio lossless data compression library"
+OUTPUT_DIRECTORY       = docs/api
+INPUT                  = include/maxcomp/maxcomp.h
+RECURSIVE              = NO
+EXTRACT_ALL            = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+HTML_OUTPUT            = html
+OPTIMIZE_OUTPUT_FOR_C  = YES
+TYPEDEF_HIDES_STRUCT   = YES
+SORT_MEMBER_DOCS       = NO
+INLINE_SIMPLE_STRUCTS  = YES
