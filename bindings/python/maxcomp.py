@@ -167,3 +167,48 @@ def version() -> str:
 def compress_bound(size: int) -> int:
     """Return the maximum compressed size for a given input size."""
     return _lib.mcx_compress_bound(size)
+
+
+def get_frame_info(data: bytes) -> dict:
+    """
+    Read frame metadata from compressed data without decompressing.
+    
+    Args:
+        data: The compressed bytes object (only header is read).
+        
+    Returns:
+        A dict with keys: original_size, version, level, strategy, flags.
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise TypeError("Input data must be bytes or bytearray")
+    
+    class MCXFrameInfo(ctypes.Structure):
+        _fields_ = [
+            ("original_size", ctypes.c_ulonglong),
+            ("version", ctypes.c_uint),
+            ("level", ctypes.c_uint),
+            ("strategy", ctypes.c_uint),
+            ("flags", ctypes.c_uint),
+        ]
+    
+    _lib.mcx_get_frame_info.argtypes = [
+        ctypes.POINTER(MCXFrameInfo),
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
+    _lib.mcx_get_frame_info.restype = ctypes.c_size_t
+    
+    info = MCXFrameInfo()
+    result = _lib.mcx_get_frame_info(ctypes.byref(info), data, len(data))
+    
+    if _lib.mcx_is_error(result):
+        err_msg = _lib.mcx_get_error_name(result).decode('utf-8')
+        raise MaxCompressionError(f"Failed to read frame info: {err_msg}")
+    
+    return {
+        "original_size": info.original_size,
+        "version": info.version,
+        "level": info.level,
+        "strategy": info.strategy,
+        "flags": info.flags,
+    }
