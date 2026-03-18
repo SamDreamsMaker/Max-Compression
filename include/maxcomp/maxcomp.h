@@ -50,7 +50,7 @@ extern "C" {
 
 #define MCX_VERSION_MAJOR  1
 #define MCX_VERSION_MINOR  9
-#define MCX_VERSION_PATCH  1
+#define MCX_VERSION_PATCH  2
 
 /** Returns version as a packed integer: (major*10000 + minor*100 + patch) */
 MCXAPI unsigned mcx_version_number(void);
