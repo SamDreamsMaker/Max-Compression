@@ -153,3 +153,17 @@ def decompress(data: bytes) -> bytes:
         raise MaxCompressionError(f"Decompression length mismatch: expected {orig_size}, got {result}")
         
     return bytes(dst_buffer)
+
+
+def version() -> str:
+    """Return the MaxCompression library version string."""
+    try:
+        _lib.mcx_version_string.restype = ctypes.c_char_p
+        return _lib.mcx_version_string().decode('utf-8')
+    except Exception:
+        return "unknown"
+
+
+def compress_bound(size: int) -> int:
+    """Return the maximum compressed size for a given input size."""
+    return _lib.mcx_compress_bound(size)
