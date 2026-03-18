@@ -11,12 +11,13 @@
 
 /* ── Constants ──────────────────────────────────────────────────── */
 
-#define RC_TOP_VALUE   0x01000000U
+/* RC_PROB_BITS, RC_PROB_MAX, RC_MOVE_BITS, RC_TOP_VALUE defined in range_coder.h */
+#ifndef RC_BOT_VALUE
 #define RC_BOT_VALUE   0x00010000U
-#define RC_PROB_BITS   11
+#endif
+#ifndef RC_PROB_INIT
 #define RC_PROB_INIT   (1U << (RC_PROB_BITS - 1))  /* 1024 */
-#define RC_PROB_MAX    (1U << RC_PROB_BITS)         /* 2048 */
-#define RC_MOVE_BITS   5  /* Adaptation rate */
+#endif
 
 /* ── Encoder ────────────────────────────────────────────────────── */
 
@@ -166,38 +167,7 @@ void rc_dec_init(RCDecoder* d, const uint8_t* src, size_t size) {
     }
 }
 
-static inline void rc_dec_normalize(RCDecoder* d) {
-    while (d->range < RC_TOP_VALUE) {
-        d->code = (d->code << 8) | (d->pos < d->size ? d->buf[d->pos++] : 0);
-        d->range <<= 8;
-    }
-}
-
-int rc_dec_bit(RCDecoder* d, uint16_t* prob) {
-    uint32_t bound = (d->range >> RC_PROB_BITS) * (*prob);
-
-    if (d->code < bound) {
-        d->range = bound;
-        *prob += (RC_PROB_MAX - *prob) >> RC_MOVE_BITS;
-        rc_dec_normalize(d);
-        return 0;
-    } else {
-        d->code -= bound;
-        d->range -= bound;
-        *prob -= *prob >> RC_MOVE_BITS;
-        rc_dec_normalize(d);
-        return 1;
-    }
-}
-
-uint8_t rc_dec_byte(RCDecoder* d, uint16_t* probs) {
-    uint32_t ctx = 1;
-    for (int i = 0; i < 8; i++) {
-        int bit = rc_dec_bit(d, &probs[ctx]);
-        ctx = (ctx << 1) | bit;
-    }
-    return (uint8_t)(ctx & 0xFF);
-}
+/* rc_dec_normalize, rc_dec_bit, rc_dec_byte are now inline in range_coder.h */
 
 uint8_t rc_dec_literal(RCDecoder* d, uint16_t probs[16][256],
                         uint8_t prev_byte, int after_match) {

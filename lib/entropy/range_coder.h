@@ -47,12 +47,47 @@ size_t rc_enc_flush(RCEncoder* e);
 /* ── Decoder API ────────────────────────────────────────────────── */
 
 void rc_dec_init(RCDecoder* d, const uint8_t* src, size_t size);
-int rc_dec_bit(RCDecoder* d, uint16_t* prob);
-uint8_t rc_dec_byte(RCDecoder* d, uint16_t* probs);
-uint8_t rc_dec_matched_byte(RCDecoder* d, uint16_t* probs, uint8_t match_byte);
 uint8_t rc_dec_matched_byte(RCDecoder* d, uint16_t* probs, uint8_t match_byte);
 uint8_t rc_dec_literal(RCDecoder* d, uint16_t probs[16][256],
                         uint8_t prev_byte, int after_match);
+
+/* Inline hot-path decoder functions for cross-TU inlining */
+#define RC_PROB_BITS  11
+#define RC_PROB_MAX   (1 << RC_PROB_BITS)
+#define RC_MOVE_BITS  5
+#define RC_TOP_VALUE  0x01000000U
+
+static inline void rc_dec_normalize_inline(RCDecoder* d) {
+    while (d->range < RC_TOP_VALUE) {
+        d->range <<= 8;
+        d->code = (d->code << 8) | (d->pos < d->size ? d->buf[d->pos++] : 0);
+    }
+}
+
+static inline int rc_dec_bit(RCDecoder* d, uint16_t* prob) {
+    uint32_t bound = (d->range >> RC_PROB_BITS) * (*prob);
+    if (d->code < bound) {
+        d->range = bound;
+        *prob += (RC_PROB_MAX - *prob) >> RC_MOVE_BITS;
+        rc_dec_normalize_inline(d);
+        return 0;
+    } else {
+        d->code -= bound;
+        d->range -= bound;
+        *prob -= *prob >> RC_MOVE_BITS;
+        rc_dec_normalize_inline(d);
+        return 1;
+    }
+}
+
+static inline uint8_t rc_dec_byte(RCDecoder* d, uint16_t* probs) {
+    uint32_t ctx = 1;
+    for (int i = 0; i < 8; i++) {
+        int bit = rc_dec_bit(d, &probs[ctx]);
+        ctx = (ctx << 1) | bit;
+    }
+    return (uint8_t)(ctx & 0xFF);
+}
 
 /* ── Probability Model ──────────────────────────────────────────── */
 
