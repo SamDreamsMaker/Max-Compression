@@ -68,6 +68,8 @@ static void init_cost_lut(void) {
  * Uses per-symbol frequency histogram instead of scanning raw bytes.
  * n_active + active_syms[] allow skipping zero-freq symbols (50 bytes
  * in a group usually have ~20-40 unique symbols out of 256). */
+/* Kept for reference; group_cost_sparse is faster */
+#if 0
 static uint64_t group_cost_fast(const uint16_t sym_freq[256], const uint16_t freq[256]) {
     uint64_t cost = 0;
     for (int s = 0; s < 256; s++) {
@@ -78,6 +80,7 @@ static uint64_t group_cost_fast(const uint16_t sym_freq[256], const uint16_t fre
     }
     return cost;
 }
+#endif
 
 /* Even faster: only iterate over active symbols (passed as a list).
  * For BWT+MTF output, groups typically have 20-40 active symbols. */

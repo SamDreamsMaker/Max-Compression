@@ -27,8 +27,9 @@
 #include "divsufsort.h"
 #endif
 
+#ifndef MCX_USE_DIVSUFSORT
 /* ═══════════════════════════════════════════════════════════════════════
- *  SA-IS: Suffix Array by Induced Sorting
+ *  SA-IS: Suffix Array by Induced Sorting (fallback when divsufsort unavailable)
  * ═══════════════════════════════════════════════════════════════════════ */
 
 #define SAIS_EMPTY ((int32_t)-1)
@@ -217,6 +218,7 @@ static void sais_core(const int32_t* T, int32_t* SA, int32_t n, int32_t K)
     free(bkt);
     free(type);
 }
+#endif /* !MCX_USE_DIVSUFSORT */
 
 /* ═══════════════════════════════════════════════════════════════════════
  *  BWT via Suffix Array with Sentinel

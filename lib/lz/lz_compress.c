@@ -280,7 +280,6 @@ size_t mcx_lz_compress_hc(
         ht[h] = cur_pos;
 
         /* Walk the chain to find the best (longest) match */
-        const uint8_t* best_ref = NULL;
         size_t best_len = MCX_LZ_MIN_MATCH - 1;
         size_t best_offset = 0;
 
@@ -298,7 +297,6 @@ size_t mcx_lz_compress_hc(
                                    max_m - MCX_LZ_MIN_MATCH);
                 if (ml > best_len) {
                     best_len = ml;
-                    best_ref = ref;
                     best_offset = off;
                 }
             }
@@ -319,7 +317,6 @@ size_t mcx_lz_compress_hc(
             /* Don't insert ip+1 yet — only peek */
             uint32_t cand2 = prev_next;
             size_t best_len2 = MCX_LZ_MIN_MATCH - 1;
-            const uint8_t* best_ref2 = NULL;
             size_t best_off2 = 0;
 
             for (int depth = 0; depth < chain_depth && cand2 > 0; depth++) {
@@ -335,7 +332,6 @@ size_t mcx_lz_compress_hc(
                                        max_m2 - MCX_LZ_MIN_MATCH);
                     if (ml2 > best_len2) {
                         best_len2 = ml2;
-                        best_ref2 = ref2;
                         best_off2 = off2;
                     }
                 }
@@ -349,7 +345,6 @@ size_t mcx_lz_compress_hc(
                 chain[(cur_pos + 1) & chain_mask] = ht[h_next];
                 ht[h_next] = cur_pos + 1;
                 best_len = best_len2;
-                best_ref = best_ref2;
                 best_offset = best_off2;
                 cur_pos++;
             }

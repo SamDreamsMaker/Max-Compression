@@ -314,7 +314,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 if (!lz_buf || !fse_buf) {
                     #pragma omp critical
                     { omp_err = 1; }
-                    if (lz_buf) free(lz_buf); if (fse_buf) free(fse_buf);
+                    free(lz_buf); free(fse_buf);
                     continue;
                 }
 
@@ -426,7 +426,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 if (!lz_buf || !fse_buf) {
                     #pragma omp critical
                     { omp_err = 1; }
-                    if (lz_buf) free(lz_buf); if (fse_buf) free(fse_buf);
+                    free(lz_buf); free(fse_buf);
                     continue;
                 }
 
@@ -1509,7 +1509,7 @@ static size_t stream_compress_block(mcx_cctx* cctx)
         uint8_t* fse_buf = (uint8_t*)malloc(fse_cap + 1);
 
         if (!lz_buf || !fse_buf) {
-            if (lz_buf) free(lz_buf); if (fse_buf) free(fse_buf);
+            free(lz_buf); free(fse_buf);
             return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
         }
 
