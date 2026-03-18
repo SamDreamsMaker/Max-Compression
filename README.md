@@ -1,6 +1,6 @@
 # MaxCompression (MCX)
 
-![Version](https://img.shields.io/badge/version-1.9.1-blue)
+![Version](https://img.shields.io/badge/version-1.9.3-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 ![Language](https://img.shields.io/badge/language-C99-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
