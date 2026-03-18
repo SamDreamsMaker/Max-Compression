@@ -4,11 +4,11 @@
     <strong>High-ratio lossless data compression library</strong>
   </p>
   <p align="center">
-    <a href="#benchmarks"><img src="https://img.shields.io/badge/Silesia_corpus-4.21×-blue?style=flat-square" alt="Silesia"></a>
+    <a href="#benchmarks"><img src="https://img.shields.io/badge/Silesia_corpus-4.35×-blue?style=flat-square" alt="Silesia"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="License"></a>
     <img src="https://img.shields.io/badge/language-C99-orange?style=flat-square" alt="C99">
     <img src="https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-lightgrey?style=flat-square" alt="Platform">
-    <img src="https://img.shields.io/badge/version-2.0.0-purple?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/version-2.0.1-purple?style=flat-square" alt="Version">
   </p>
 </p>
 
@@ -25,18 +25,20 @@ MCX targets **maximum compression ratio** while maintaining practical speeds. It
 | kennedy.xls (structured binary) | **50.1×** | xz: 21.0× — **2.4× better** |
 | nci (chemical text, 33 MB) | **25.7×** | xz: 19.3× — **33% better** |
 | alice29.txt (English text) | **3.53×** | bzip2: 3.52× — **beats bzip2** |
-| mozilla (50 MB binary archive) | **2.93×** | bzip2: 2.70× — **+9%** |
-| Silesia corpus (202 MB total) | **4.21×** | bzip2: ~3.3× — **+28%** |
+| mozilla (50 MB binary archive) | **3.22×** | xz: 3.55× — **closes gap** |
+| Silesia corpus (202 MB total) | **4.35×** | bzip2: ~3.3× — **+32%** |
 
 ## Features
 
 - **Smart Mode** — automatically detects data type and selects the optimal compression pipeline
-- **Multiple strategies** — LZ77 (fast), BWT+rANS (high ratio), stride-delta (structured binary)
+- **Multiple strategies** — LZ77 (fast), BWT+rANS (high ratio), LZRC v2.0 (binary), stride-delta (structured binary)
+- **LZRC v2.0 engine** — LZ + adaptive range coder with binary tree/hash chain match finder
 - **Adaptive entropy coding** — order-1 arithmetic coding on LZ output, multi-table rANS on BWT output
 - **E8/E9 x86 filter** — preprocesses executables for better compression (+16% on x86 binaries)
 - **RLE2 encoding** — exponential zero-run coding using bijective base-2 numbering
 - **Multi-threaded** — OpenMP block-level parallelism
-- **Pure C99** — no external dependencies, compiles everywhere
+- **Fast BWT** — embedded libdivsufsort for 2× faster suffix sorting
+- **Pure C99** — minimal dependencies, compiles everywhere (Linux, macOS, Windows)
 - **Simple API** — two functions: `mcx_compress()` and `mcx_decompress()`
 
 ## Building
