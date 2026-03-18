@@ -10,6 +10,10 @@
  *   mcx --help
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -374,11 +378,21 @@ static int cmd_info(const char* input)
 
 /* ─── Bench command ──────────────────────────────────────────────────── */
 
-#ifdef _GNU_SOURCE
-#include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+static double bench_time(void) {
+    LARGE_INTEGER freq, count;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&count);
+    return (double)count.QuadPart / freq.QuadPart;
+}
 #else
-#define _GNU_SOURCE
 #include <time.h>
+static double bench_time(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
 #endif
 
 static int cmd_bench(const char* input)
@@ -406,27 +420,26 @@ static int cmd_bench(const char* input)
 
     for (int i = 0; i < n_levels; i++) {
         int level = levels[i];
-        struct timespec t0, t1;
 
         /* Compress */
-        clock_gettime(CLOCK_MONOTONIC, &t0);
+        double t0 = bench_time();
         size_t comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
-        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double t1 = bench_time();
 
         if (mcx_is_error(comp_size)) {
             printf("L%-5d  ERROR: %s\n", level, mcx_get_error_name(comp_size));
             continue;
         }
 
-        double comp_time = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) * 1e-9;
+        double comp_time = t1 - t0;
         double comp_speed = src_size / comp_time / 1048576.0;
 
         /* Decompress */
-        clock_gettime(CLOCK_MONOTONIC, &t0);
+        t0 = bench_time();
         size_t dec_size = mcx_decompress(dec, src_size + 64, comp, comp_size);
-        clock_gettime(CLOCK_MONOTONIC, &t1);
+        t1 = bench_time();
 
-        double dec_time = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) * 1e-9;
+        double dec_time = t1 - t0;
         double dec_speed = src_size / dec_time / 1048576.0;
 
         /* Verify */
