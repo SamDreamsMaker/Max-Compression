@@ -478,8 +478,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 
                 /* Scale window to file size */
                 int wlog = 20; /* 1MB minimum */
-                int wlog_max = (level >= 26) ? 26 : 24; /* L26: 64MB, L24: 16MB */
-                while (wlog < wlog_max && (1u << wlog) < block_src_size)
+                while (wlog < 24 && (1u << wlog) < block_src_size)
                     wlog++;
                 
                 size_t lzrc_size;

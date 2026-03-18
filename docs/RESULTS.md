@@ -1,6 +1,6 @@
 # MCX Benchmark Results
 
-**Version:** 2.0.0  
+**Version:** 2.1.0  
 **Date:** 2026-03-18  
 **Platform:** Linux x64, GCC 11, single-threaded
 
@@ -62,14 +62,18 @@ Direct LZRC (LZ + Range Coder, no BWT fallback):
 | L20 | Smart (BWT+LZRC+multi) | **4.35×** | 0.1-0.5 MB/s |
 | L26 | LZRC direct | ~3.5× | 0.4-0.8 MB/s |
 
-## Key Improvements in v2.0
+## Key Improvements in v2.0–v2.1
 
-| Feature | Impact |
-|---------|--------|
-| LZRC engine (BT + Range Coder) | mozilla +10% vs BWT |
-| Lazy evaluation | Universal +1-5% |
-| 4 rep distances | +0.3% on large files |
-| LZMA-style matched literals | +0.3% universal |
-| Binary→LZRC routing at L20 | mozilla 2.93×→3.22× |
-| E8/E9 x86 filter | ooffice +16% |
-| Multi-trial (BWT/LZ/LZRC) | Guarantees best per-file |
+| Feature | Impact | Version |
+|---------|--------|---------|
+| LZRC engine (BT + Range Coder) | mozilla +10% vs BWT | v2.0 |
+| Lazy evaluation | Universal +1-5% | v2.0 |
+| 4 rep distances | +0.3% on large files | v2.0 |
+| LZMA-style matched literals | +0.3% universal | v2.0 |
+| Binary→LZRC routing at L20 | mozilla 2.93×→3.22× | v2.0 |
+| E8/E9 x86 filter | ooffice +16% | v2.0 |
+| Multi-trial (BWT/LZ/LZRC) | Guarantees best per-file | v2.0 |
+| Embedded libdivsufsort | BWT 2× faster | v2.1 |
+| LZRC fast mode (L24, HC) | 3× faster, 2-5% larger | v2.1 |
+| L26 window 64MB | Better ratio on large files | v2.1 |
+| RC branch hints | ~2% faster decompress | v2.1 |

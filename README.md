@@ -115,7 +115,8 @@ MCX provides a range of compression levels trading speed for ratio:
 | 9 | LZ77 lazy + adaptive arithmetic | ●●○○○ | ●●●●○ | Best LZ ratio |
 | 10–14 | BWT + MTF + RLE2 + multi-rANS | ●○○○○ | ●●●●○ | Text, structured data |
 | **20** | **Smart Mode (auto-detect)** | ●○○○○ | ●●●●● | **Recommended for max ratio** |
-| 26 | LZRC (LZ + range coder) | ●○○○○ | ●●●●● | Best for binary archives |
+| 24 | LZRC fast (LZ + hash chains) | ●●○○○ | ●●●●○ | Fast binary compression |
+| 26 | LZRC best (LZ + binary tree) | ●○○○○ | ●●●●● | Best for binary archives |
 
 ### Smart Mode (Level 20)
 
