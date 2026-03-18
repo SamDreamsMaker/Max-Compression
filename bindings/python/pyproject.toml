@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=65", "cmake>=3.15"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maxcomp"
+version = "2.0.0"
+description = "High-ratio lossless data compression library"
+readme = "../../README.md"
+license = {text = "GPL-3.0"}
+authors = [{name = "Dreams-Makers Studio", email = "contact@dreams-makers.com"}]
+requires-python = ">=3.7"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C",
+    "Topic :: System :: Archiving :: Compression",
+]
+
+[project.urls]
+Homepage = "https://github.com/SamDreamsMaker/Max-Compression"
+Issues = "https://github.com/SamDreamsMaker/Max-Compression/issues"
+Changelog = "https://github.com/SamDreamsMaker/Max-Compression/blob/main/CHANGELOG.md"

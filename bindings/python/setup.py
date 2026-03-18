@@ -39,7 +39,7 @@ class CMakeBuild(build_ext):
 
 setup(
     name="maxcomp",
-    version="1.9.3",
+    version="2.0.0",
     description="High-ratio lossless data compression library",
     long_description=open(os.path.join(os.path.dirname(__file__), "..", "..", "README.md")).read(),
     long_description_content_type="text/markdown",
