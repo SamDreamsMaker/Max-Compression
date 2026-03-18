@@ -882,11 +882,13 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         && strategy != MCX_STRATEGY_LZ24) {
         uint8_t* alt_buf = (uint8_t*)malloc(dst_cap);
         if (alt_buf) {
-            /* Skip LZ-HC trial for text — BWT always wins on text */
-            if (analysis.type != MCX_DTYPE_TEXT_ASCII &&
-                analysis.type != MCX_DTYPE_TEXT_UTF8 &&
-                analysis.type != MCX_DTYPE_STRUCTURED) {
-                /* Try LZ-HC (L9, 64KB window) — might beat BWT on binary data */
+            /* Try LZ-HC (L9) — BWT usually wins on text, but LZ+AAC can beat BWT
+             * on highly repetitive data where LZ's sliding window excels.
+             * Skip for large text (>1MB) where BWT dominates and L9 is slow. */
+            if (!(analysis.type == MCX_DTYPE_TEXT_ASCII ||
+                  analysis.type == MCX_DTYPE_TEXT_UTF8 ||
+                  analysis.type == MCX_DTYPE_STRUCTURED) ||
+                src_size <= 1024 * 1024) {
                 size_t alt_size = mcx_compress(alt_buf, dst_cap, src, src_size, 9);
                 if (!mcx_is_error(alt_size) && alt_size < offset) {
                     memcpy(dst, alt_buf, alt_size);
