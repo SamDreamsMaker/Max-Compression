@@ -66,8 +66,9 @@ typedef struct {
     uint16_t dist_spec[6][16]; /* extra bits for slots with 1-6 context-coded bits */
     uint16_t dist_align[LZRC_ALIGN_SIZE];
     
-    /* Rep match (last distance reuse) */
-    uint16_t is_rep;
+    /* Rep match models */
+    uint16_t is_rep;         /* 1 = rep match, 0 = new match */
+    uint16_t rep_idx[4];     /* Which rep distance (binary tree: 0 vs 1-3, 1 vs 2-3, 2 vs 3) */
 } LZRCModel;
 
 static void lzrc_model_init(LZRCModel* m) {
@@ -82,6 +83,7 @@ static void lzrc_model_init(LZRCModel* m) {
     rc_prob_init(&m->dist_spec[0][0], 6 * 16);
     rc_prob_init(m->dist_align, LZRC_ALIGN_SIZE);
     rc_prob_init(&m->is_rep, 1);
+    rc_prob_init(m->rep_idx, 4);
 }
 
 /* ============================================================
@@ -109,6 +111,41 @@ static void lzrc_enc_length(RCEncoder* e, LZRCModel* m, uint32_t len) {
         rc_enc_bit(e, &m->len_choice2, 1);
         uint32_t rem = (len - 16 > 255) ? 255 : len - 16;
         rc_enc_byte(e, m->len_extra, (uint8_t)rem);
+    }
+}
+
+/* Encode rep index (0-3) as binary tree: 0 vs {1,2,3}, then 1 vs {2,3}, then 2 vs 3 */
+static void lzrc_enc_rep_idx(RCEncoder* e, LZRCModel* m, int idx) {
+    rc_enc_bit(e, &m->rep_idx[0], idx > 0 ? 1 : 0);
+    if (idx > 0) {
+        rc_enc_bit(e, &m->rep_idx[1], idx > 1 ? 1 : 0);
+        if (idx > 1) {
+            rc_enc_bit(e, &m->rep_idx[2], idx > 2 ? 1 : 0);
+        }
+    }
+}
+
+static int lzrc_dec_rep_idx(RCDecoder* d, LZRCModel* m) {
+    if (!rc_dec_bit(d, &m->rep_idx[0])) return 0;
+    if (!rc_dec_bit(d, &m->rep_idx[1])) return 1;
+    if (!rc_dec_bit(d, &m->rep_idx[2])) return 2;
+    return 3;
+}
+
+/* Update rep distance array: move used rep to front */
+static void rep_update(uint32_t rep[4], uint32_t dist, int rep_idx) {
+    if (rep_idx >= 0) {
+        /* Move rep_idx to position 0 */
+        uint32_t d = rep[rep_idx];
+        for (int i = rep_idx; i > 0; i--)
+            rep[i] = rep[i - 1];
+        rep[0] = d;
+    } else {
+        /* New distance: shift all down, insert at 0 */
+        rep[3] = rep[2];
+        rep[2] = rep[1];
+        rep[1] = rep[0];
+        rep[0] = dist;
     }
 }
 
@@ -237,11 +274,11 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
     
     uint8_t prev = 0;
     int after_match = 0;
-    uint32_t last_dist = 1;
+    uint32_t rep_dist[4] = {1, 1, 1, 1};  /* 4 rep distances */
     
     /* Pending match from lazy evaluation */
     BTMatch pending = {0, 0};
-    int pending_rep = 0;
+    int pending_rep = -1;  /* -1 = no rep, 0-3 = rep index */
     int have_pending = 0;
     
     while (bt.pos < src_size) {
@@ -256,19 +293,20 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
                 cur = matches[i];
         }
         
-        /* Check rep match */
-        uint32_t rep_len = 0;
-        if (pos >= last_dist && pos + 4 <= src_size) {
-            while (rep_len < LZRC_MAX_MATCH && pos + rep_len < src_size &&
-                   src[pos + rep_len] == src[pos - last_dist + rep_len])
-                rep_len++;
-        }
-        
-        int cur_rep = 0;
-        if (rep_len >= LZRC_MIN_MATCH && rep_len >= cur.length) {
-            cur_rep = 1;
-            cur.length = rep_len;
-            cur.offset = last_dist;
+        /* Check all 4 rep distances, pick longest */
+        int cur_rep = -1;
+        for (int r = 0; r < 4; r++) {
+            if (pos < rep_dist[r]) continue;
+            uint32_t rlen = 0;
+            while (rlen < LZRC_MAX_MATCH && pos + rlen < src_size &&
+                   src[pos + rlen] == src[pos - rep_dist[r] + rlen])
+                rlen++;
+            /* Prefer rep over new match if same length (rep is cheaper to encode) */
+            if (rlen >= LZRC_MIN_MATCH && (int)rlen > (int)cur.length - (r == 0 ? 1 : 0)) {
+                cur_rep = r;
+                cur.length = rlen;
+                cur.offset = rep_dist[r];
+            }
         }
         
         /* Lazy evaluation: if we have a pending match, check if current is better */
@@ -293,12 +331,14 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
             /* Pending match is good enough — emit it */
             int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
             rc_enc_bit(&enc, &model->is_match[ctx], 1);
-            rc_enc_bit(&enc, &model->is_rep, pending_rep ? 1 : 0);
+            rc_enc_bit(&enc, &model->is_rep, pending_rep >= 0 ? 1 : 0);
             lzrc_enc_length(&enc, model, pending.length);
-            if (!pending_rep) {
+            if (pending_rep >= 0) {
+                lzrc_enc_rep_idx(&enc, model, pending_rep);
+            } else {
                 lzrc_enc_distance(&enc, model, pending.offset);
-                last_dist = pending.offset;
             }
+            rep_update(rep_dist, pending.offset, pending_rep);
             
             /* Skip remaining matched bytes (we already advanced 1 via bt_find) */
             uint32_t pending_start = pos - 1;
@@ -332,9 +372,11 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
     if (have_pending) {
         int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
         rc_enc_bit(&enc, &model->is_match[ctx], 1);
-        rc_enc_bit(&enc, &model->is_rep, pending_rep ? 1 : 0);
+        rc_enc_bit(&enc, &model->is_rep, pending_rep >= 0 ? 1 : 0);
         lzrc_enc_length(&enc, model, pending.length);
-        if (!pending_rep) {
+        if (pending_rep >= 0) {
+            lzrc_enc_rep_idx(&enc, model, pending_rep);
+        } else {
             lzrc_enc_distance(&enc, model, pending.offset);
         }
     }
@@ -367,7 +409,7 @@ size_t mcx_lzrc_decompress(uint8_t* dst, size_t dst_cap,
     
     uint8_t prev = 0;
     int after_match = 0;
-    uint32_t last_dist = 1;
+    uint32_t rep_dist[4] = {1, 1, 1, 1};
     size_t pos = 0;
     
     while (pos < orig_size) {
@@ -378,13 +420,15 @@ size_t mcx_lzrc_decompress(uint8_t* dst, size_t dst_cap,
             int is_rep = rc_dec_bit(&dec, &model->is_rep);
             uint32_t len = lzrc_dec_length(&dec, model);
             uint32_t dist;
+            int rep_idx = -1;
             
             if (is_rep) {
-                dist = last_dist;
+                rep_idx = lzrc_dec_rep_idx(&dec, model);
+                dist = rep_dist[rep_idx];
             } else {
                 dist = lzrc_dec_distance(&dec, model);
-                last_dist = dist;
             }
+            rep_update(rep_dist, dist, rep_idx);
             
             if (dist == 0 || pos < dist || pos + len > orig_size) {
                 free(model);
