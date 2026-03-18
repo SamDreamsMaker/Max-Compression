@@ -406,7 +406,7 @@ static int cmd_bench(const char* input)
            "Level", "Compressed", "Ratio", "Saving", "Comp MB/s", "Dec MB/s");
     printf("─────────────────────────────────────────────────────────────\n");
 
-    int levels[] = {1, 3, 6, 9, 12, 20, 26};
+    int levels[] = {1, 3, 6, 9, 12, 20, 24, 26};
     int n_levels = sizeof(levels) / sizeof(levels[0]);
 
     size_t comp_cap = mcx_compress_bound(src_size);

@@ -20,6 +20,7 @@
 
 #include "lzrc.h"
 #include "bt_match.h"
+#include "hc_match.h"
 #include "../entropy/range_coder.h"
 #include "../entropy/lz_models.h"
 #include <stdlib.h>
@@ -487,4 +488,158 @@ size_t mcx_lzrc_decompress(uint8_t* dst, size_t dst_cap,
     
     free(model);
     return pos;
+}
+
+/* ============================================================
+ * Fast Compress (Hash Chain match finder)
+ * ============================================================
+ * Same encoding as mcx_lzrc_compress but uses hash chains
+ * instead of binary tree. ~4x faster, ~2% worse ratio.
+ */
+
+size_t mcx_lzrc_compress_fast(uint8_t* dst, size_t dst_cap,
+                               const uint8_t* src, size_t src_size,
+                               int window_log, int hc_depth) {
+    if (!dst || !src || src_size == 0 || dst_cap < 10) return 0;
+    if (window_log < 20) window_log = 20;
+    if (window_log > 26) window_log = 26;
+    
+    uint32_t window_size = 1u << window_log;
+    int hash_log = window_log + 2;
+    if (hash_log > 22) hash_log = 22;
+    if (hash_log < 16) hash_log = 16;
+    
+    HCMatchFinder hc;
+    if (hc_init(&hc, src, src_size, window_size, hash_log, hc_depth) != 0)
+        return 0;
+    
+    LZRCModel* model = (LZRCModel*)malloc(sizeof(LZRCModel));
+    if (!model) { hc_free(&hc); return 0; }
+    lzrc_model_init(model);
+    
+    /* Header: 4 bytes size + 1 byte window_log */
+    dst[0] = src_size & 0xFF;
+    dst[1] = (src_size >> 8) & 0xFF;
+    dst[2] = (src_size >> 16) & 0xFF;
+    dst[3] = (src_size >> 24) & 0xFF;
+    dst[4] = (uint8_t)window_log;
+    
+    RCEncoder enc;
+    rc_enc_init(&enc, dst + 5, dst_cap - 5);
+    
+    uint8_t prev = 0;
+    int after_match = 0;
+    uint32_t rep_dist[4] = {1, 1, 1, 1};
+    
+    /* Pending match from lazy evaluation */
+    BTMatch pending = {0, 0};  /* BTMatch and HCMatch have same layout */
+    int pending_rep = -1;
+    int have_pending = 0;
+    
+    while (hc.pos < src_size) {
+        uint32_t pos = hc.pos;
+        HCMatch hc_match;
+        int n = hc_find(&hc, &hc_match, 1);
+        
+        /* Convert HC match to BT match struct (same fields) */
+        BTMatch cur = {0, 0};
+        if (n > 0) {
+            cur.length = hc_match.length;
+            cur.offset = hc_match.offset;
+        }
+        
+        /* Check all 4 rep distances */
+        int cur_rep = -1;
+        for (int r = 0; r < 4; r++) {
+            if (pos < rep_dist[r]) continue;
+            uint32_t rlen = 0;
+            while (rlen < LZRC_MAX_MATCH && pos + rlen < src_size &&
+                   src[pos + rlen] == src[pos - rep_dist[r] + rlen])
+                rlen++;
+            if (rlen >= LZRC_MIN_MATCH && (int)rlen > (int)cur.length - (r == 0 ? 1 : 0)) {
+                cur_rep = r;
+                cur.length = rlen;
+                cur.offset = rep_dist[r];
+            }
+        }
+        
+        /* Lazy evaluation */
+        if (have_pending) {
+            if (cur.length >= LZRC_MIN_MATCH && cur.length > pending.length + 1) {
+                int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
+                rc_enc_bit(&enc, &model->is_match[ctx], 0);
+                int lit_grp = prev >> 5;
+                if (after_match && (pos - 1) >= rep_dist[0]) {
+                    uint8_t match_byte = src[pos - 1 - rep_dist[0]];
+                    rc_enc_matched_byte(&enc, model->match_lit_probs[lit_grp], src[pos - 1], match_byte);
+                } else {
+                    rc_enc_byte(&enc, model->lit_probs[lit_grp], src[pos - 1]);
+                }
+                prev = src[pos - 1];
+                after_match = 0;
+                pending = cur;
+                pending_rep = cur_rep;
+                have_pending = 1;
+                continue;
+            }
+            
+            /* Emit pending match */
+            int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
+            rc_enc_bit(&enc, &model->is_match[ctx], 1);
+            rc_enc_bit(&enc, &model->is_rep, pending_rep >= 0 ? 1 : 0);
+            lzrc_enc_length(&enc, model, pending.length);
+            if (pending_rep >= 0) {
+                lzrc_enc_rep_idx(&enc, model, pending_rep);
+            } else {
+                lzrc_enc_distance(&enc, model, pending.offset);
+            }
+            rep_update(rep_dist, pending.offset, pending_rep);
+            
+            uint32_t pending_start = pos - 1;
+            if (pending.length > 2)
+                hc_skip(&hc, pending.length - 2);
+            
+            prev = src[pending_start + pending.length - 1];
+            after_match = 1;
+            have_pending = 0;
+            continue;
+        }
+        
+        /* No pending match */
+        if (cur.length >= LZRC_MIN_MATCH) {
+            pending = cur;
+            pending_rep = cur_rep;
+            have_pending = 1;
+        } else {
+            int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
+            rc_enc_bit(&enc, &model->is_match[ctx], 0);
+            int lit_grp = prev >> 5;
+            if (after_match && pos >= rep_dist[0]) {
+                uint8_t match_byte = src[pos - rep_dist[0]];
+                rc_enc_matched_byte(&enc, model->match_lit_probs[lit_grp], src[pos], match_byte);
+            } else {
+                rc_enc_byte(&enc, model->lit_probs[lit_grp], src[pos]);
+            }
+            prev = src[pos];
+            after_match = 0;
+        }
+    }
+    
+    /* Flush any pending match */
+    if (have_pending) {
+        int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
+        rc_enc_bit(&enc, &model->is_match[ctx], 1);
+        rc_enc_bit(&enc, &model->is_rep, pending_rep >= 0 ? 1 : 0);
+        lzrc_enc_length(&enc, model, pending.length);
+        if (pending_rep >= 0) {
+            lzrc_enc_rep_idx(&enc, model, pending_rep);
+        } else {
+            lzrc_enc_distance(&enc, model, pending.offset);
+        }
+    }
+    
+    size_t enc_size = rc_enc_flush(&enc);
+    hc_free(&hc);
+    free(model);
+    return 5 + enc_size;
 }

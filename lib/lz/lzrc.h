@@ -34,6 +34,22 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
  * @param src_size Compressed size
  * @return Decompressed size, or 0 on error
  */
+/**
+ * Fast compress with LZ+RC using hash chain match finder.
+ * ~4x faster than mcx_lzrc_compress, ~2% worse ratio.
+ */
+size_t mcx_lzrc_compress_fast(uint8_t* dst, size_t dst_cap,
+                               const uint8_t* src, size_t src_size,
+                               int window_log, int hc_depth);
+
+/**
+ * Decompress LZ+RC data.
+ * @param dst Output buffer
+ * @param dst_cap Output buffer capacity  
+ * @param src Compressed data
+ * @param src_size Compressed size
+ * @return Decompressed size, or 0 on error
+ */
 size_t mcx_lzrc_decompress(uint8_t* dst, size_t dst_cap,
                             const uint8_t* src, size_t src_size);
 

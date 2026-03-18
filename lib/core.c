@@ -168,7 +168,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
     /* ── Choose strategy based on level (and analysis for BWT levels) ── */
     if (level == 26) {
-        /* Level 26: Force LZRC strategy (v2.0 LZ + Range Coder) — used by multi-trial */
+        /* Level 26: Force LZRC strategy — BT match finder (best ratio, slowest) */
+        strategy = MCX_STRATEGY_LZRC;
+    } else if (level == 24) {
+        /* Level 24: Force LZRC fast — HC match finder (~3x faster, ~2-5% larger) */
         strategy = MCX_STRATEGY_LZRC;
     } else if (level == 25) {
         /* Level 25: Force LZ24 strategy (16MB window) — used by multi-trial */
@@ -463,7 +466,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     if (aac_buf) free(aac_buf);
                 }
             } else if (strategy == MCX_STRATEGY_LZRC) {
-                /* LZRC Path: v2.0 LZ + Range Coder (binary tree match finder) */
+                /* LZRC Path: v2.0 LZ + Range Coder */
                 size_t lzrc_cap = block_src_size * 2 + 4096;
                 uint8_t* lzrc_buf = (uint8_t*)malloc(lzrc_cap + 1);
                 if (!lzrc_buf) {
@@ -472,16 +475,23 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     continue;
                 }
                 
-                /* Scale window to file size: larger window = better matches but slower.
-                 * Use the smallest power-of-2 window that covers the block. */
+                /* Scale window to file size */
                 int wlog = 20; /* 1MB minimum */
                 while (wlog < 24 && (1u << wlog) < block_src_size)
                     wlog++;
-                int depth = 32; /* BT converges at d=32 — same ratio, faster */
                 
-                size_t lzrc_size = mcx_lzrc_compress(lzrc_buf + 1, lzrc_cap,
-                                                      in + src_offset, block_src_size,
-                                                      wlog, depth);
+                size_t lzrc_size;
+                if (level == 24) {
+                    /* Level 24: HC match finder (~3x faster, ~2-5% larger) */
+                    lzrc_size = mcx_lzrc_compress_fast(lzrc_buf + 1, lzrc_cap,
+                                                        in + src_offset, block_src_size,
+                                                        wlog, 8);
+                } else {
+                    /* Level 26: BT match finder (best ratio) */
+                    lzrc_size = mcx_lzrc_compress(lzrc_buf + 1, lzrc_cap,
+                                                    in + src_offset, block_src_size,
+                                                    wlog, 32);
+                }
                 
                 if (lzrc_size > 0 && lzrc_size < block_src_size) {
                     lzrc_buf[0] = 0xB0; /* LZRC block type */
