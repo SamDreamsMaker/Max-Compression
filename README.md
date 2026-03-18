@@ -135,22 +135,24 @@ Smart Mode analyses each block and routes it to the best pipeline automatically:
 
 ### Silesia Corpus (202 MB) — Per-file comparison
 
-| File | Size | gzip -9 | bzip2 -9 | xz -9 | **MCX L20** | vs bzip2 | vs xz |
-|------|------|---------|----------|-------|-------------|----------|-------|
-| dickens | 10 MB | 2.65× | 3.64× | 3.60× | **4.07×** 🏆 | +12% | +13% |
-| xml | 5 MB | 8.07× | 12.12× | 11.79× | **12.86×** 🏆 | +6% | +9% |
-| ooffice | 6 MB | 1.99× | 2.15× | 2.54× | **2.53×** 🆕 | +18% | -0.4% |
-| reymont | 6.5 MB | 3.64× | 5.32× | 5.03× | **5.93×** 🏆 | +11% | +18% |
-| sao | 7 MB | 1.36× | 1.47× | 1.64× | **1.48×** | +1% | -10% |
-| x-ray | 8 MB | 1.40× | 2.09× | 1.89× | **2.05×** | -2% | +8% |
-| mr | 10 MB | 2.71× | 4.08× | 3.63× | **4.28×** 🏆 | +5% | +18% |
-| osdb | 10 MB | 2.71× | 3.60× | 3.54× | **4.04×** 🏆 | +12% | +14% |
-| nci | 33 MB | 11.23× | 18.51× | 19.30× | **25.65×** 🏆 | +39% | +33% |
-| samba | 21 MB | 4.00× | 4.75× | 5.74× | **5.03×** | +6% | -12% |
-| webster | 40 MB | 3.44× | 4.80× | 4.94× | **5.69×** 🏆 | +19% | +15% |
-| mozilla | 50 MB | 2.70× | — | 3.83× | **2.92×** | — | -24% |
+| File | Size | gzip -9 | bzip2 -9 | xz -9 | **MCX L9** | **MCX L20** | vs bzip2 | vs xz |
+|------|------|---------|----------|-------|-----------|-------------|----------|-------|
+| dickens | 10 MB | 2.65× | 3.64× | 3.60× | 2.34× | **4.07×** 🏆 | +12% | +13% |
+| xml | 5 MB | 8.07× | 12.12× | 11.79× | **6.69×** | **12.86×** 🏆 | +6% | +9% |
+| ooffice | 6 MB | 1.99× | 2.15× | 2.54× | 1.86× | **2.53×** 🆕 | +18% | -0.4% |
+| reymont | 6.5 MB | 3.64× | 5.32× | 5.03× | **3.00×** | **5.93×** 🏆 | +11% | +18% |
+| sao | 7 MB | 1.36× | 1.47× | 1.64× | 1.34× | **1.48×** | +1% | -10% |
+| x-ray | 8 MB | 1.40× | 2.09× | 1.89× | 1.40× | **2.05×** | -2% | +8% |
+| mr | 10 MB | 2.71× | 4.08× | 3.63× | **2.78×** | **4.28×** 🏆 | +5% | +18% |
+| osdb | 10 MB | 2.71× | 3.60× | 3.54× | **2.85×** | **4.04×** 🏆 | +12% | +14% |
+| nci | 33 MB | 11.23× | 18.51× | 19.30× | **9.58×** | **25.65×** 🏆 | +39% | +33% |
+| samba | 21 MB | 4.00× | 4.75× | 5.74× | **3.64×** | **5.03×** | +6% | -12% |
+| webster | 40 MB | 3.44× | 4.80× | 4.94× | **2.98×** | **5.69×** 🏆 | +19% | +15% |
+| mozilla | 50 MB | 2.70× | — | 3.83× | **2.60×** | **2.92×** | — | -24% |
+| **TOTAL** | **202 MB** | — | — | — | **2.93×** | **4.18×** | — | — |
 
-> **MCX beats gzip -9 on 12/12 files (100%), bzip2 -9 on 10/12 (83%), xz -9 on 9/12 (75%).**
+> **MCX L9 now beats L12 on total Silesia (2.93× vs 2.91×)** — thanks to adaptive AC on LZ output.
+> **MCX L20 beats gzip -9 on 12/12 files (100%), bzip2 -9 on 10/12 (83%), xz -9 on 9/12 (75%).**
 > Only x-ray (-2%) and sao (-1%) remain behind bzip2.
 > **nci achieves 25.65× compression** — 39% better than bzip2, 33% better than xz!
 > **ooffice 2.53× with E8/E9 x86 filter** — matches xz 2.54× (was -14% behind)!
@@ -163,12 +165,14 @@ Single-threaded, Intel Xeon E-2386G @ 3.50GHz:
 
 | Level | Compress | Decompress | Use case |
 |-------|----------|------------|----------|
-| L3 (LZ) | 4-6 MB/s | 12-20 MB/s | Fast compression, moderate ratio |
-| L9 (LZ-HC) | 3-5 MB/s | 11-20 MB/s | Hash chains, +3-8% vs L3 |
-| L12 (BWT) | 0.3-12 MB/s | 3-20 MB/s | High ratio, slower on text |
-| L20 (Smart) | 0.1 MB/s | 2.6-4.4 MB/s | Maximum ratio, multi-trial |
+| L3 (LZ+tANS) | 4-9 MB/s | 12-36 MB/s | Fast compression, moderate ratio |
+| L6 (LZ-HC+FSE) | 3-7 MB/s | 13-37 MB/s | Better matches, fast decompress |
+| L9 (LZ-HC+AAC) | 2-4 MB/s | 3-14 MB/s | Adaptive entropy, best LZ ratio |
+| L12 (BWT+rANS) | 0.3-12 MB/s | 3-20 MB/s | High ratio (text), slow on binary |
+| L20 (Smart) | 0.1-0.3 MB/s | 2.8-5 MB/s | Maximum ratio, multi-trial |
 
-> L20 is slower because it tries multiple strategies (BWT, LZ-HC, E8/E9) and keeps the best. Decompression is always fast regardless of level used for compression.
+> **New in v1.9.2:** L9 uses adaptive order-1 arithmetic coding (Fenwick-tree accelerated)
+> on LZ output, capturing inter-symbol patterns FSE misses. L9 total Silesia = 2.93× vs L12 = 2.91×.
 
 Run the full suite yourself:
 
