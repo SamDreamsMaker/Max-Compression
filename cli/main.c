@@ -31,15 +31,22 @@ static void print_usage(void)
         "  mcx --help\n"
         "\n"
         "Compression Levels:\n"
-        "  %d (fastest) to %d (best compression), default: %d\n"
+        "  1-3:   Fast LZ77 (speed priority, ~4-9 MB/s)\n"
+        "  4-8:   LZ77 lazy matching (balanced)\n"
+        "  9:     LZ77 + adaptive AC (best LZ ratio)\n"
+        "  10-14: BWT + multi-table rANS (strong compression)\n"
+        "  15-19: BWT + context-mixed rANS (experimental)\n"
+        "  20:    Smart mode — auto-selects best (recommended)\n"
+        "  Default: %d\n"
         "\n"
         "Examples:\n"
-        "  mcx compress -l 6 myfile.txt\n"
+        "  mcx compress myfile.txt              # fast (L3)\n"
+        "  mcx compress -l 9 myfile.txt         # good ratio, decent speed\n"
+        "  mcx compress -l 20 bigfile.bin       # best compression\n"
         "  mcx decompress myfile.txt.mcx\n"
-        "  mcx compress -l 19 bigfile.bin -o compressed.mcx\n"
         "\n",
         mcx_version_string(),
-        MCX_LEVEL_MIN, MCX_LEVEL_MAX, MCX_LEVEL_DEFAULT
+        MCX_LEVEL_DEFAULT
     );
 }
 

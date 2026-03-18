@@ -49,7 +49,12 @@ unsigned mcx_version_number(void)
 
 const char* mcx_version_string(void)
 {
-    return "1.1.0";
+    /* Use preprocessor to build version string from header constants */
+    #define MCX_STR(x) MCX_STR2(x)
+    #define MCX_STR2(x) #x
+    return MCX_STR(MCX_VERSION_MAJOR) "." MCX_STR(MCX_VERSION_MINOR) "." MCX_STR(MCX_VERSION_PATCH);
+    #undef MCX_STR2
+    #undef MCX_STR
 }
 
 int mcx_is_error(size_t result)
