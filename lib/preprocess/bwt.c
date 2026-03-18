@@ -23,6 +23,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef MCX_USE_DIVSUFSORT
+#include "divsufsort.h"
+#endif
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  SA-IS: Suffix Array by Induced Sorting
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -227,6 +231,32 @@ static void sais_core(const int32_t* T, int32_t* SA, int32_t n, int32_t K)
 size_t mcx_bwt_forward(uint8_t* dst, size_t* primary_idx,
                        const uint8_t* src, size_t size)
 {
+#ifdef MCX_USE_DIVSUFSORT
+    /* Fast path: use libdivsufsort (MIT licensed, embedded).
+     * divbwt works directly on uint8_t, avoids int32_t copy overhead.
+     * ~2-3x faster than our SA-IS on typical data. */
+    if (dst == NULL || src == NULL || size == 0 || primary_idx == NULL) {
+        return MCX_ERROR(MCX_ERR_GENERIC);
+    }
+    if (size == 1) {
+        dst[0] = src[0];
+        *primary_idx = 1;
+        return 1;
+    }
+    if (size > (size_t)0x7FFFFFFE) return MCX_ERROR(MCX_ERR_GENERIC);
+    
+    /* divbwt needs a temporary suffix array */
+    saidx_t* A = (saidx_t*)malloc(size * sizeof(saidx_t));
+    if (!A) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+    
+    saidx_t pidx = divbwt(src, dst, A, (saidx_t)size);
+    free(A);
+    
+    if (pidx < 0) return MCX_ERROR(MCX_ERR_GENERIC);
+    *primary_idx = (size_t)pidx;
+    return size;
+#else
+    /* Fallback: our SA-IS implementation */
     int32_t* T;
     int32_t* SA;
     int32_t  n;
@@ -259,15 +289,7 @@ size_t mcx_bwt_forward(uint8_t* dst, size_t* primary_idx,
     /* Build suffix array */
     sais_core(T, SA, n, 257); /* alphabet [0..256] */
 
-    /* Extract BWT from suffix array with sentinel.
-     *
-     * SA has n entries (where n = size + 1). For each SA[j]:
-     *   - SA[j] == 0: this is the suffix covering the whole string.
-     *     Its predecessor is the sentinel $ which is conceptually at
-     *     position -1. We record this j-th position as primary_idx 
-     *     and DO NOT output anything.
-     *   - SA[j] > 0: the predecessor is src[SA[j]-1]. We output it.
-     */
+    /* Extract BWT from suffix array */
     out_idx = 0;
     *primary_idx = 0;
     for (j = 0; j < n; j++) {
@@ -286,6 +308,7 @@ size_t mcx_bwt_forward(uint8_t* dst, size_t* primary_idx,
     }
 
     return size;
+#endif
 }
 
 /* ─── Inverse BWT ────────────────────────────────────────────────────── */

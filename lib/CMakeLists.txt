@@ -29,6 +29,10 @@ preprocess/e8e9.c
     entropy/adaptive_ac.c
     entropy/multi_rans.c
     entropy/range_coder.c
+    external/divsufsort/divsufsort.c
+    external/divsufsort/sssort.c
+    external/divsufsort/trsort.c
+    external/divsufsort/utils.c
 )
 
 # ─── Static library (always built) ──────────────────────────────────
@@ -36,6 +40,17 @@ add_library(maxcomp_static STATIC ${MCX_LIB_SOURCES})
 target_include_directories(maxcomp_static
     PUBLIC  ${PROJECT_SOURCE_DIR}/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/external/divsufsort
+)
+# Enable divsufsort for faster BWT
+target_compile_definitions(maxcomp_static PRIVATE MCX_USE_DIVSUFSORT=1)
+# divsufsort needs HAVE_CONFIG_H to load its config
+set_source_files_properties(
+    external/divsufsort/divsufsort.c
+    external/divsufsort/sssort.c
+    external/divsufsort/trsort.c
+    external/divsufsort/utils.c
+    PROPERTIES COMPILE_DEFINITIONS "HAVE_CONFIG_H=1"
 )
 set_target_properties(maxcomp_static PROPERTIES
     OUTPUT_NAME maxcomp
