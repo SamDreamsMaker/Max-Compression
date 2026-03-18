@@ -4,10 +4,12 @@ mcx \- high\-ratio lossless data compression tool
 .SH SYNOPSIS
 .B mcx compress
 [\fB\-l\fR \fILEVEL\fR]
+[\fB\-q\fR]
 [\fB\-o\fR \fIOUTPUT\fR]
 \fIINPUT\fR
 .br
 .B mcx decompress
+[\fB\-q\fR]
 [\fB\-o\fR \fIOUTPUT\fR]
 \fIINPUT\fR
 .br
@@ -56,6 +58,9 @@ Best ratio on binary data.
 .BR \-o ", " \-\-output =\fIFILE\fR
 Output file path. If not specified, appends .mcx for compression
 or removes .mcx for decompression.
+.TP
+.BR \-q ", " \-\-quiet
+Suppress all non\-error output. Useful for scripts and pipelines.
 .SH EXAMPLES
 .TP
 Compress a file at maximum level:
