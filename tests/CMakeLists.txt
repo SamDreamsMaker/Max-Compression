@@ -56,3 +56,12 @@ add_executable(test_fse_mini test_fse_mini.c
 )
 target_include_directories(test_fse_mini PRIVATE ${CMAKE_SOURCE_DIR}/lib)
 add_test(NAME fse_mini COMMAND test_fse_mini)
+
+# Fuzz roundtrip test (random data, all levels)
+add_executable(test_fuzz_roundtrip fuzz_roundtrip.c)
+target_link_libraries(test_fuzz_roundtrip PRIVATE maxcomp_static)
+if(UNIX)
+    target_link_libraries(test_fuzz_roundtrip PRIVATE m)
+endif()
+add_test(NAME fuzz_roundtrip COMMAND test_fuzz_roundtrip 1000 8192)
+set_tests_properties(fuzz_roundtrip PROPERTIES TIMEOUT 120)
