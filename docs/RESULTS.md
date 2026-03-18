@@ -63,7 +63,7 @@
 - **nci: 25.65×** — 33% better than xz, 39% better than bzip2
 - **kennedy.xls: 50.12×** — 2.4× better than xz (stride-delta auto-detection)
 - **ooffice: 2.53×** — E8/E9 x86 filter brings within 0.4% of xz
-- **mozilla: 2.93×** — largest gap vs xz (-24%), addressed in v2.0 LZRC prototype (3.07×)
+- **mozilla: 2.93×** — largest gap vs xz (-24%). LZRC v2.0 achieves **3.22×** at L26 (+10%)
 
 ## Speed Benchmarks
 
