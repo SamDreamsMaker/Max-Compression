@@ -2,6 +2,30 @@
 
 All notable changes to MaxCompression are documented in this file.
 
+## [2.1.0] — 2026-03-18
+
+### Added
+- **`mcx_get_frame_info()` public API** — read frame metadata without decompressing.
+- **Fuzz roundtrip test** — 1000 random inputs across all levels, catches edge cases.
+- **Malformed input test** — 7 decompressor robustness tests (corrupt data, truncated, wrong magic).
+- **Comparison benchmark script** (`benchmarks/compare.sh`) — MCX vs gzip/bzip2/xz.
+- Doxyfile for API documentation generation.
+- pkg-config template (`maxcomp.pc.in`).
+
+### Changed
+- **Embedded libdivsufsort** — BWT forward transform **2× faster** (Yuta Mori, MIT license).
+  - alice29: 0.08→0.035s, dickens: 8.76→4.43s, ooffice: 4.0→1.91s.
+- **LZRC fast mode (L24)** — hash chain match finder, **~3× faster** than L26 BT.
+- CLI `info` command now uses public `mcx_get_frame_info()` API.
+- CLI help shows level descriptions and L24 example.
+- README updated with v2.1.0 benchmarks and LZRC/divsufsort features.
+
+### Fixed
+- MSVC compatibility for divsufsort (disabled `strings.h`, use `__inline`).
+
+### Rejected experiments
+- 4-state LZRC machine (model dilution, no gain on any file).
+
 ## [2.0.1] — 2026-03-18
 
 ### Added
