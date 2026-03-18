@@ -48,7 +48,7 @@ Direct LZRC (LZ + Range Coder, no BWT fallback):
 | ooffice | 2,686 KB | **2.24×** | 0.7 MB/s |
 | dickens | 3,118 KB | **3.19×** | 0.5 MB/s |
 | samba | 4,173 KB | **5.06×** | 0.4 MB/s |
-| mozilla | 15,520 KB | **3.22×** | 0.5 MB/s |
+| mozilla | 15,507 KB | **3.23×** | 0.3 MB/s |
 
 ## Compression Levels
 
@@ -75,5 +75,5 @@ Direct LZRC (LZ + Range Coder, no BWT fallback):
 | Multi-trial (BWT/LZ/LZRC) | Guarantees best per-file | v2.0 |
 | Embedded libdivsufsort | BWT 2× faster | v2.1 |
 | LZRC fast mode (L24, HC) | 3× faster, 2-5% larger | v2.1 |
-| L26 window 64MB | Better ratio on large files | v2.1 |
+| L26 window 64MB | mozilla -0.11% (16.7KB smaller) | v2.1 |
 | RC branch hints | ~2% faster decompress | v2.1 |
