@@ -189,6 +189,11 @@ size_t mcx_lz_compress(
             lz_count_match(ip + MCX_LZ_MIN_MATCH, ref + MCX_LZ_MIN_MATCH,
                            max_match - MCX_LZ_MIN_MATCH);
 
+        /* Backward extension */
+        while (ip > anchor && ref > (const uint8_t*)src && ip[-1] == ref[-1]) {
+            ip--; ref--; match_len++;
+        }
+
         /* Write sequence */
         op = lz_write_sequence(op, op_end, anchor, (size_t)(ip - anchor),
                                (uint16_t)offset, match_len);
