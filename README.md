@@ -141,7 +141,7 @@ All benchmarks: single-threaded, in-memory, roundtrip-verified. System `gzip`, `
 
 | File | Size | gzip -9 | bzip2 -9 | xz -6 | MCX L9 | MCX L20 |
 |------|------|---------|----------|--------|--------|---------|
-| alice29.txt | 152 KB | 2.81× | 3.52× | 3.14× | 2.36× | **3.53×** |
+| alice29.txt | 152 KB | 2.81× | 3.52× | 3.14× | 2.42× | **3.53×** |
 | asyoulik.txt | 125 KB | 2.56× | 3.16× | 2.81× | 2.34× | **3.15×** |
 | lcet10.txt | 427 KB | 2.95× | 3.96× | 3.57× | 2.97× | **3.98×** |
 | plrabn12.txt | 482 KB | 2.48× | 3.31× | 2.91× | 2.50× | **3.33×** |
