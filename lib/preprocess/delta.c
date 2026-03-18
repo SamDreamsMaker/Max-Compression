@@ -56,10 +56,10 @@ void mcx_mtf_encode(uint8_t* data, size_t size)
         /* Move symbol to front: shift table[0..pos-1] right by 1 */
         if (pos > 0) {
             /* Update reverse lookup for shifted symbols */
-            for (uint8_t j = pos; j > 0; j--) {
-                table[j] = table[j - 1];
-                rtable[table[j]] = j;
+            for (uint8_t j = 0; j < pos; j++) {
+                rtable[table[j]]++;
             }
+            memmove(table + 1, table, pos);
             table[0] = sym;
             rtable[sym] = 0;
         }
@@ -82,9 +82,9 @@ void mcx_mtf_decode(uint8_t* data, size_t size)
         /* Output original symbol */
         data[i] = sym;
 
-        /* Move symbol to front */
-        for (uint8_t j = pos; j > 0; j--) {
-            table[j] = table[j - 1];
+        /* Optimized move-to-front: use memmove for bulk shift */
+        if (pos > 0) {
+            memmove(table + 1, table, pos);
         }
         table[0] = sym;
     }
