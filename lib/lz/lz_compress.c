@@ -199,13 +199,15 @@ size_t mcx_lz_compress(
                                (uint16_t)offset, match_len);
         if (!op) { free(ht); free(ht2); return 0; }
 
+        /* Update hash for positions in match (stride=2 for speed/ratio balance) */
+        const uint8_t* mp = ip + 1;
         ip += match_len;
         anchor = ip;
-
-        /* Update hash for skipped positions */
-        if (ip < mflimit) {
-            ht[lz_hash4(ip - 2, hash_log)] = (uint32_t)((ip - 2) - (const uint8_t*)src);
-            ht2[lz_hash4_alt(ip - 2, hash_log)] = (uint32_t)((ip - 2) - (const uint8_t*)src);
+        const uint8_t* mp_end = ip < mflimit ? ip : mflimit;
+        while (mp < mp_end) {
+            uint32_t mpos = (uint32_t)(mp - (const uint8_t*)src);
+            ht[lz_hash4(mp, hash_log)] = mpos;
+            mp += 2;
         }
     }
 
