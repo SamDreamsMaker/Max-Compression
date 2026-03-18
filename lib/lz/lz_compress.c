@@ -142,8 +142,10 @@ size_t mcx_lz_compress(
         return op ? (size_t)(op - (uint8_t*)dst) : 0;
     }
 
-    /* Heap-allocated hash table */
+    /* Scale hash table with input size for better cache usage */
     int hash_log = MCX_LZ_HASH_LOG;
+    while (hash_log > 14 && (1u << hash_log) > src_size * 4)
+        hash_log--;
     int hash_size = 1 << hash_log;
     uint32_t* ht = (uint32_t*)calloc(hash_size, sizeof(uint32_t));
     uint32_t* ht2 = (uint32_t*)calloc(hash_size, sizeof(uint32_t)); /* secondary */
