@@ -239,19 +239,24 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
     int after_match = 0;
     uint32_t last_dist = 1;
     
+    /* Pending match from lazy evaluation */
+    BTMatch pending = {0, 0};
+    int pending_rep = 0;
+    int have_pending = 0;
+    
     while (bt.pos < src_size) {
         uint32_t pos = bt.pos;
         BTMatch matches[8];
         int n = bt_find(&bt, matches, 8);
         
-        /* Pick best match */
-        BTMatch best = {0, 0};
+        /* Pick best match at current position */
+        BTMatch cur = {0, 0};
         for (int i = 0; i < n; i++) {
-            if (matches[i].length > best.length)
-                best = matches[i];
+            if (matches[i].length > cur.length)
+                cur = matches[i];
         }
         
-        /* Also check rep match (last distance) */
+        /* Check rep match */
         uint32_t rep_len = 0;
         if (pos >= last_dist && pos + 4 <= src_size) {
             while (rep_len < LZRC_MAX_MATCH && pos + rep_len < src_size &&
@@ -259,39 +264,78 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
                 rep_len++;
         }
         
-        /* Decision: rep match vs new match vs literal */
-        int use_rep = 0;
-        if (rep_len >= LZRC_MIN_MATCH && rep_len >= best.length) {
-            use_rep = 1;
-            best.length = rep_len;
-            best.offset = last_dist;
+        int cur_rep = 0;
+        if (rep_len >= LZRC_MIN_MATCH && rep_len >= cur.length) {
+            cur_rep = 1;
+            cur.length = rep_len;
+            cur.offset = last_dist;
         }
         
-        int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
-        
-        if (best.length >= LZRC_MIN_MATCH) {
-            /* Match */
-            rc_enc_bit(&enc, &model->is_match[ctx], 1);
-            rc_enc_bit(&enc, &model->is_rep, use_rep ? 1 : 0);
-            lzrc_enc_length(&enc, model, best.length);
-            if (!use_rep) {
-                lzrc_enc_distance(&enc, model, best.offset);
-                last_dist = best.offset;
+        /* Lazy evaluation: if we have a pending match, check if current is better */
+        if (have_pending) {
+            if (cur.length >= LZRC_MIN_MATCH && cur.length > pending.length + 1) {
+                /* Current match is significantly better — emit literal for pending position,
+                 * then use current match instead */
+                int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
+                rc_enc_bit(&enc, &model->is_match[ctx], 0);
+                int lit_ctx = after_match ? 8 + (prev >> 5) : (prev >> 5);
+                rc_enc_byte(&enc, model->lit_probs[lit_ctx], src[pos - 1]);
+                prev = src[pos - 1];
+                after_match = 0;
+                
+                /* Now use current match as pending for next iteration */
+                pending = cur;
+                pending_rep = cur_rep;
+                have_pending = 1;
+                continue;
             }
             
-            /* Skip matched bytes in BT */
-            if (best.length > 1)
-                bt_skip(&bt, best.length - 1);
+            /* Pending match is good enough — emit it */
+            int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
+            rc_enc_bit(&enc, &model->is_match[ctx], 1);
+            rc_enc_bit(&enc, &model->is_rep, pending_rep ? 1 : 0);
+            lzrc_enc_length(&enc, model, pending.length);
+            if (!pending_rep) {
+                lzrc_enc_distance(&enc, model, pending.offset);
+                last_dist = pending.offset;
+            }
             
-            prev = src[pos + best.length - 1];
+            /* Skip remaining matched bytes (we already advanced 1 via bt_find) */
+            uint32_t pending_start = pos - 1;
+            if (pending.length > 2)
+                bt_skip(&bt, pending.length - 2);
+            
+            prev = src[pending_start + pending.length - 1];
             after_match = 1;
+            have_pending = 0;
+            continue;
+        }
+        
+        /* No pending match */
+        if (cur.length >= LZRC_MIN_MATCH) {
+            /* Found a match — defer it (lazy check at next position) */
+            pending = cur;
+            pending_rep = cur_rep;
+            have_pending = 1;
         } else {
             /* Literal */
+            int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
             rc_enc_bit(&enc, &model->is_match[ctx], 0);
             int lit_ctx = after_match ? 8 + (prev >> 5) : (prev >> 5);
             rc_enc_byte(&enc, model->lit_probs[lit_ctx], src[pos]);
             prev = src[pos];
             after_match = 0;
+        }
+    }
+    
+    /* Flush any pending match */
+    if (have_pending) {
+        int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
+        rc_enc_bit(&enc, &model->is_match[ctx], 1);
+        rc_enc_bit(&enc, &model->is_rep, pending_rep ? 1 : 0);
+        lzrc_enc_length(&enc, model, pending.length);
+        if (!pending_rep) {
+            lzrc_enc_distance(&enc, model, pending.offset);
         }
     }
     
