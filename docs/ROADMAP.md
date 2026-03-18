@@ -1,54 +1,50 @@
 # MCX Roadmap
 
-## v1.x — BWT-Based Compression (Current)
+## v2.0.x — Current (Released)
 
-### Completed
-- [x] LZ77 (greedy, lazy, hash chains) + tANS/FSE
-- [x] BWT (SA-IS) + MTF + RLE + rANS
-- [x] Multi-table rANS (K-means clustering, 4–6 tables)
-- [x] RLE2 (RUNA/RUNB exponential zero-run encoding)
-- [x] Stride-delta preprocessing (auto-detected)
-- [x] E8/E9 x86 BCJ filter
-- [x] Adaptive arithmetic coding (order-1, Fenwick-tree decode)
-- [x] Smart Mode (L20) — auto-detect + multi-trial
-- [x] OpenMP block parallelism
-- [x] Python bindings
-- [x] 204 comprehensive roundtrip tests
+### Compression Engines
+- **BWT Pipeline**: SA-IS (divsufsort) → MTF → RLE2 → multi-table rANS
+- **LZRC v2.0**: Binary tree / hash chain match finder + adaptive range coder
+- **LZ-HC**: Lazy LZ77 + FSE / adaptive arithmetic coding
+- **Stride-Delta**: Auto-detected structured binary preprocessing
+- **E8/E9**: x86 CALL/JMP address filter
 
-### Results
-- Beats bzip2 on 100% of Silesia files
-- Beats xz on 75% of Silesia files
-- kennedy.xls: 50.1× (2.4× better than xz)
-- Silesia total: 4.21×
+### Results (Silesia Corpus)
+- Total: **4.35×** (L20 smart mode)
+- Beats bzip2 on **12/12** files
+- Beats xz on **7/12** files
+- kennedy.xls: **50.1×** (2.4× better than xz)
+- mozilla: **3.22×** (beats xz 2.93×)
 
-## v2.0 — LZ + Range Coder Engine
+### Speed
+- L1-L3: 5-18 MB/s compress, 18-75 MB/s decompress
+- L9: 2-6 MB/s compress, 3-24 MB/s decompress (AAC)
+- L12: 0.3-1.5 MB/s compress, 4-8 MB/s decompress (BWT)
+- L20: 0.1-0.8 MB/s compress, 4-14 MB/s decompress (auto)
+- L24: 1.5-2.6 MB/s compress, 4-11 MB/s decompress (LZRC-HC)
+- L26: 0.5-0.8 MB/s compress, 4-11 MB/s decompress (LZRC-BT)
 
-### Completed
-- [x] Subbotin-style range coder with carry propagation
-- [x] Binary tree match finder (16 MB+ window)
-- [x] Distance slot model (64 slots)
-- [x] LZRC encoder + decoder (roundtrip verified)
-- [x] Rep match support
+## v2.1 — Speed & Packaging (Next)
 
-### In Progress
-- [ ] Optimal parsing (price-based match decisions)
-- [ ] Multiple rep distances (rep0–rep3)
-- [ ] Context-mixed literal coding
+- [ ] PyPI package (pip install maxcomp)
+- [ ] Doxygen API documentation
+- [ ] `mcx cat` — decompress to stdout (piping)
+- [ ] Streaming decompression API
+- [ ] ARM/ARM64 BCJ filter
+- [ ] Faster suffix sort (divsufsort-lite or parallel SA-IS)
 
-### Planned
-- [ ] New block type integration
-- [ ] Multi-trial: BWT vs LZRC per file
-- [ ] E8/E9 + LZRC for executables
+## v2.2 — Compression Quality
 
-### Target
-- Close -24% gap vs xz on mozilla
-- Close -12% gap vs xz on samba
-- Maintain advantage on text (BWT path)
+- [ ] Optimal parsing for LZRC (price-based match/literal decisions, +2-5%)
+- [ ] Context-mixed literal coding (XOR prediction, +1-3%)
+- [ ] Larger LZRC window (64MB) for huge files
+- [ ] Per-block strategy selection in large archives
+- [ ] Sparse context tables for CM-rANS (fix 128KB header)
 
 ## v3.0 — Future
 
-- [ ] ARM/ARM64 BCJ filter
 - [ ] Streaming API (arbitrary-length input)
 - [ ] WASM build for browser usage
 - [ ] GPU-accelerated BWT (CUDA/OpenCL)
-- [ ] Per-block strategy selection (heterogeneous archives)
+- [ ] Multithreaded LZRC compression
+- [ ] Archive format (multiple files, directory structure)
