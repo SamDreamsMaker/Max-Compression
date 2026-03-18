@@ -11,6 +11,14 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifdef _MSC_VER
+#define RC_LIKELY(x)   (x)
+#define RC_UNLIKELY(x) (x)
+#else
+#define RC_LIKELY(x)   __builtin_expect(!!(x), 1)
+#define RC_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#endif
+
 /* ── Constants ──────────────────────────────────────────────────── */
 #define RC_PROB_BITS  11
 #define RC_PROB_MAX   (1 << RC_PROB_BITS)
@@ -50,7 +58,7 @@ size_t rc_enc_flush(RCEncoder* e);
 
 /* Inline encoder hot path */
 static inline void rc_enc_normalize_inline(RCEncoder* e) {
-    while (e->range < RC_TOP_VALUE) {
+    while (RC_UNLIKELY(e->range < RC_TOP_VALUE)) {
         if ((e->low & 0xFF000000U) != 0xFF000000U) {
             uint8_t carry = (uint8_t)(e->low >> 32);
             if (e->pos < e->cap) e->buf[e->pos++] = e->cache + carry;
@@ -99,9 +107,11 @@ uint8_t rc_dec_literal(RCDecoder* d, uint16_t probs[16][256],
 /* Inline hot-path decoder functions for cross-TU inlining */
 
 static inline void rc_dec_normalize_inline(RCDecoder* d) {
-    while (d->range < RC_TOP_VALUE) {
-        d->range <<= 8;
-        d->code = (d->code << 8) | (d->pos < d->size ? d->buf[d->pos++] : 0);
+    if (RC_UNLIKELY(d->range < RC_TOP_VALUE)) {
+        do {
+            d->range <<= 8;
+            d->code = (d->code << 8) | (d->pos < d->size ? d->buf[d->pos++] : 0);
+        } while (d->range < RC_TOP_VALUE);
     }
 }
 
