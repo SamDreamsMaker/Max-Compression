@@ -365,21 +365,57 @@ static int cmd_decompress(const char* input, const char* output)
     return 0;
 }
 
+static const char* strategy_name(uint8_t s) {
+    switch (s) {
+        case 0: return "STORE (no compression)";
+        case 1: return "DEFAULT (BWT+rANS)";
+        case 2: return "BEST (BWT+CM-rANS)";
+        case 3: return "LZ_FAST (LZ77 fast)";
+        case 4: return "LZ_HC (LZ77 hash chain)";
+        case 5: return "LZ24 (LZ77 24-bit)";
+        case 6: return "STRIDE (stride-delta)";
+        case 7: return "BABEL (transform)";
+        case 9: return "LZRC (LZ+Range Coder v2.0)";
+        default: return "UNKNOWN";
+    }
+}
+
 static int cmd_info(const char* input)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
     if (src == NULL) return 1;
 
-    unsigned long long orig_size = mcx_get_decompressed_size(src, src_size);
-
     printf("File:             %s\n", input);
-    printf("Compressed size:  %zu bytes\n", src_size);
-    if (orig_size > 0) {
-        printf("Original size:    %llu bytes\n", orig_size);
-        printf("Ratio:            %.2fx\n", (double)orig_size / (double)src_size);
+    printf("Compressed size:  %zu bytes (%.1f KB)\n", src_size, src_size / 1024.0);
+
+    /* Parse frame header if valid */
+    if (src_size >= 20 && src[0] == 0x4D && src[1] == 0x43 && src[2] == 0x58 && src[3] == 0x01) {
+        uint8_t version = src[4];
+        uint8_t flags = src[5];
+        uint8_t level = src[6];
+        uint8_t strat = src[7];
+        
+        printf("Format:           MCX v%u\n", version);
+        printf("Level:            %u\n", level);
+        printf("Strategy:         %s\n", strategy_name(strat));
+        
+        if (flags & 0x01) {
+            uint64_t orig = 0;
+            memcpy(&orig, src + 8, 8);
+            printf("Original size:    %llu bytes (%.1f KB)\n", (unsigned long long)orig, orig / 1024.0);
+            printf("Ratio:            %.2fx (%.1f%% smaller)\n",
+                   (double)orig / src_size, 100.0 * (1.0 - (double)src_size / orig));
+        }
+        if (flags & 0x04) printf("Filters:          E8/E9 x86\n");
     } else {
-        printf("Original size:    unknown\n");
+        unsigned long long orig_size = mcx_get_decompressed_size(src, src_size);
+        if (orig_size > 0) {
+            printf("Original size:    %llu bytes\n", orig_size);
+            printf("Ratio:            %.2fx\n", (double)orig_size / (double)src_size);
+        } else {
+            printf("Error: Not a valid MCX file\n");
+        }
     }
 
     free(src);
