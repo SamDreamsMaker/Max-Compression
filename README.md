@@ -61,6 +61,46 @@ cd build && ctest --output-on-failure
 
 **Requirements:** C99 compiler (GCC, Clang, MSVC), CMake ≥ 3.10. Optional: OpenMP for multi-threading.
 
+## Installation
+
+```bash
+# Build and install (default: /usr/local)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+sudo cmake --install build
+
+# Custom prefix
+sudo cmake --install build --prefix /opt/mcx
+```
+
+This installs:
+- `mcx` binary → `<prefix>/bin/mcx`
+- `libmaxcomp.a` → `<prefix>/lib/libmaxcomp.a`
+- Headers → `<prefix>/include/maxcomp/`
+- pkg-config → `<prefix>/lib/pkgconfig/maxcomp.pc`
+
+### Shell Completions
+
+```bash
+# Bash
+cp completions/mcx.bash /etc/bash_completion.d/mcx
+# or: cp completions/mcx.bash ~/.local/share/bash-completion/completions/mcx
+
+# Zsh
+cp completions/mcx.zsh /usr/local/share/zsh/site-functions/_mcx
+
+# Fish
+cp completions/mcx.fish ~/.config/fish/completions/mcx.fish
+```
+
+### Man Page
+
+```bash
+sudo cp docs/mcx.1 /usr/local/share/man/man1/
+sudo mandb  # rebuild man database
+man mcx
+```
+
 ## Usage
 
 ### Command Line
