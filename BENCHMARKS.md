@@ -67,6 +67,27 @@
 
 *Modern desktop CPUs (3+ GHz) will be approximately 4-6× faster.*
 
+## Decompression Speed — Silesia Corpus (MB/s)
+
+| File | Size | L1 | L3 | L6 | L9 | L12 | L20 | L24 | L26 |
+|------|------|-----|-----|------|------|------|------|------|------|
+| alice29.txt | 149 KB | 75.2 | 78.3 | 108.7 | 111.2 | 13.8 | 14.0 | 16.1 | 17.1 |
+| dickens | 10.2 MB | 79.8 | 85.0 | 97.9 | 12.9 | 5.1 | 5.2 | 16.8 | 19.2 |
+| mr | 9.6 MB | 90.0 | 97.0 | 105.8 | 14.5 | 5.8 | 5.8 | 17.3 | 18.3 |
+| ooffice | 5.9 MB | 72.7 | 76.2 | 81.3 | 10.3 | 5.7 | 13.9 | 12.3 | 12.6 |
+| osdb | 9.7 MB | 111.9 | 123.6 | 131.8 | 15.2 | 5.6 | 5.6 | 16.7 | 18.5 |
+| reymont | 6.4 MB | 86.0 | 97.7 | 120.7 | 17.1 | 6.0 | 6.1 | 20.5 | 25.6 |
+| sao | 7.0 MB | 67.6 | 74.6 | 80.3 | 7.7 | 4.9 | 4.9 | 8.6 | 8.8 |
+| xml | 5.1 MB | 144.8 | 153.9 | 262.0 | 37.4 | 6.7 | 6.6 | 52.3 | 62.5 |
+
+**Key observations:**
+- **LZ modes (L1-L6)** decompress at 70-260 MB/s — competitive with gzip
+- **BWT modes (L12-L20)** decompress at 5-14 MB/s — expected for BWT pipeline
+- **LZRC (L24-L26)** decompress at 8-62 MB/s — faster than BWT on most data
+- **L9 (AAC)** decoder is slower than L6 (rANS) despite similar compression — arithmetic coding overhead
+
+*Modern desktop CPUs (3+ GHz) will be approximately 4-6× faster.*
+
 ## Reproduction
 
 ```bash
