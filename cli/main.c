@@ -19,6 +19,8 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <sys/stat.h>
+#include <dirent.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
 #ifdef _OPENMP
@@ -80,6 +82,7 @@ static void print_usage(void)
         "  -f, --force     Overwrite existing output files\n"
         "  -k, --keep      Keep original file (default, for gzip compat)\n"
         "      --delete    Delete source file after successful operation\n"
+        "  -r, --recursive Recurse into directories\n"
         "  -c, --stdout    Write output to stdout\n"
         "  -q, --quiet     Suppress non-error output\n"
         "  -t, --threads N Use N threads (default: auto)\n"
@@ -191,11 +194,70 @@ static void make_decompress_output(char* out, size_t out_cap, const char* input)
 
 /* ─── Commands ───────────────────────────────────────────────────────── */
 
-static int g_quiet = 0;  /* Suppress non-error output */
-static int g_force = 0;  /* Overwrite existing output files */
-static int g_stdout = 0; /* Write to stdout instead of file */
-static int g_delete = 0; /* Delete source file after success */
-static int g_threads = 0; /* Thread count (0 = auto) */
+static int g_quiet = 0;     /* Suppress non-error output */
+static int g_force = 0;     /* Overwrite existing output files */
+static int g_stdout = 0;    /* Write to stdout instead of file */
+static int g_delete = 0;    /* Delete source file after success */
+static int g_threads = 0;   /* Thread count (0 = auto) */
+static int g_recursive = 0; /* Recurse into directories */
+
+/* ─── Recursive directory traversal ──────────────────────────────────── */
+
+typedef struct {
+    char** paths;
+    int count;
+    int capacity;
+} file_list_t;
+
+static void file_list_init(file_list_t* fl) {
+    fl->paths = NULL; fl->count = 0; fl->capacity = 0;
+}
+
+static void file_list_add(file_list_t* fl, const char* path) {
+    if (fl->count >= fl->capacity) {
+        fl->capacity = fl->capacity ? fl->capacity * 2 : 64;
+        fl->paths = realloc(fl->paths, fl->capacity * sizeof(char*));
+    }
+    fl->paths[fl->count++] = strdup(path);
+}
+
+static void file_list_free(file_list_t* fl) {
+    for (int i = 0; i < fl->count; i++) free(fl->paths[i]);
+    free(fl->paths);
+    fl->paths = NULL; fl->count = 0; fl->capacity = 0;
+}
+
+static int is_directory(const char* path) {
+    struct stat st;
+    return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+}
+
+static void collect_files_recursive(const char* dir_path, file_list_t* fl,
+                                     const char* skip_ext) {
+    DIR* dir = opendir(dir_path);
+    if (!dir) return;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue; /* skip hidden + . and .. */
+        char full_path[4096];
+        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+        struct stat st;
+        if (stat(full_path, &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) {
+            collect_files_recursive(full_path, fl, skip_ext);
+        } else if (S_ISREG(st.st_mode)) {
+            /* Skip files with the given extension (e.g., skip .mcx when compressing) */
+            if (skip_ext) {
+                size_t plen = strlen(full_path);
+                size_t elen = strlen(skip_ext);
+                if (plen > elen && strcmp(full_path + plen - elen, skip_ext) == 0)
+                    continue;
+            }
+            file_list_add(fl, full_path);
+        }
+    }
+    closedir(dir);
+}
 
 static int cmd_compress(const char* input, const char* output, int level)
 {
@@ -794,6 +856,8 @@ int main(int argc, char* argv[])
                 g_delete = 0;
             } else if (strcmp(argv[i], "--delete") == 0) {
                 g_delete = 1;
+            } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--recursive") == 0) {
+                g_recursive = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (argv[i][0] != '-') {
@@ -808,13 +872,37 @@ int main(int argc, char* argv[])
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
+        /* Expand directories if --recursive */
+        file_list_t expanded;
+        file_list_init(&expanded);
+        for (int f = 0; f < n_inputs; f++) {
+            if (is_directory(inputs[f])) {
+                if (!g_recursive) {
+                    fprintf(stderr, "Error: '%s' is a directory (use -r to recurse)\n", inputs[f]);
+                    file_list_free(&expanded);
+                    return 1;
+                }
+                collect_files_recursive(inputs[f], &expanded, ".mcx");
+            } else {
+                file_list_add(&expanded, inputs[f]);
+            }
+        }
+        if (expanded.count == 0) {
+            fprintf(stderr, "Error: no files found to compress\n");
+            file_list_free(&expanded);
+            return 1;
+        }
+        if (!g_quiet && expanded.count > 1)
+            printf("Compressing %d files...\n\n", expanded.count);
+
         /* Multi-file: compress each file separately (output name = input.mcx) */
         int errors = 0;
-        for (int f = 0; f < n_inputs; f++) {
-            const char* out = (n_inputs == 1) ? output : NULL;
-            int ret = cmd_compress(inputs[f], out, level);
+        for (int f = 0; f < expanded.count; f++) {
+            const char* out = (expanded.count == 1) ? output : NULL;
+            int ret = cmd_compress(expanded.paths[f], out, level);
             if (ret != 0) errors++;
         }
+        file_list_free(&expanded);
         return errors > 0 ? 1 : 0;
 
     } else if (strcmp(argv[1], "decompress") == 0 || strcmp(argv[1], "extract") == 0 ||
@@ -836,6 +924,8 @@ int main(int argc, char* argv[])
                 g_delete = 0;
             } else if (strcmp(argv[i], "--delete") == 0) {
                 g_delete = 1;
+            } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--recursive") == 0) {
+                g_recursive = 1;
             } else if (argv[i][0] != '-') {
                 if (n_inputs < 256) inputs[n_inputs++] = argv[i];
             }
@@ -845,12 +935,45 @@ int main(int argc, char* argv[])
             fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file> [file2 ...]\n", argv[1]);
             return 1;
         }
-        int errors = 0;
+        /* Expand directories if --recursive */
+        file_list_t dec_expanded;
+        file_list_init(&dec_expanded);
         for (int f = 0; f < n_inputs; f++) {
-            const char* out = (n_inputs == 1) ? output : NULL;
-            int ret = cmd_decompress(inputs[f], out);
+            if (is_directory(inputs[f])) {
+                if (!g_recursive) {
+                    fprintf(stderr, "Error: '%s' is a directory (use -r to recurse)\n", inputs[f]);
+                    file_list_free(&dec_expanded);
+                    return 1;
+                }
+                /* For decompress, only collect .mcx files */
+                file_list_t all_files;
+                file_list_init(&all_files);
+                collect_files_recursive(inputs[f], &all_files, NULL);
+                for (int j = 0; j < all_files.count; j++) {
+                    size_t plen = strlen(all_files.paths[j]);
+                    if (plen > 4 && strcmp(all_files.paths[j] + plen - 4, ".mcx") == 0)
+                        file_list_add(&dec_expanded, all_files.paths[j]);
+                }
+                file_list_free(&all_files);
+            } else {
+                file_list_add(&dec_expanded, inputs[f]);
+            }
+        }
+        if (dec_expanded.count == 0) {
+            fprintf(stderr, "Error: no .mcx files found to decompress\n");
+            file_list_free(&dec_expanded);
+            return 1;
+        }
+        if (!g_quiet && dec_expanded.count > 1)
+            printf("Decompressing %d files...\n\n", dec_expanded.count);
+
+        int errors = 0;
+        for (int f = 0; f < dec_expanded.count; f++) {
+            const char* out = (dec_expanded.count == 1) ? output : NULL;
+            int ret = cmd_decompress(dec_expanded.paths[f], out);
             if (ret != 0) errors++;
         }
+        file_list_free(&dec_expanded);
         return errors > 0 ? 1 : 0;
 
     } else if (strcmp(argv[1], "info") == 0) {
