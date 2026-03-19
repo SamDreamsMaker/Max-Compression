@@ -14,6 +14,8 @@ __all__ = [
     "decompress",
     "compress_bound",
     "get_frame_info",
+    "verify",
+    "diff",
     "version",
     "MaxCompressionError",
 ]
@@ -228,4 +230,89 @@ def get_frame_info(data: bytes) -> dict:
         "level": info.level,
         "strategy": info.strategy,
         "flags": info.flags,
+    }
+
+
+def verify(compressed: bytes, original: Optional[bytes] = None) -> dict:
+    """
+    Verify integrity of compressed data by decompressing and optionally
+    comparing against original content.
+    
+    Args:
+        compressed: The compressed bytes (MCX format).
+        original: Optional original bytes to compare against.
+        
+    Returns:
+        A dict with keys: ok (bool), decompressed_size (int), ratio (float),
+        and match (bool or None if no original provided).
+        
+    Raises:
+        MaxCompressionError: If decompression fails entirely.
+    """
+    import time
+    
+    if not isinstance(compressed, (bytes, bytearray)):
+        raise TypeError("compressed must be bytes or bytearray")
+    
+    t0 = time.monotonic()
+    decompressed = decompress(compressed)
+    elapsed = time.monotonic() - t0
+    
+    dec_size = len(decompressed)
+    comp_size = len(compressed)
+    ratio = dec_size / comp_size if comp_size > 0 else 0.0
+    speed = dec_size / elapsed / 1048576.0 if elapsed > 0.001 else 0.0
+    
+    result = {
+        "ok": True,
+        "compressed_size": comp_size,
+        "decompressed_size": dec_size,
+        "ratio": round(ratio, 2),
+        "speed_mbps": round(speed, 1),
+        "match": None,
+    }
+    
+    if original is not None:
+        if not isinstance(original, (bytes, bytearray)):
+            raise TypeError("original must be bytes or bytearray")
+        result["match"] = (decompressed == original)
+        if not result["match"]:
+            result["ok"] = False
+    
+    return result
+
+
+def diff(compressed_a: bytes, compressed_b: bytes) -> dict:
+    """
+    Compare two compressed MCX archives — sizes, ratios, and strategies.
+    
+    Args:
+        compressed_a: First compressed bytes (MCX format).
+        compressed_b: Second compressed bytes (MCX format).
+        
+    Returns:
+        A dict with comparison results: size_a, size_b, delta_bytes,
+        delta_pct, info_a, info_b.
+    """
+    if not isinstance(compressed_a, (bytes, bytearray)):
+        raise TypeError("compressed_a must be bytes or bytearray")
+    if not isinstance(compressed_b, (bytes, bytearray)):
+        raise TypeError("compressed_b must be bytes or bytearray")
+    
+    info_a = get_frame_info(compressed_a)
+    info_b = get_frame_info(compressed_b)
+    
+    size_a = len(compressed_a)
+    size_b = len(compressed_b)
+    delta = size_b - size_a
+    delta_pct = (size_b / size_a - 1.0) * 100 if size_a > 0 else 0.0
+    
+    return {
+        "size_a": size_a,
+        "size_b": size_b,
+        "delta_bytes": delta,
+        "delta_pct": round(delta_pct, 2),
+        "smaller": "a" if size_a < size_b else "b" if size_b < size_a else "equal",
+        "info_a": info_a,
+        "info_b": info_b,
     }
