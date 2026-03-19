@@ -192,6 +192,7 @@ static uint32_t dec_getfreq(Decoder* d, uint32_t total) {
 }
 
 static void dec_update(Decoder* d, uint32_t cumfreq, uint32_t freq, uint32_t total) {
+    (void)total;
     d->low += cumfreq * d->range;
     d->range *= freq;
     dec_normalize(d);

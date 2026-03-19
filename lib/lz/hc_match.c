@@ -41,6 +41,7 @@ int hc_init(HCMatchFinder* hc, const uint8_t* data, size_t size,
 }
 
 int hc_find(HCMatchFinder* hc, HCMatch* out, int max_matches) {
+    (void)max_matches;
     uint32_t pos = hc->pos;
     
     if (pos + 4 > hc->size) {

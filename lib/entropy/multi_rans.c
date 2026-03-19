@@ -57,7 +57,7 @@ static int g_cost_lut_ready = 0;
 static void init_cost_lut(void) {
     if (g_cost_lut_ready) return;
     g_cost_lut[0] = 0xFFFFFFFF; /* can't encode */
-    for (int f = 1; f <= MT_SCALE; f++) {
+    for (unsigned f = 1; f <= MT_SCALE; f++) {
         double bits = log2((double)MT_SCALE / f);
         g_cost_lut[f] = (uint32_t)(bits * 65536 + 0.5);
     }

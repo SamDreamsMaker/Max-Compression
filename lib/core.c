@@ -296,7 +296,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         }
 #endif
         #pragma omp parallel for schedule(dynamic)
-        for (b = 0; b < num_blocks; b++) {
+        for (b = 0; b < (int32_t)num_blocks; b++) {
             if (omp_err) continue;
             
             size_t src_offset = (size_t)b * MCX_MAX_BLOCK_SIZE;
@@ -1061,7 +1061,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
         
         int32_t b;
         #pragma omp parallel for schedule(dynamic)
-        for (b = 0; b < num_blocks; b++) {
+        for (b = 0; b < (int32_t)num_blocks; b++) {
             if (omp_err) continue;
 
             size_t dst_offset = (size_t)b * MCX_MAX_BLOCK_SIZE;
