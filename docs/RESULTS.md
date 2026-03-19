@@ -120,6 +120,27 @@ Direct LZRC (LZ + Range Coder, no BWT fallback):
 | samba | 4,175 KB | **5.06×** | 0.4 MB/s |
 | mozilla | 15,507 KB | **3.23×** | 0.3 MB/s |
 
+## enwik8 (100 MB Wikipedia)
+
+The [enwik8](https://mattmahoney.net/dc/textdata.html) dataset is 100 MB of English Wikipedia XML,
+a standard benchmark for text compression.
+
+| Compressor | Size | Ratio | vs MCX L20 |
+|------------|------|-------|------------|
+| gzip -9 | 36,445 KB | 2.74× | MCX +53% ✅ |
+| bzip2 -9 | 29,009 KB | 3.45× | MCX +21% ✅ |
+| xz -9 | 24,865 KB | 4.02× | MCX +4% ✅ |
+| **MCX L3** | 43,733 KB | 2.23× | — |
+| **MCX L6** | 40,441 KB | 2.41× | — |
+| **MCX L9** | 38,970 KB | 2.51× | — |
+| **MCX L12** | 23,351 KB | 4.18× | — |
+| **MCX L20** | **23,351 KB** | **4.18×** | — |
+| MCX L24 | 32,252 KB | 3.03× | — |
+| MCX L26 | 27,718 KB | 3.52× | — |
+
+**MCX L20 beats xz -9 by 4% on enwik8** — BWT + multi-table rANS excels on large text.
+All roundtrips verified.
+
 ## Compression Levels
 
 | Level | Strategy | Silesia Total | Speed |
