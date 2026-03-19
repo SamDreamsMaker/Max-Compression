@@ -194,6 +194,13 @@ static int g_threads = 0; /* Thread count (0 = auto) */
 
 static int cmd_compress(const char* input, const char* output, int level)
 {
+    /* Warn if trying to compress an already-compressed .mcx file */
+    size_t ilen = strlen(input);
+    if (ilen > 4 && strcmp(input + ilen - 4, ".mcx") == 0) {
+        fprintf(stderr, "Warning: '%s' appears to already be compressed.\n"
+                "  Did you mean: mcx decompress %s\n", input, input);
+    }
+
     FILE* fin = fopen(input, "rb");
     if (!fin) {
         int err = errno;
@@ -805,7 +812,8 @@ int main(int argc, char* argv[])
         }
         return errors > 0 ? 1 : 0;
 
-    } else if (strcmp(argv[1], "decompress") == 0) {
+    } else if (strcmp(argv[1], "decompress") == 0 || strcmp(argv[1], "extract") == 0 ||
+               strcmp(argv[1], "x") == 0 || strcmp(argv[1], "d") == 0) {
         const char* inputs[256];
         int n_inputs = 0;
         const char* output = NULL;
