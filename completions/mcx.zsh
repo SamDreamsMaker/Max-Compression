@@ -5,8 +5,11 @@ _mcx() {
     commands=(
         'compress:Compress files'
         'decompress:Decompress .mcx files'
+        'extract:Decompress (alias)'
         'info:Show file information'
         'cat:Decompress to stdout'
+        'stat:Show file statistics (entropy, bytes)'
+        'hash:Show CRC32/FNV hash of content'
         'bench:Benchmark all levels'
         'test:Run self-tests'
         'verify:Verify file integrity'
@@ -31,6 +34,8 @@ _mcx() {
         '-c[Write to stdout]'
         '--stdout[Write to stdout]'
         '--delete[Delete source after success]'
+        '-r[Recurse into directories]'
+        '--recursive[Recurse into directories]'
         '-t[Thread count]:threads:'
         '--threads[Thread count]:threads:'
         '*:input:_files'
@@ -47,6 +52,8 @@ _mcx() {
         '-c[Write to stdout]'
         '--stdout[Write to stdout]'
         '--delete[Delete source after success]'
+        '-r[Recurse into directories]'
+        '--recursive[Recurse into directories]'
         '*:input:_files -g "*.mcx"'
     )
 
@@ -55,8 +62,10 @@ _mcx() {
     else
         case "${words[2]}" in
             compress)  _arguments $compress_opts ;;
-            decompress) _arguments $decompress_opts ;;
-            info|cat|bench|verify|ls) _files ;;
+            decompress|extract|x|d) _arguments $decompress_opts ;;
+            info|cat|bench|stat) _files ;;
+            verify) _files -g "*.mcx" ;;
+            hash|ls) _files -g "*.mcx" ;;
             diff) _files -g "*.mcx" ;;
             *) ;;
         esac
