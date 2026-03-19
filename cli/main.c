@@ -393,13 +393,14 @@ static int cmd_decompress(const char* input, const char* output)
 static const char* strategy_name(uint8_t s) {
     switch (s) {
         case 0: return "STORE (no compression)";
-        case 1: return "DEFAULT (BWT+rANS)";
-        case 2: return "BEST (BWT+CM-rANS)";
-        case 3: return "LZ_FAST (LZ77 fast)";
-        case 4: return "LZ_HC (LZ77 hash chain)";
-        case 5: return "LZ24 (LZ77 24-bit)";
-        case 6: return "STRIDE (stride-delta)";
-        case 7: return "BABEL (transform)";
+        case 1: return "FAST (RLE+Huffman)";
+        case 2: return "DEFAULT (BWT+rANS)";
+        case 3: return "BEST (BWT+CM-rANS)";
+        case 4: return "LZ_FAST (LZ77 greedy)";
+        case 5: return "LZ_HC (LZ77 lazy)";
+        case 6: return "BABEL (XOR predict)";
+        case 7: return "STRIDE (stride-delta)";
+        case 8: return "LZ24 (LZ77 24-bit)";
         case 9: return "LZRC (LZ+Range Coder v2.0)";
         default: return "UNKNOWN";
     }
