@@ -23,6 +23,7 @@
 #include <dirent.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
+#include "../lib/optimizer/genetic.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -642,6 +643,15 @@ static int cmd_ls(int argc, char** argv)
     return errors > 0 ? 1 : 0;
 }
 
+static const char* entropy_coder_name(uint8_t ec) {
+    switch (ec) {
+        case 0: return "Huffman";
+        case 1: return "rANS";
+        case 2: return "CM-rANS";
+        default: return "unknown";
+    }
+}
+
 static int cmd_info(const char* input)
 {
     size_t src_size;
@@ -665,12 +675,68 @@ static int cmd_info(const char* input)
 
     if (info.original_size > 0) {
         printf("Original size:    %llu bytes (%.1f KB)\n",
-               info.original_size, info.original_size / 1024.0);
+               (unsigned long long)info.original_size, info.original_size / 1024.0);
         printf("Ratio:            %.2fx (%.1f%% smaller)\n",
                (double)info.original_size / src_size,
                100.0 * (1.0 - (double)src_size / info.original_size));
     }
-    if (info.flags & 0x04) printf("Filters:          E8/E9 x86\n");
+
+    /* Flags */
+    if (info.flags & MCX_FLAG_E8E9)
+        printf("Filters:          E8/E9 x86\n");
+    if (info.flags & MCX_FLAG_STREAMING)
+        printf("Mode:             Streaming\n");
+
+    /* Parse block table (for strategies that have blocks) */
+    uint8_t strat = info.strategy;
+    if (strat != MCX_STRATEGY_STORE && strat != MCX_STRATEGY_FAST) {
+        size_t offset = MCX_FRAME_HEADER_SIZE;
+        if (offset + 4 <= src_size) {
+            uint32_t num_blocks;
+            memcpy(&num_blocks, src + offset, 4);
+            offset += 4;
+
+            printf("Blocks:           %u\n", num_blocks);
+
+            if (num_blocks > 0 && num_blocks <= 10000 &&
+                offset + (size_t)num_blocks * 4 <= src_size) {
+                /* Read block size table */
+                uint32_t* bsizes = (uint32_t*)malloc(num_blocks * sizeof(uint32_t));
+                if (bsizes) {
+                    for (uint32_t b = 0; b < num_blocks; b++) {
+                        memcpy(&bsizes[b], src + offset + b * 4, 4);
+                    }
+                    offset += (size_t)num_blocks * 4;
+
+                    /* Parse each block's genome byte */
+                    printf("\n  %-6s %10s  %-6s %-5s %-5s %-7s %-8s\n",
+                           "Block", "Comp.Size", "BWT", "MTF", "Delta", "Entropy", "CM-LR");
+                    printf("  ──────────────────────────────────────────────────────────\n");
+
+                    for (uint32_t b = 0; b < num_blocks; b++) {
+                        if (offset < src_size) {
+                            mcx_genome g = mcx_decode_genome(src[offset]);
+                            const char* ent = entropy_coder_name(g.entropy_coder);
+                            /* cm_learning=6 means multi-table rANS, 7 means RLE2 pre-pass */
+                            const char* note = "";
+                            if (g.cm_learning == 6) note = "+multi";
+                            else if (g.cm_learning == 7) note = "+rle2";
+
+                            printf("  %-6u %10u  %-6s %-5s %-5s %-7s %u%s\n",
+                                   b, bsizes[b],
+                                   g.use_bwt ? "yes" : "no",
+                                   g.use_mtf_rle ? "yes" : "no",
+                                   g.use_delta ? "yes" : "no",
+                                   ent,
+                                   g.cm_learning, note);
+                        }
+                        offset += bsizes[b];
+                    }
+                    free(bsizes);
+                }
+            }
+        }
+    }
 
     free(src);
     return 0;
