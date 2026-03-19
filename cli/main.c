@@ -18,8 +18,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
+
+/* ─── Timing ─────────────────────────────────────────────────────────── */
+
+static double get_time_sec(void) {
+#if defined(CLOCK_MONOTONIC)
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+#else
+    return (double)clock() / CLOCKS_PER_SEC;
+#endif
+}
 
 /* ─── Helpers ────────────────────────────────────────────────────────── */
 
@@ -218,6 +231,7 @@ static int cmd_compress(const char* input, const char* output, int level)
     fseek(fin, 0, SEEK_SET);
 
     size_t total_out = 0;
+    double t0 = get_time_sec();
 
     /* Use one-shot API for files that fit in memory (full pipeline with
      * multi-trial, E8/E9, multi-table rANS, etc.).
@@ -246,7 +260,13 @@ static int cmd_compress(const char* input, const char* output, int level)
             return 1;
         }
 
-        if (!g_quiet) printf("Compressing '%s' (%zu bytes) at level %d...\n", input, src_size, level);
+        if (!g_quiet) {
+            if (src_size > 1024 * 1024)
+                printf("Compressing '%s' (%.1f MB) at level %d...\n", input, (double)src_size / (1024*1024), level);
+            else
+                printf("Compressing '%s' (%zu bytes) at level %d...\n", input, src_size, level);
+            fflush(stdout);
+        }
 
         size_t comp_size = mcx_compress(dst_buf, dst_cap, src_buf, src_size, level);
         free(src_buf);
@@ -287,13 +307,26 @@ static int cmd_compress(const char* input, const char* output, int level)
 
         int is_eof = 0;
         size_t result = 1;
+        size_t total_in = 0;
+        double last_progress = 0;
 
         while (result != 0) {
             if (in_b.pos >= in_b.size && !is_eof) {
                 size_t bytes_read = fread(in_buf, 1, IN_CHUNK_SIZE, fin);
                 in_b.size = bytes_read;
                 in_b.pos = 0;
+                total_in += bytes_read;
                 if (bytes_read == 0) is_eof = 1;
+                /* Show progress every ~1 second */
+                if (!g_quiet && src_size > 1024 * 1024) {
+                    double now = get_time_sec();
+                    if (now - last_progress >= 1.0) {
+                        double pct = (double)total_in / (double)src_size * 100.0;
+                        fprintf(stderr, "\r  Progress: %.0f%%", pct);
+                        fflush(stderr);
+                        last_progress = now;
+                    }
+                }
             }
 
             if (is_eof) {
@@ -325,6 +358,8 @@ static int cmd_compress(const char* input, const char* output, int level)
 
     double ratio = (double)src_size / (double)total_out;
     double savings = (1.0 - (double)total_out / (double)src_size) * 100.0;
+    double elapsed = get_time_sec() - t0;
+    double speed = (elapsed > 0.001) ? (double)src_size / (1024*1024) / elapsed : 0;
 
     if (!g_quiet) printf("Done!\n");
     if (!g_quiet) printf("  Input:  %zu bytes\n", src_size);
@@ -332,6 +367,8 @@ static int cmd_compress(const char* input, const char* output, int level)
         if (g_stdout) printf("  Output: %zu bytes -> stdout\n", total_out);
         else printf("  Output: %zu bytes -> '%s'\n", total_out, output);
         printf("  Ratio:  %.2fx (%.1f%% smaller)\n", ratio, savings);
+        if (elapsed >= 0.01)
+            printf("  Time:   %.2fs (%.1f MB/s)\n", elapsed, speed);
     }
 
     fclose(fin);
@@ -424,9 +461,17 @@ static int cmd_decompress(const char* input, const char* output)
         return 1;
     }
 
-    if (!g_quiet) printf("Decompressing '%s' (%zu bytes)...\n", input, src_size);
+    if (!g_quiet) {
+        if (src_size > 1024 * 1024)
+            printf("Decompressing '%s' (%.1f MB)...\n", input, (double)src_size / (1024*1024));
+        else
+            printf("Decompressing '%s' (%zu bytes)...\n", input, src_size);
+        fflush(stdout);
+    }
 
+    double dt0 = get_time_sec();
     size_t total_out = mcx_decompress(dst_buf, (size_t)orig_size + 1024, src_buf, src_size);
+    double dt_elapsed = get_time_sec() - dt0;
     free(src_buf);
 
     if (mcx_is_error(total_out)) {
@@ -439,8 +484,13 @@ static int cmd_decompress(const char* input, const char* output)
     fwrite(dst_buf, 1, total_out, fout);
     free(dst_buf);
 
+    double dt_speed = (dt_elapsed > 0.001) ? (double)total_out / (1024*1024) / dt_elapsed : 0;
     if (!g_quiet) printf("Done!\n");
-    if (!g_quiet) printf("  Decompressed: %zu bytes -> '%s'\n", total_out, output);
+    if (!g_quiet) {
+        printf("  Decompressed: %zu bytes -> '%s'\n", total_out, output);
+        if (dt_elapsed >= 0.01)
+            printf("  Time:   %.2fs (%.1f MB/s)\n", dt_elapsed, dt_speed);
+    }
 
     fclose(fin);
     fclose(fout);
