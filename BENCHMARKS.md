@@ -1,6 +1,6 @@
 # MCX Benchmarks
 
-**Version:** 2.1.1  
+**Version:** 2.1.1+  
 **Platform:** Linux x64, GCC 11, Intel Atom C2338 @ 1.74GHz (2 cores)  
 **Date:** 2026-03-19
 
