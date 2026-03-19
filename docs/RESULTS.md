@@ -1,7 +1,7 @@
 # MCX Benchmark Results
 
-**Version:** 2.1.0  
-**Date:** 2026-03-18  
+**Version:** 2.1.1  
+**Date:** 2026-03-19  
 **Platform:** Linux x64, GCC 11, single-threaded
 
 ## Silesia Corpus — Level 20 (Best)
@@ -25,6 +25,24 @@
 **MCX L20 beats bzip2 on 12/12 Silesia files (100%).**  
 **MCX L20 beats xz on 7/12 Silesia files (58%).**  
 **MCX L20 total is competitive with xz (4.35× vs ~4.34×).**
+
+## Silesia Corpus — Level 9 (Best LZ)
+
+| File | Size | MCX L9 | Ratio |
+|------|------|--------|-------|
+| dickens | 10.2 MB | 4,192 KB | **2.37×** |
+| mozilla | 51.2 MB | 19,140 KB | **2.61×** |
+| mr | 10.0 MB | 3,477 KB | **2.80×** |
+| nci | 33.6 MB | 3,382 KB | **9.69×** |
+| ooffice | 6.2 MB | 3,221 KB | **1.87×** |
+| osdb | 10.1 MB | 3,444 KB | **2.86×** |
+| reymont | 6.6 MB | 2,083 KB | **3.11×** |
+| samba | 21.6 MB | 5,743 KB | **3.67×** |
+| sao | 7.3 MB | 5,240 KB | **1.35×** |
+| webster | 41.5 MB | 13,350 KB | **3.03×** |
+| xml | 5.3 MB | 767 KB | **6.80×** |
+| x-ray | 8.5 MB | 5,851 KB | **1.41×** |
+| **TOTAL** | **211.9 MB** | **69,889 KB** | **2.96×** |
 
 ## Canterbury Corpus — Level 20
 
