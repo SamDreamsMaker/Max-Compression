@@ -163,28 +163,29 @@ All benchmarks: single-threaded, in-memory, roundtrip-verified. System `gzip`, `
 
 The [Silesia corpus](https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia) is the standard benchmark for evaluating compression algorithms on real-world data.
 
-| File | Size | gzip -9 | bzip2 -9 | xz -9 | **MCX L20** | vs bzip2 | vs xz |
-|------|------|---------|----------|-------|-------------|----------|-------|
-| dickens | 10 MB | 2.65× | 3.64× | 3.60× | **4.07×** | +12% | +13% |
-| xml | 5 MB | 8.07× | 12.12× | 11.79× | **12.86×** | +6% | +9% |
-| ooffice | 6 MB | 1.99× | 2.15× | 2.54× | **2.53×** | +18% | ≈ |
-| reymont | 6.5 MB | 3.64× | 5.32× | 5.03× | **5.93×** | +11% | +18% |
-| sao | 7 MB | 1.36× | 1.47× | 1.64× | **1.48×** | +1% | -10% |
-| x-ray | 8 MB | 1.40× | 2.09× | 1.89× | **2.15×** | +3% | +14% |
-| mr | 10 MB | 2.71× | 4.08× | 3.63× | **4.28×** | +5% | +18% |
-| osdb | 10 MB | 2.71× | 3.60× | 3.54× | **4.04×** | +12% | +14% |
-| nci | 33 MB | 11.23× | 18.51× | 19.30× | **25.65×** | +39% | +33% |
-| samba | 21 MB | 4.00× | 4.75× | 5.74× | **5.03×** | +6% | -12% |
-| webster | 40 MB | 3.44× | 4.80× | 4.94× | **5.81×** | +21% | +18% |
-| mozilla | 50 MB | 2.70× | — | 3.83× | **3.22×** 🆕 | — | -16% |
+| File | Size | gzip -9 | bzip2 -9 | xz -9 | **MCX L20** | vs gzip | vs bzip2 | vs xz |
+|------|------|---------|----------|-------|-------------|---------|----------|-------|
+| dickens | 9.7 MB | 2.65× | 3.64× | 3.60× | **4.07×** | +35% | +11% | +12% |
+| mozilla | 48.8 MB | 2.70× | 2.86× | 3.83× | **3.22×** | +16% | +11% | -19% |
+| mr | 9.5 MB | 2.71× | 4.08× | 3.63× | **4.28×** | +37% | +5% | +15% |
+| nci | 32.0 MB | 11.23× | 18.51× | 19.30× | **25.65×** | +56% | +28% | +25% |
+| ooffice | 5.9 MB | 1.99× | 2.15× | 2.54× | **2.56×** | +22% | +16% | +1% |
+| osdb | 9.6 MB | 2.71× | 3.60× | 3.54× | **4.04×** | +33% | +11% | +12% |
+| reymont | 6.3 MB | 3.64× | 5.32× | 5.03× | **5.93×** | +39% | +10% | +15% |
+| samba | 20.6 MB | 4.00× | 4.75× | 5.74× | **5.05×** | +21% | +6% | -14% |
+| sao | 6.9 MB | 1.36× | 1.47× | 1.64× | **1.48×** | +8% | +1% | -11% |
+| webster | 39.5 MB | 3.44× | 4.80× | 4.94× | **5.81×** | +41% | +17% | +15% |
+| xml | 5.1 MB | 8.07× | 12.12× | 11.79× | **12.86×** | +37% | +6% | +8% |
+| x-ray | 8.1 MB | 1.40× | 2.09× | 1.89× | **2.15×** | +35% | +3% | +12% |
+| **TOTAL** | **202 MB** | **3.13×** | **3.89×** | **4.34×** | **4.35×** | **+28%** | **+11%** | **≈** |
 
 **Summary:**
-- Beats **gzip -9** on 12/12 files (100%)
-- Beats **bzip2 -9** on 11/11 tested files (100%)
-- Beats **xz -9** on 9/12 files (75%)
+- Beats **gzip -9** on 12/12 files (100%) — 28% smaller on average
+- Beats **bzip2 -9** on 12/12 files (100%) — 11% smaller on average
+- Beats **xz -9** on 9/12 files (75%) — ties on total corpus
+- xz leads on 3 binary-heavy files (mozilla, samba, sao) where LZMA2's position-dependent context modeling has an edge
 
-> xz leads on two binary-heavy files (sao, samba) where LZMA2's large sliding window provides an advantage.
-> 🆕 **v2.1:** LZRC engine (LZ + range coder) with embedded libdivsufsort (BWT 2× faster). Use `mcx compress -l 26` for LZRC mode, or `-l 24` for 3× faster LZRC.
+> **v2.1:** LZRC engine (LZ + range coder) with embedded libdivsufsort (BWT 2× faster). Use `mcx compress -l 26` for LZRC mode, or `-l 24` for 3× faster LZRC.
 
 ### Speed
 
