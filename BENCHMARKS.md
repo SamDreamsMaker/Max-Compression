@@ -33,12 +33,12 @@
 | samba | 21.6 MB | 4,274 KB | **5.06×** | +29% | -2% |
 | sao | 7.3 MB | 4,899 KB | **1.48×** | +1% | -10% |
 | webster | 41.5 MB | 7,139 KB | **5.81×** | +21% | -5% |
-| x-ray | 8.5 MB | 3,952 KB | **2.15×** | — | — |
-| xml | 5.3 MB | 416 KB | **12.86×** | — | — |
+| x-ray | 8.5 MB | 3,952 KB | **2.15×** | ≈0% | +10% |
+| xml | 5.3 MB | 416 KB | **12.86×** | +3% | +6% |
 
 **Summary:**
 - Beats bzip2 on **12/12** files (100%)
-- Beats xz on **7/12** files (58%)
+- Beats xz on **8/12** files (67%)
 
 ## Silesia Corpus — Level 6 (Fast)
 
