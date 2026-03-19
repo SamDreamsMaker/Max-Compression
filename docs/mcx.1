@@ -1,14 +1,21 @@
-.TH MCX 1 "March 2026" "MaxCompression 2.1.0" "User Commands"
+.TH MCX 1 "March 2026" "MaxCompression 2.1.1" "User Commands"
 .SH NAME
 mcx \- high\-ratio lossless data compression tool
 .SH SYNOPSIS
 .B mcx compress
 [\fB\-l\fR \fILEVEL\fR]
+[\fB\-\-fast\fR|\fB\-\-default\fR|\fB\-\-best\fR]
+[\fB\-f\fR]
+[\fB\-k\fR]
+[\fB\-c\fR]
 [\fB\-q\fR]
 [\fB\-o\fR \fIOUTPUT\fR]
 \fIINPUT\fR
 .br
 .B mcx decompress
+[\fB\-f\fR]
+[\fB\-k\fR]
+[\fB\-c\fR]
 [\fB\-q\fR]
 [\fB\-o\fR \fIOUTPUT\fR]
 \fIINPUT\fR
@@ -23,15 +30,39 @@ mcx \- high\-ratio lossless data compression tool
 \fIINPUT\fR
 .br
 .B mcx test
+.br
+.B mcx version
 .SH DESCRIPTION
 .B mcx
 compresses and decompresses files using the MaxCompression (MCX) format.
 It achieves compression ratios competitive with xz/LZMA2 while beating
-bzip2 on all file types.
+bzip2 on all file types. All compression is lossless.
 .PP
 MCX uses a hybrid approach: BWT (Burrows\-Wheeler Transform) for text
 and structured data, LZRC (LZ + Range Coder) for binary archives.
-Smart detection automatically selects the best strategy.
+Smart detection at level 20 automatically selects the best strategy.
+.SH COMMANDS
+.TP
+.B compress
+Compress a file. Output defaults to \fIINPUT\fR.mcx.
+.TP
+.B decompress
+Decompress an MCX file. Output defaults to \fIINPUT\fR with .mcx removed.
+.TP
+.B info
+Display frame metadata (size, level, strategy) without decompressing.
+.TP
+.B cat
+Decompress to stdout (equivalent to \fBdecompress \-c\fR).
+.TP
+.B bench
+Benchmark compression on a file across all major levels.
+.TP
+.B test
+Run built\-in self\-tests (roundtrip at all levels).
+.TP
+.B version
+Print detailed build information (compiler, platform, features).
 .SH OPTIONS
 .TP
 .BR \-l ", " \-\-level =\fILEVEL\fR
@@ -39,21 +70,46 @@ Compression level (1\-26). Default: 3.
 .RS
 .TP
 .B 1\-3
-Fast mode (LZ77 + FSE). Speed: 15\-50 MB/s.
+Fast mode (LZ77 greedy + rANS). Speed: 15\-50 MB/s.
 .TP
-.B 6\-9
-Standard mode (LZ\-HC + adaptive entropy). Speed: 3\-15 MB/s.
+.B 4\-6
+Balanced mode (LZ\-HC + rANS). Speed: 5\-15 MB/s.
 .TP
-.B 10\-22
-Best mode (BWT + multi\-table rANS). Speed: 1\-5 MB/s.
+.B 7\-9
+High ratio (LZ\-HC + adaptive arithmetic). Speed: 3\-10 MB/s.
+.TP
+.B 10\-12
+BWT mode (BWT + genome optimizer + multi\-table rANS). Speed: 1\-5 MB/s.
+.TP
+.B 13\-20
+Smart mode (auto\-selects best strategy, multi\-trial). Speed: 0.1\-0.5 MB/s.
 .TP
 .B 24
 LZRC fast (hash chain match finder). Speed: 1\-3 MB/s.
 .TP
 .B 26
 LZRC best (binary tree, 64MB window). Speed: 0.3\-1 MB/s.
-Best ratio on binary data.
 .RE
+.TP
+.BR \-\-fast ", " \-1
+Shortcut for \fB\-l 3\fR (fast compression).
+.TP
+.BR \-\-default ", " \-6
+Shortcut for \fB\-l 6\fR (balanced speed/ratio).
+.TP
+.BR \-\-best ", " \-9
+Shortcut for \fB\-l 20\fR (maximum compression).
+.TP
+.BR \-f ", " \-\-force
+Overwrite existing output files without prompting.
+.TP
+.BR \-k ", " \-\-keep
+Keep original file after compression/decompression. This is the
+default behavior (MCX never deletes source files). Provided for
+compatibility with gzip/xz conventions.
+.TP
+.BR \-c ", " \-\-stdout
+Write output to stdout instead of a file. Implies \fB\-q\fR.
 .TP
 .BR \-o ", " \-\-output =\fIFILE\fR
 Output file path. If not specified, appends .mcx for compression
@@ -61,40 +117,63 @@ or removes .mcx for decompression.
 .TP
 .BR \-q ", " \-\-quiet
 Suppress all non\-error output. Useful for scripts and pipelines.
+.TP
+.BR \-V ", " \-\-version
+Print version string and exit.
+.TP
+.BR \-h ", " \-\-help
+Print usage summary and exit.
 .SH EXAMPLES
 .TP
-Compress a file at maximum level:
-.B mcx compress \-l 20 data.bin \-o data.mcx
+Compress at maximum level:
+.B mcx compress \-\-best data.bin
+.TP
+Compress with specific level:
+.B mcx compress \-l 12 data.bin \-o data.mcx
 .TP
 Decompress:
-.B mcx decompress data.mcx \-o data.bin
+.B mcx decompress data.mcx
 .TP
-Fast compression:
-.B mcx compress \-l 1 largefile.tar
+Fast compression (level 3):
+.B mcx compress \-\-fast largefile.tar
+.TP
+Force overwrite:
+.B mcx compress \-f \-l 20 data.bin
+.TP
+Compress to stdout:
+.B mcx compress \-c data.bin > data.mcx
+.TP
+Show file info:
+.B mcx info data.mcx
+.TP
+Benchmark all levels:
+.B mcx bench data.bin
 .SH COMPRESSION RATIOS
-Typical results on the Silesia benchmark corpus (211 MB):
+Silesia benchmark corpus (202 MB), 12 files:
 .PP
 .TS
-l l l l l.
-Tool	Ratio	Speed (comp)	Speed (decomp)
+l l l l.
+Tool	Ratio	vs gzip	Win rate
 _
-mcx L20	4.35x	0.5\-1.7 MB/s	12\-19 MB/s
-xz \-9e	4.34x	2\-5 MB/s	50\-80 MB/s
-bzip2 \-9	3.37x	5\-8 MB/s	5\-10 MB/s
-gzip \-9	2.73x	15\-30 MB/s	200+ MB/s
+mcx L20	4.35\[mu]	+28%	\(em
+bzip2 \-9	3.89\[mu]	+20%	MCX 12/12
+xz \-9	4.34\[mu]	+28%	MCX 9/12
+gzip \-9	3.13\[mu]	\(em	MCX 12/12
 .TE
+.PP
+MCX beats bzip2 on all 12 Silesia files and xz on 9 of 12.
 .SH EXIT STATUS
 .TP
 .B 0
 Success.
 .TP
 .B 1
-Error (invalid input, I/O error, decompression failure).
+Error (file not found, permission denied, invalid level, corrupt file, I/O error).
 .SH FILES
 MCX files use the
 .B .mcx
-extension and begin with magic bytes
-.BR "MCX\\x01" .
+extension. The format uses a 16\-byte frame header with magic bytes,
+version, compression level, strategy, and original file size.
 .SH BUGS
 Report bugs at <https://github.com/SamDreamsMaker/Max\-Compression/issues>.
 .SH AUTHOR
