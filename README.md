@@ -28,6 +28,7 @@ MCX targets **maximum compression ratio** while maintaining practical speeds. It
 | nci (chemical text, 33 MB) | **25.7×** | xz: 19.3× — **33% better** |
 | alice29.txt (English text) | **3.53×** | bzip2: 3.52× — **beats bzip2** |
 | mozilla (50 MB binary archive) | **3.22×** | xz: 3.55× — **closes gap** |
+| enwik8 (100 MB Wikipedia) | **4.04×** | xz: 3.89× — **beats xz by 4%** |
 | Silesia corpus (202 MB total) | **4.35×** | bzip2: ~3.3× — **+32%** |
 
 ## Features
@@ -73,6 +74,16 @@ mcx compress -l 20 input.bin
 
 # Decompress
 mcx decompress input.bin.mcx
+
+# Inspect files
+mcx info archive.mcx          # detailed info
+mcx ls *.mcx                   # compact multi-file listing
+mcx diff old.mcx new.mcx      # compare two compressed files
+
+# Utilities
+mcx cat archive.mcx            # decompress to stdout
+mcx bench input.bin            # benchmark all levels
+mcx test                       # self-test all levels
 
 # Show help
 mcx --help
