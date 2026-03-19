@@ -203,6 +203,7 @@ static int g_stdout = 0;    /* Write to stdout instead of file */
 static int g_delete = 0;    /* Delete source file after success */
 static int g_threads = 0;   /* Thread count (0 = auto) */
 static int g_recursive = 0; /* Recurse into directories */
+static int g_verify = 0;    /* Verify after compress (decompress+compare) */
 
 /* ─── Recursive directory traversal ──────────────────────────────────── */
 
@@ -456,6 +457,48 @@ static int cmd_compress(const char* input, const char* output, int level)
 
     fclose(fin);
     fclose(fout);
+
+    /* Verify: decompress the output and compare with original */
+    if (g_verify && !g_stdout && output) {
+        size_t comp_sz;
+        uint8_t* comp_data = read_file(output, &comp_sz);
+        if (!comp_data) {
+            fprintf(stderr, "  Verify FAILED: cannot read compressed output\n");
+            return 1;
+        }
+
+        /* Read original for comparison */
+        size_t orig_sz;
+        uint8_t* orig_data = read_file(input, &orig_sz);
+        if (!orig_data) {
+            fprintf(stderr, "  Verify FAILED: cannot re-read original\n");
+            free(comp_data);
+            return 1;
+        }
+
+        uint8_t* dec_buf = (uint8_t*)malloc(orig_sz + 1024);
+        if (!dec_buf) {
+            fprintf(stderr, "  Verify FAILED: out of memory\n");
+            free(comp_data); free(orig_data);
+            return 1;
+        }
+
+        size_t dec_sz = mcx_decompress(dec_buf, orig_sz + 1024, comp_data, comp_sz);
+        free(comp_data);
+
+        if (mcx_is_error(dec_sz)) {
+            fprintf(stderr, "  Verify FAILED: decompression error: %s\n", mcx_get_error_name(dec_sz));
+            free(orig_data); free(dec_buf);
+            return 1;
+        }
+        if (dec_sz != orig_sz || memcmp(orig_data, dec_buf, orig_sz) != 0) {
+            fprintf(stderr, "  Verify FAILED: decompressed data does not match original!\n");
+            free(orig_data); free(dec_buf);
+            return 1;
+        }
+        free(orig_data); free(dec_buf);
+        if (!g_quiet) printf("  Verified: roundtrip OK ✓\n");
+    }
 
     /* Delete source file if --delete was specified */
     if (g_delete && !g_stdout) {
@@ -1113,6 +1156,8 @@ int main(int argc, char* argv[])
                 g_delete = 1;
             } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--recursive") == 0) {
                 g_recursive = 1;
+            } else if (strcmp(argv[i], "--verify") == 0) {
+                g_verify = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (argv[i][0] != '-') {
