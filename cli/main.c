@@ -57,6 +57,7 @@ static void print_usage(void)
         "Options:\n"
         "  -f, --force     Overwrite existing output files\n"
         "  -k, --keep      Keep original file (default, for gzip compat)\n"
+        "      --delete    Delete source file after successful operation\n"
         "  -c, --stdout    Write output to stdout\n"
         "  -q, --quiet     Suppress non-error output\n"
         "\n"
@@ -170,6 +171,7 @@ static void make_decompress_output(char* out, size_t out_cap, const char* input)
 static int g_quiet = 0;  /* Suppress non-error output */
 static int g_force = 0;  /* Overwrite existing output files */
 static int g_stdout = 0; /* Write to stdout instead of file */
+static int g_delete = 0; /* Delete source file after success */
 
 static int cmd_compress(const char* input, const char* output, int level)
 {
@@ -334,6 +336,16 @@ static int cmd_compress(const char* input, const char* output, int level)
 
     fclose(fin);
     fclose(fout);
+
+    /* Delete source file if --delete was specified */
+    if (g_delete && !g_stdout) {
+        if (remove(input) != 0) {
+            fprintf(stderr, "Warning: compressed OK but could not delete '%s': %s\n", input, strerror(errno));
+        } else if (!g_quiet) {
+            printf("  Deleted: '%s'\n", input);
+        }
+    }
+
     return 0;
 }
 
@@ -432,6 +444,16 @@ static int cmd_decompress(const char* input, const char* output)
 
     fclose(fin);
     fclose(fout);
+
+    /* Delete source file if --delete was specified */
+    if (g_delete && !g_stdout) {
+        if (remove(input) != 0) {
+            fprintf(stderr, "Warning: decompressed OK but could not delete '%s': %s\n", input, strerror(errno));
+        } else if (!g_quiet) {
+            printf("  Deleted: '%s'\n", input);
+        }
+    }
+
     return 0;
 }
 
@@ -664,6 +686,9 @@ int main(int argc, char* argv[])
                 g_stdout = 1; g_quiet = 1;
             } else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--keep") == 0) {
                 /* No-op: MCX keeps original files by default (gzip/xz compat) */
+                g_delete = 0;
+            } else if (strcmp(argv[i], "--delete") == 0) {
+                g_delete = 1;
             } else if (argv[i][0] != '-') {
                 input = argv[i];
             }
@@ -690,6 +715,9 @@ int main(int argc, char* argv[])
                 g_stdout = 1; g_quiet = 1;
             } else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--keep") == 0) {
                 /* No-op: MCX keeps original files by default (gzip/xz compat) */
+                g_delete = 0;
+            } else if (strcmp(argv[i], "--delete") == 0) {
+                g_delete = 1;
             } else if (argv[i][0] != '-') {
                 input = argv[i];
             }
