@@ -110,3 +110,8 @@ if(UNIX)
 endif()
 add_test(NAME regression COMMAND test_regression)
 set_tests_properties(regression PROPERTIES TIMEOUT 60)
+
+# Multi-file compress/decompress roundtrip (CLI integration test)
+add_test(NAME multifile_roundtrip
+    COMMAND ${CMAKE_SOURCE_DIR}/tests/test_multifile.sh ${CMAKE_BINARY_DIR}/bin/mcx)
+set_tests_properties(multifile_roundtrip PROPERTIES TIMEOUT 30)
