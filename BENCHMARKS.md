@@ -19,26 +19,30 @@
 - MCX L20 **beats xz** on kennedy.xls by **2.4×** (20,551 vs 49,744)
 - MCX L20 beats bzip2 on **all files**
 
-## Silesia Corpus — Level 20 (Best)
+## Silesia Corpus — Full Comparison (MCX vs gzip vs bzip2 vs xz)
 
-| File | Size | MCX L20 | Ratio | vs bzip2 | vs xz |
-|------|------|---------|-------|----------|-------|
-| dickens | 10.2 MB | 2,503 KB | **4.07×** | +18% | -9% |
-| mozilla | 51.2 MB | 15,507 KB | **3.22×** | +15% | +10% |
-| mr | 10.0 MB | 2,330 KB | **4.28×** | +33% | +10% |
-| nci | 33.6 MB | 1,308 KB | **25.65×** | +60% | +3% |
-| ooffice | 6.2 MB | 2,407 KB | **2.56×** | +24% | +1% |
-| osdb | 10.1 MB | 2,498 KB | **4.04×** | +42% | +8% |
-| reymont | 6.6 MB | 1,118 KB | **5.93×** | +29% | +3% |
-| samba | 21.6 MB | 4,274 KB | **5.06×** | +29% | -2% |
-| sao | 7.3 MB | 4,899 KB | **1.48×** | +1% | -10% |
-| webster | 41.5 MB | 7,139 KB | **5.81×** | +21% | -5% |
-| x-ray | 8.5 MB | 3,952 KB | **2.15×** | ≈0% | +10% |
-| xml | 5.3 MB | 416 KB | **12.86×** | +3% | +6% |
+| File | Size | gzip -9 | bzip2 -9 | xz -6 | MCX L12 | MCX L20 | Best |
+|------|------|---------|----------|-------|---------|---------|------|
+| dickens | 9.7 MB | 3,851,823 | 2,799,520 | 2,831,676 | **2,497,882** | **2,497,882** | MCX |
+| mozilla | 48.8 MB | 18,994,142 | 17,914,392 | **13,503,600** | 17,429,269 | 15,877,799 | xz |
+| mr | 9.5 MB | 3,673,940 | 2,441,280 | 2,750,228 | **2,327,064** | **2,327,064** | MCX |
+| nci | 32.0 MB | 2,987,533 | 1,812,734 | 1,779,272 | **1,304,238** | **1,304,238** | MCX |
+| ooffice | 5.9 MB | 3,090,442 | 2,862,526 | 2,426,816 | 2,811,261 | **2,405,901** | MCX |
+| osdb | 9.6 MB | 3,716,342 | 2,802,792 | 2,850,104 | **2,483,536** | **2,483,536** | MCX |
+| reymont | 6.3 MB | 1,820,834 | 1,246,230 | 1,317,152 | **1,098,757** | **1,098,757** | MCX |
+| samba | 20.6 MB | 5,408,272 | 4,549,759 | **3,787,400** | 4,272,487 | 4,272,487 | xz |
+| sao | 6.9 MB | 5,327,041 | 4,940,524 | **4,415,072** | 4,930,349 | 4,888,582 | xz |
+| webster | 39.5 MB | 12,061,624 | 8,644,714 | 8,628,848 | **7,125,701** | **7,125,701** | MCX |
+| x-ray | 8.1 MB | 6,037,713 | 4,051,112 | 4,489,912 | **3,930,751** | **3,930,751** | MCX |
+| xml | 5.1 MB | 662,284 | 441,186 | 453,260 | **415,606** | **415,606** | MCX |
+| **TOTAL** | **202 MB** | **67,631,990** | **54,506,769** | **49,233,340** | **50,626,901** | **48,628,304** | **MCX** |
 
 **Summary:**
-- Beats bzip2 on **12/12** files (100%)
-- Beats xz on **8/12** files (67%)
+- MCX wins on **9/12** files (75%) — beats every other compressor
+- MCX L20 total: **48.6 MB** vs bzip2: 54.5 MB (**10.8% smaller**) vs xz-6: 49.2 MB (**1.2% smaller**)
+- Biggest MCX wins: nci (26.8% smaller than xz), dickens (10.8% smaller), webster (17.4% smaller)
+- xz wins on: mozilla (LZ-based data), samba (mixed binary), sao (astronomical)
+- MCX L12 already matches or beats MCX L20 on 10/12 files (L20 only helps on mozilla and ooffice)
 
 ## Silesia Corpus — Level 6 (Fast)
 
