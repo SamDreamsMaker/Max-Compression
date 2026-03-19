@@ -48,6 +48,7 @@ static void print_usage(void)
         "  mcx compress  [-l LEVEL] [--fast|--default|--best] [-q] <input> [-o output.mcx]\n"
         "  mcx decompress [-q] <input.mcx> [-o output]\n"
         "  mcx info       <input.mcx>\n"
+        "  mcx ls         <file.mcx> [file2.mcx ...]  # compact listing\n"
         "  mcx cat        <input.mcx>   # decompress to stdout\n"
         "  mcx bench      <input>       # benchmark all levels\n"
         "  mcx test                     # run self-tests\n"
@@ -528,6 +529,43 @@ static const char* strategy_name(uint8_t s) {
     }
 }
 
+/* ─── ls command ─────────────────────────────────────────────────────── */
+
+static int cmd_ls(int argc, char** argv)
+{
+    if (argc < 3) {
+        fprintf(stderr, "Usage: mcx ls <file.mcx> [file2.mcx ...]\n");
+        return 1;
+    }
+
+    printf("%-40s %10s %10s %7s %5s %-12s\n",
+           "FILE", "COMPRESSED", "ORIGINAL", "RATIO", "LEVEL", "STRATEGY");
+    printf("────────────────────────────────────────────────────────────────────────────────────────\n");
+
+    int errors = 0;
+    for (int i = 2; i < argc; i++) {
+        size_t src_size;
+        uint8_t* src = read_file(argv[i], &src_size);
+        if (!src) { errors++; continue; }
+
+        mcx_frame_info info;
+        size_t r = mcx_get_frame_info(&info, src, src_size);
+        if (mcx_is_error(r)) {
+            fprintf(stderr, "%-40s  (not a valid MCX file)\n", argv[i]);
+            free(src); errors++; continue;
+        }
+
+        double ratio = (info.original_size > 0)
+            ? (double)info.original_size / src_size : 0;
+
+        printf("%-40s %10zu %10llu %6.2fx  L%-3u %-12s\n",
+               argv[i], src_size, info.original_size,
+               ratio, info.level, strategy_name(info.strategy));
+        free(src);
+    }
+    return errors > 0 ? 1 : 0;
+}
+
 static int cmd_info(const char* input)
 {
     size_t src_size;
@@ -795,6 +833,9 @@ int main(int argc, char* argv[])
             return 1;
         }
         return cmd_info(argv[2]);
+
+    } else if (strcmp(argv[1], "ls") == 0) {
+        return cmd_ls(argc, argv);
 
     } else if (strcmp(argv[1], "cat") == 0) {
         if (argc < 3) {
