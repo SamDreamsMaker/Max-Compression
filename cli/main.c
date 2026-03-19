@@ -53,6 +53,7 @@ static void print_usage(void)
         "  mcx diff       <a.mcx> <b.mcx>         # compare two archives\n"
         "  mcx info       <input.mcx>\n"
         "  mcx ls         <file.mcx> [file2.mcx ...]\n"
+        "  mcx stat       <file>                     # file statistics (entropy, bytes)\n"
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
         "  mcx bench      <input>                  # benchmark all levels\n"
@@ -847,6 +848,104 @@ static int cmd_hash(int argc, char** argv)
     return errors > 0 ? 1 : 0;
 }
 
+/* ─── Stat command ───────────────────────────────────────────────────── */
+
+static int cmd_stat(const char* input)
+{
+    size_t size;
+    uint8_t* data = read_file(input, &size);
+    if (!data) return 1;
+
+    /* Byte frequency distribution */
+    uint32_t freq[256];
+    memset(freq, 0, sizeof(freq));
+    for (size_t i = 0; i < size; i++) freq[data[i]]++;
+
+    /* Count unique bytes */
+    int unique = 0;
+    for (int i = 0; i < 256; i++) if (freq[i] > 0) unique++;
+
+    /* Shannon entropy */
+    double entropy = 0.0;
+    for (int i = 0; i < 256; i++) {
+        if (freq[i] == 0) continue;
+        double p = (double)freq[i] / size;
+        entropy -= p * log2(p);
+    }
+
+    /* Count runs (consecutive identical bytes) */
+    size_t runs = 0;
+    size_t max_run = 0;
+    size_t cur_run = 1;
+    for (size_t i = 1; i < size; i++) {
+        if (data[i] == data[i - 1]) {
+            cur_run++;
+        } else {
+            if (cur_run >= 4) runs++;
+            if (cur_run > max_run) max_run = cur_run;
+            cur_run = 1;
+        }
+    }
+    if (cur_run >= 4) runs++;
+    if (cur_run > max_run) max_run = cur_run;
+
+    /* Detect if text or binary */
+    int text_bytes = 0;
+    for (size_t i = 0; i < size; i++) {
+        uint8_t b = data[i];
+        if ((b >= 32 && b <= 126) || b == '\n' || b == '\r' || b == '\t')
+            text_bytes++;
+    }
+    double text_pct = 100.0 * text_bytes / size;
+
+    /* Top 10 most frequent bytes */
+    int top[10];
+    int top_count = 0;
+    uint8_t used[256];
+    memset(used, 0, sizeof(used));
+    for (int t = 0; t < 10 && t < unique; t++) {
+        uint32_t best_freq = 0;
+        int best_sym = 0;
+        for (int i = 0; i < 256; i++) {
+            if (!used[i] && freq[i] > best_freq) {
+                best_freq = freq[i];
+                best_sym = i;
+            }
+        }
+        top[top_count++] = best_sym;
+        used[best_sym] = 1;
+    }
+
+    /* Theoretical minimum size */
+    double min_bits = entropy * size;
+    size_t min_bytes = (size_t)(min_bits / 8.0 + 0.5);
+
+    printf("File:           %s\n", input);
+    printf("Size:           %zu bytes (%.1f KB)\n", size, size / 1024.0);
+    printf("Type:           %s (%.0f%% printable)\n",
+           text_pct > 90 ? "text" : text_pct > 50 ? "mixed" : "binary", text_pct);
+    printf("Unique bytes:   %d / 256\n", unique);
+    printf("Entropy:        %.3f bits/byte (max 8.000)\n", entropy);
+    printf("Min size:       %zu bytes (%.1f%% of original) — Shannon limit\n",
+           min_bytes, 100.0 * min_bytes / size);
+    printf("Runs (≥4):      %zu (longest: %zu)\n", runs, max_run);
+
+    printf("\nTop bytes:\n");
+    for (int t = 0; t < top_count; t++) {
+        int s = top[t];
+        double pct = 100.0 * freq[s] / size;
+        char display[8];
+        if (s >= 32 && s <= 126)
+            snprintf(display, sizeof(display), "'%c'", (char)s);
+        else
+            snprintf(display, sizeof(display), "0x%02X", s);
+        printf("  %-6s  %8u  %5.1f%%\n", display, freq[s], pct);
+    }
+
+    free(data);
+    return 0;
+}
+
 /* ─── Main ───────────────────────────────────────────────────────────── */
 
 int main(int argc, char* argv[])
@@ -1186,6 +1285,13 @@ int main(int argc, char* argv[])
                diff < 0 ? "B is smaller ✓" : diff > 0 ? "A is smaller ✓" : "identical size");
         free(f1); free(f2);
         return 0;
+
+    } else if (strcmp(argv[1], "stat") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: mcx stat <file>\n");
+            return 1;
+        }
+        return cmd_stat(argv[2]);
 
     } else if (strcmp(argv[1], "hash") == 0) {
         return cmd_hash(argc, argv);
