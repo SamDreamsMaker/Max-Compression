@@ -29,7 +29,7 @@ static void print_usage(void)
         "MaxCompression v%s\n"
         "\n"
         "Usage:\n"
-        "  mcx compress  [-l LEVEL] [-q] <input> [-o output.mcx]\n"
+        "  mcx compress  [-l LEVEL] [--fast|--default|--best] [-q] <input> [-o output.mcx]\n"
         "  mcx decompress [-q] <input.mcx> [-o output]\n"
         "  mcx info       <input.mcx>\n"
         "  mcx cat        <input.mcx>   # decompress to stdout\n"
@@ -48,10 +48,15 @@ static void print_usage(void)
         "  L24     LZRC fast: hash chain (~3x faster than L26)\n"
         "  L26     LZRC direct: binary tree (best LZ ratio)\n"
         "\n"
+        "Shortcuts:\n"
+        "  --fast (-1)     L3: fast compression\n"
+        "  --default (-6)  L6: balanced speed/ratio\n"
+        "  --best (-9)     L20: maximum compression\n"
+        "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
+        "  mcx compress --best myfile.txt       # maximum compression\n"
         "  mcx compress -l 9 myfile.txt         # good ratio, decent speed\n"
-        "  mcx compress -l 20 bigfile.bin       # best compression\n"
         "  mcx compress -l 24 bigfile.bin       # fast LZRC (binary)\n"
         "  mcx decompress myfile.txt.mcx\n"
         "  mcx bench myfile.txt                 # compare all levels\n"
@@ -586,9 +591,15 @@ int main(int argc, char* argv[])
                 level = atoi(argv[++i]);
                 if (level < 1 || level > 26) {
                     fprintf(stderr, "Error: invalid level %d (must be 1-26)\n"
-                            "  Recommended: -l 3 (fast), -l 6 (balanced), -l 12 (high), -l 20 (best)\n", level);
+                            "  Recommended: --fast (L3), --default (L6), --best (L20)\n", level);
                     return 1;
                 }
+            } else if (strcmp(argv[i], "--fast") == 0 || strcmp(argv[i], "-1") == 0) {
+                level = 3;
+            } else if (strcmp(argv[i], "--default") == 0 || strcmp(argv[i], "-6") == 0) {
+                level = 6;
+            } else if (strcmp(argv[i], "--best") == 0 || strcmp(argv[i], "-9") == 0) {
+                level = 20;
             } else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) {
                 output = argv[++i];
             } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
