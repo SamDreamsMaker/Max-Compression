@@ -31,6 +31,15 @@ static inline uint32_t bt_hash4(const uint8_t* p, int hash_log) {
     return (v * 2654435761u) >> (32 - hash_log);
 }
 
+/* 3-byte context hash using bytes 0,1,3 (skipping byte 2).
+ * Reduces collisions on structured/columnar data where byte 2
+ * varies while bytes 0,1,3 form a more stable pattern.
+ * Example: CSV/binary records with fixed-width fields. */
+static inline uint32_t bt_hash3ctx(const uint8_t* p, int hash_log) {
+    uint32_t v = ((uint32_t)p[0]) | ((uint32_t)p[1] << 8) | ((uint32_t)p[3] << 16);
+    return (v * 2654435761u) >> (32 - hash_log);
+}
+
 int bt_init(BTMatchFinder* bt, const uint8_t* data, size_t size,
             uint32_t window_size, int hash_log, int max_depth) {
     bt->data = data;
@@ -42,6 +51,7 @@ int bt_init(BTMatchFinder* bt, const uint8_t* data, size_t size,
     bt->max_depth = max_depth;
     bt->min_match = BT_MIN_MATCH;
     bt->max_match = 273; /* Same as LZMA */
+    bt->use_ctx3_hash = 0; /* Default: standard 4-byte hash */
     
     size_t hash_size = (size_t)1 << hash_log;
     bt->hash = (uint32_t*)malloc(hash_size * sizeof(uint32_t));
@@ -95,7 +105,9 @@ int bt_find(BTMatchFinder* bt, BTMatch* matches, int max_matches) {
     uint32_t cur = bt->pos;
     bt->pos++;
     
-    uint32_t h = bt_hash4(bt->data + cur, bt->hash_log);
+    uint32_t h = bt->use_ctx3_hash
+        ? bt_hash3ctx(bt->data + cur, bt->hash_log)
+        : bt_hash4(bt->data + cur, bt->hash_log);
     uint32_t cur_idx = cur % bt->window_size;
     
     /* Current position becomes the new root for this hash bucket.
@@ -165,6 +177,10 @@ int bt_find(BTMatchFinder* bt, BTMatch* matches, int max_matches) {
     *left_ptr = BT_EMPTY;
     *right_ptr = BT_EMPTY;
     return n_matches;
+}
+
+void bt_set_ctx3_hash(BTMatchFinder* bt, int enable) {
+    if (bt) bt->use_ctx3_hash = enable;
 }
 
 void bt_skip(BTMatchFinder* bt, uint32_t n) {

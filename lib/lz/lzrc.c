@@ -313,6 +313,27 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
     if (bt_init(&bt, src, src_size, window_size, hash_log, bt_depth) != 0)
         return 0;
     
+    /* Heuristic: enable 3-byte context hash (bytes 0,1,3) for structured data.
+     * Detect structure by comparing byte-2 entropy vs bytes 0,1,3.
+     * If byte 2 is significantly more random, ctx3 hash reduces collisions. */
+    if (src_size >= 256) {
+        uint8_t seen[4][256];
+        memset(seen, 0, sizeof(seen));
+        int uniq[4] = {0,0,0,0};
+        size_t sample = (src_size < 4096) ? src_size : 4096;
+        for (size_t si = 0; si + 3 < sample; si += 4) {
+            for (int k = 0; k < 4; k++) {
+                uint8_t b = src[si + k];
+                if (!seen[k][b]) { seen[k][b] = 1; uniq[k]++; }
+            }
+        }
+        /* If byte 2 has >50% more unique values than avg of 0,1,3 → structured */
+        int avg013 = (uniq[0] + uniq[1] + uniq[3]) / 3;
+        if (avg013 > 0 && uniq[2] > avg013 * 3 / 2) {
+            bt_set_ctx3_hash(&bt, 1);
+        }
+    }
+    
     LZRCModel* model = (LZRCModel*)malloc(sizeof(LZRCModel));
     if (!model) { bt_free(&bt); return 0; }
     lzrc_model_init(model);

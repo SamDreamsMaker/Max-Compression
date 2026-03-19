@@ -43,6 +43,7 @@ typedef struct {
     int max_depth;       /* Max tree traversal depth */
     uint32_t min_match;  /* Minimum match length */
     uint32_t max_match;  /* Maximum match length */
+    int use_ctx3_hash;   /* Use 3-byte context hash (bytes 0,1,3) */
 } BTMatchFinder;
 
 /* Initialize match finder.
@@ -59,6 +60,11 @@ int bt_find(BTMatchFinder* bt, BTMatch* matches, int max_matches);
 
 /* Advance position by n bytes (skip without finding matches) */
 void bt_skip(BTMatchFinder* bt, uint32_t n);
+
+/* Enable 3-byte context hash (bytes 0,1,3 — skip byte 2).
+ * Better for structured/columnar data with fixed-width fields.
+ * Call after bt_init(), before bt_find(). */
+void bt_set_ctx3_hash(BTMatchFinder* bt, int enable);
 
 /* Free resources */
 void bt_free(BTMatchFinder* bt);
