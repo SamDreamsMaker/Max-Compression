@@ -10,7 +10,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="License"></a>
     <img src="https://img.shields.io/badge/language-C99-orange?style=flat-square" alt="C99">
     <img src="https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-lightgrey?style=flat-square" alt="Platform">
-    <img src="https://img.shields.io/badge/version-2.0.1-purple?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/version-2.1.1-purple?style=flat-square" alt="Version">
   </p>
 </p>
 
@@ -80,7 +80,13 @@ mcx info archive.mcx          # detailed info
 mcx ls *.mcx                   # compact multi-file listing
 mcx diff old.mcx new.mcx      # compare two compressed files
 
+# Multi-file
+mcx compress *.txt             # compress all .txt files
+mcx decompress *.mcx           # decompress all .mcx files
+
 # Utilities
+mcx verify archive.mcx         # integrity check
+mcx verify archive.mcx orig    # verify against original
 mcx cat archive.mcx            # decompress to stdout
 mcx bench input.bin            # benchmark all levels
 mcx test                       # self-test all levels
