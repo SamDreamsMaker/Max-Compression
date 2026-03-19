@@ -338,6 +338,8 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
     size_t out16_pos = 0;
     uint32_t state1 = MT_STATE_LOWER;
     uint32_t state2 = MT_STATE_LOWER;
+    uint32_t state3 = MT_STATE_LOWER;
+    uint32_t state4 = MT_STATE_LOWER;
     
     /* Build cumfreq for all tables */
     uint16_t cumfreq[MT_MAX_TABLES][256];
@@ -349,7 +351,7 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
         }
     }
     
-    /* Encode backwards */
+    /* Encode backwards — 4-way interleaved rANS */
     for (size_t i = src_size; i > 0; i--) {
         uint8_t sym = src[i - 1];
         int g = (int)((i - 1) / MT_GROUP_SIZE);
@@ -357,8 +359,14 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
         uint16_t f = tables[t][sym];
         uint16_t cf = cumfreq[t][sym];
         
-        /* Interleaved dual-state rANS */
-        uint32_t* st = ((src_size - i) & 1) ? &state2 : &state1;
+        /* 4-way interleaved rANS: pick state by position mod 4 */
+        uint32_t* st;
+        switch ((i - 1) & 3) {
+            case 0: st = &state1; break;
+            case 1: st = &state2; break;
+            case 2: st = &state3; break;
+            default: st = &state4; break;
+        }
         
         while (*st >= ((uint32_t)f << 16)) {
             if (out16_pos >= out16_cap) { free(out16); free(grp_freq); free(grp_active); free(grp_n_active); free(assign); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
@@ -368,12 +376,14 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
         *st = ((*st / f) << MT_PRECISION) + cf + (*st % f);
     }
     
-    /* Write states + bitstream */
-    size_t needed = pos + 8 + out16_pos * 2;
+    /* Write 4 states + bitstream */
+    size_t needed = pos + 16 + out16_pos * 2;
     if (needed > dst_cap) { free(out16); free(grp_freq); free(grp_active); free(grp_n_active); free(assign); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
     
     memcpy(dst + pos, &state1, 4); pos += 4;
     memcpy(dst + pos, &state2, 4); pos += 4;
+    memcpy(dst + pos, &state3, 4); pos += 4;
+    memcpy(dst + pos, &state4, 4); pos += 4;
     
     for (size_t j = 0; j < out16_pos; j++) {
         uint16_t val = out16[out16_pos - 1 - j];
@@ -519,72 +529,56 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
     }
     free(sel_raw);
     
-    /* Read rANS states */
-    if (pos + 8 > src_size) { free(assign); return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); }
-    uint32_t state1, state2;
+    /* Read 4 rANS states */
+    if (pos + 16 > src_size) { free(assign); return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); }
+    uint32_t state1, state2, state3, state4;
     memcpy(&state1, src + pos, 4); pos += 4;
     memcpy(&state2, src + pos, 4); pos += 4;
+    memcpy(&state3, src + pos, 4); pos += 4;
+    memcpy(&state4, src + pos, 4); pos += 4;
     
-    /* Decode forward */
+    /* Decode forward — 4-way interleaved */
     const uint16_t* bits = (const uint16_t*)(src + pos);
     size_t bits_pos = 0;
     size_t max_bits = (src_size - pos) / 2;
     
-    /* Optimized decode loop: avoid per-symbol division and branch */
     int g = 0;
     int g_remaining = MT_GROUP_SIZE;
     int t = assign[0];
-    /* Determine initial state parity */
-    int use_st2 = (orig_size - 1) & 1;
     
-    /* Unrolled 2-at-a-time decode: process both states per iteration.
-     * This improves CPU pipeline utilization since state1/state2 are independent. */
+    /* 4-way interleaved decode: state[idx%4].
+     * Unrolled 4-at-a-time for maximum ILP. */
     {
         size_t i = 0;
         uint16_t mask = MT_SCALE - 1;
+        uint32_t* states[4] = { &state1, &state2, &state3, &state4 };
         
-        /* Align start parity */
-        if (use_st2 && i < orig_size) {
-            uint16_t slot = (uint16_t)(state2 & mask);
-            uint8_t sym = lookup[t][slot];
-            state2 = tables[t][sym] * (state2 >> MT_PRECISION) + slot - cum[t][sym];
-            if (state2 < MT_STATE_LOWER && bits_pos < max_bits)
-                state2 = (state2 << 16) | bits[bits_pos++];
-            dst[i++] = sym;
-            if (--g_remaining == 0) { g++; g_remaining = MT_GROUP_SIZE; if (g < num_groups) t = assign[g]; }
+        /* Main 4-at-a-time loop */
+        while (i + 3 < orig_size) {
+            for (int k = 0; k < 4; k++) {
+                uint32_t* st = states[(i + k) & 3];
+                uint16_t slot = (uint16_t)(*st & mask);
+                uint8_t sym = lookup[t][slot];
+                *st = tables[t][sym] * (*st >> MT_PRECISION) + slot - cum[t][sym];
+                if (*st < MT_STATE_LOWER && bits_pos < max_bits)
+                    *st = (*st << 16) | bits[bits_pos++];
+                dst[i + k] = sym;
+                if (--g_remaining == 0) { g++; g_remaining = MT_GROUP_SIZE; if (g < num_groups) t = assign[g]; }
+            }
+            i += 4;
         }
         
-        /* Main 2-at-a-time loop: state1 then state2 */
-        while (i + 1 < orig_size) {
-            /* State 1 */
-            uint16_t slot1 = (uint16_t)(state1 & mask);
-            uint8_t sym1 = lookup[t][slot1];
-            state1 = tables[t][sym1] * (state1 >> MT_PRECISION) + slot1 - cum[t][sym1];
-            if (state1 < MT_STATE_LOWER && bits_pos < max_bits)
-                state1 = (state1 << 16) | bits[bits_pos++];
-            dst[i] = sym1;
-            if (--g_remaining == 0) { g++; g_remaining = MT_GROUP_SIZE; if (g < num_groups) t = assign[g]; }
-            
-            /* State 2 */
-            uint16_t slot2 = (uint16_t)(state2 & mask);
-            uint8_t sym2 = lookup[t][slot2];
-            state2 = tables[t][sym2] * (state2 >> MT_PRECISION) + slot2 - cum[t][sym2];
-            if (state2 < MT_STATE_LOWER && bits_pos < max_bits)
-                state2 = (state2 << 16) | bits[bits_pos++];
-            dst[i + 1] = sym2;
-            if (--g_remaining == 0) { g++; g_remaining = MT_GROUP_SIZE; if (g < num_groups) t = assign[g]; }
-            
-            i += 2;
-        }
-        
-        /* Handle odd trailing symbol */
-        if (i < orig_size) {
-            uint16_t slot = (uint16_t)(state1 & mask);
+        /* Handle 0-3 trailing symbols */
+        while (i < orig_size) {
+            uint32_t* st = states[i & 3];
+            uint16_t slot = (uint16_t)(*st & mask);
             uint8_t sym = lookup[t][slot];
-            state1 = tables[t][sym] * (state1 >> MT_PRECISION) + slot - cum[t][sym];
-            if (state1 < MT_STATE_LOWER && bits_pos < max_bits)
-                state1 = (state1 << 16) | bits[bits_pos++];
+            *st = tables[t][sym] * (*st >> MT_PRECISION) + slot - cum[t][sym];
+            if (*st < MT_STATE_LOWER && bits_pos < max_bits)
+                *st = (*st << 16) | bits[bits_pos++];
             dst[i] = sym;
+            if (--g_remaining == 0) { g++; g_remaining = MT_GROUP_SIZE; if (g < num_groups) t = assign[g]; }
+            i++;
         }
     }
     

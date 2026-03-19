@@ -173,20 +173,28 @@ size_t mcx_rans_compress(uint8_t* dst, size_t dst_cap,
 
     out16_pos = 0;
     
-    /* Dual states for interleaved rANS */
+    /* 4-way interleaved rANS for better instruction-level parallelism */
     uint32_t state1 = MCX_RANS_STATE_LOWER;
     uint32_t state2 = MCX_RANS_STATE_LOWER;
+    uint32_t state3 = MCX_RANS_STATE_LOWER;
+    uint32_t state4 = MCX_RANS_STATE_LOWER;
 
     /* Encode symbols in REVERSE order.
-     * state1 handles even indices: src[0], src[2], src[4]...
-     * state2 handles odd indices:  src[1], src[3], src[5]...
+     * state1 handles idx%4==0, state2 idx%4==1,
+     * state3 handles idx%4==2, state4 idx%4==3.
      */
     for (i = src_size; i > 0; i--) {
         size_t   idx = i - 1;
         uint8_t  sym = src[idx];
         uint16_t freq = table.freq[sym];
         uint16_t cumf = table.cumfreq[sym];
-        uint32_t* state_ptr = (idx & 1) ? &state2 : &state1;
+        uint32_t* state_ptr;
+        switch (idx & 3) {
+            case 0: state_ptr = &state1; break;
+            case 1: state_ptr = &state2; break;
+            case 2: state_ptr = &state3; break;
+            default: state_ptr = &state4; break;
+        }
 
         /* Renormalize the active state */
         while (*state_ptr >= ((uint32_t)freq << 16)) {
@@ -230,7 +238,7 @@ size_t mcx_rans_compress(uint8_t* dst, size_t dst_cap,
         /* If all 256 symbols active, use dense format (full 512-byte table).
          * num_active=0 in header signals dense format. */
         if (num_active == 256) {
-            header_size = 4 + 1 + 256 * 2 + 8;
+            header_size = 4 + 1 + 256 * 2 + 16; /* 16 bytes for 4 states */
             byte_count = out16_pos * 2;
             total_size = header_size + byte_count;
             
@@ -243,8 +251,11 @@ size_t mcx_rans_compress(uint8_t* dst, size_t dst_cap,
             memcpy(dst, &orig_size32, 4);
             dst[4] = 0; /* 0 = dense format (256 symbols) */
             memcpy(dst + 5, table.freq, 256 * 2);
-            memcpy(dst + 5 + 512, &state1, 4);
-            memcpy(dst + 5 + 512 + 4, &state2, 4);
+            size_t soff = 5 + 512;
+            memcpy(dst + soff, &state1, 4); soff += 4;
+            memcpy(dst + soff, &state2, 4); soff += 4;
+            memcpy(dst + soff, &state3, 4); soff += 4;
+            memcpy(dst + soff, &state4, 4); soff += 4;
             
             for (j = 0; j < out16_pos; j++) {
                 uint16_t val = out16[out16_pos - 1 - j];
@@ -256,7 +267,7 @@ size_t mcx_rans_compress(uint8_t* dst, size_t dst_cap,
         }
         
         size_t table_size = 1 + num_active + num_active * 2; /* count + syms + freqs */
-        header_size = 4 + table_size + 8;
+        header_size = 4 + table_size + 16; /* 16 bytes for 4 states */
         byte_count = out16_pos * 2;
         total_size = header_size + byte_count;
 
@@ -280,11 +291,11 @@ size_t mcx_rans_compress(uint8_t* dst, size_t dst_cap,
             off += 2;
         }
 
-        /* Write final states */
-        memcpy(dst + off, &state1, 4);
-        off += 4;
-        memcpy(dst + off, &state2, 4);
-        off += 4;
+        /* Write 4 final states */
+        memcpy(dst + off, &state1, 4); off += 4;
+        memcpy(dst + off, &state2, 4); off += 4;
+        memcpy(dst + off, &state3, 4); off += 4;
+        memcpy(dst + off, &state4, 4); off += 4;
 
         /* Write encoded stream in REVERSE order */
         for (j = 0; j < out16_pos; j++) {
@@ -379,12 +390,12 @@ size_t mcx_rans_decompress(uint8_t* dst, size_t dst_cap,
         }
     }
 
-    /* Read initial states */
-    uint32_t state1, state2;
-    memcpy(&state1, src + off, 4);
-    off += 4;
-    memcpy(&state2, src + off, 4);
-    off += 4;
+    /* Read 4 initial states */
+    uint32_t state1, state2, state3, state4;
+    memcpy(&state1, src + off, 4); off += 4;
+    memcpy(&state2, src + off, 4); off += 4;
+    memcpy(&state3, src + off, 4); off += 4;
+    memcpy(&state4, src + off, 4); off += 4;
 
     header_size = off;
 
@@ -392,40 +403,69 @@ size_t mcx_rans_decompress(uint8_t* dst, size_t dst_cap,
     stream_pos = header_size;
     stream_end = src_size;
 
-    /* Decode symbols forward.
-     * state1 handles even indices, state2 handles odd indices.
-     * Unrolled 2-at-a-time for better pipelining. */
+    /* Decode symbols forward — 4-way interleaved.
+     * state1 handles idx%4==0, state2 idx%4==1,
+     * state3 handles idx%4==2, state4 idx%4==3.
+     * Unrolled 4-at-a-time for maximum ILP. */
     {
         uint32_t mask = MCX_RANS_SCALE - 1;
-        size_t pairs = orig_size / 2;
-        for (i = 0; i < pairs; i++) {
-            /* Even symbol (state1) */
-            uint32_t slot1 = state1 & mask;
-            uint8_t  sym1  = table.lookup[slot1];
-            dst[i * 2] = sym1;
-            state1 = (uint32_t)table.freq[sym1] * (state1 >> MCX_RANS_PRECISION)
-                    + (state1 & mask) - table.cumfreq[sym1];
-            while (state1 < MCX_RANS_STATE_LOWER && stream_pos + 1 < stream_end) {
+        size_t quads = orig_size / 4;
+        uint32_t slot; uint8_t sym;
+        
+        for (i = 0; i < quads; i++) {
+            /* State 1 (idx%4==0) */
+            slot = state1 & mask;
+            sym = table.lookup[slot];
+            dst[i * 4] = sym;
+            state1 = (uint32_t)table.freq[sym] * (state1 >> MCX_RANS_PRECISION)
+                    + (state1 & mask) - table.cumfreq[sym];
+            if (state1 < MCX_RANS_STATE_LOWER && stream_pos + 1 < stream_end) {
                 memcpy(&val, src + stream_pos, 2);
                 state1 = (state1 << 16) | val;
                 stream_pos += 2;
             }
-            /* Odd symbol (state2) */
-            uint32_t slot2 = state2 & mask;
-            uint8_t  sym2  = table.lookup[slot2];
-            dst[i * 2 + 1] = sym2;
-            state2 = (uint32_t)table.freq[sym2] * (state2 >> MCX_RANS_PRECISION)
-                    + (state2 & mask) - table.cumfreq[sym2];
-            while (state2 < MCX_RANS_STATE_LOWER && stream_pos + 1 < stream_end) {
+            /* State 2 (idx%4==1) */
+            slot = state2 & mask;
+            sym = table.lookup[slot];
+            dst[i * 4 + 1] = sym;
+            state2 = (uint32_t)table.freq[sym] * (state2 >> MCX_RANS_PRECISION)
+                    + (state2 & mask) - table.cumfreq[sym];
+            if (state2 < MCX_RANS_STATE_LOWER && stream_pos + 1 < stream_end) {
                 memcpy(&val, src + stream_pos, 2);
                 state2 = (state2 << 16) | val;
                 stream_pos += 2;
             }
+            /* State 3 (idx%4==2) */
+            slot = state3 & mask;
+            sym = table.lookup[slot];
+            dst[i * 4 + 2] = sym;
+            state3 = (uint32_t)table.freq[sym] * (state3 >> MCX_RANS_PRECISION)
+                    + (state3 & mask) - table.cumfreq[sym];
+            if (state3 < MCX_RANS_STATE_LOWER && stream_pos + 1 < stream_end) {
+                memcpy(&val, src + stream_pos, 2);
+                state3 = (state3 << 16) | val;
+                stream_pos += 2;
+            }
+            /* State 4 (idx%4==3) */
+            slot = state4 & mask;
+            sym = table.lookup[slot];
+            dst[i * 4 + 3] = sym;
+            state4 = (uint32_t)table.freq[sym] * (state4 >> MCX_RANS_PRECISION)
+                    + (state4 & mask) - table.cumfreq[sym];
+            if (state4 < MCX_RANS_STATE_LOWER && stream_pos + 1 < stream_end) {
+                memcpy(&val, src + stream_pos, 2);
+                state4 = (state4 << 16) | val;
+                stream_pos += 2;
+            }
         }
-        /* Handle odd trailing symbol */
-        if (orig_size & 1) {
-            uint32_t slot1 = state1 & mask;
-            dst[orig_size - 1] = table.lookup[slot1];
+        /* Handle 0-3 trailing symbols */
+        size_t rem = orig_size - quads * 4;
+        size_t base = quads * 4;
+        uint32_t* states[4] = { &state1, &state2, &state3, &state4 };
+        for (i = 0; i < rem; i++) {
+            uint32_t* st = states[i];
+            slot = *st & mask;
+            dst[base + i] = table.lookup[slot];
         }
     }
 
