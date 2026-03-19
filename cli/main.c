@@ -752,7 +752,8 @@ int main(int argc, char* argv[])
     /* Commands */
     if (strcmp(argv[1], "compress") == 0) {
         int level = MCX_LEVEL_DEFAULT;
-        const char* input = NULL;
+        const char* inputs[256];
+        int n_inputs = 0;
         const char* output = NULL;
 
         for (int i = 2; i < argc; i++) {
@@ -778,25 +779,31 @@ int main(int argc, char* argv[])
             } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--stdout") == 0) {
                 g_stdout = 1; g_quiet = 1;
             } else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--keep") == 0) {
-                /* No-op: MCX keeps original files by default (gzip/xz compat) */
                 g_delete = 0;
             } else if (strcmp(argv[i], "--delete") == 0) {
                 g_delete = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (argv[i][0] != '-') {
-                input = argv[i];
+                if (n_inputs < 256) inputs[n_inputs++] = argv[i];
             }
         }
 
-        if (input == NULL) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
+        if (n_inputs == 0) {
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file> [file2 ...]\n", argv[1]);
             return 1;
         }
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_compress(input, output, level);
+        /* Multi-file: compress each file separately (output name = input.mcx) */
+        int errors = 0;
+        for (int f = 0; f < n_inputs; f++) {
+            const char* out = (n_inputs == 1) ? output : NULL;
+            int ret = cmd_compress(inputs[f], out, level);
+            if (ret != 0) errors++;
+        }
+        return errors > 0 ? 1 : 0;
 
     } else if (strcmp(argv[1], "decompress") == 0) {
         const char* input = NULL;
