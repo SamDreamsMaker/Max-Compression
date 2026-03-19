@@ -53,6 +53,12 @@ static void print_usage(void)
         "  --default (-6)  L6: balanced speed/ratio\n"
         "  --best (-9)     L20: maximum compression\n"
         "\n"
+        "Options:\n"
+        "  -f, --force     Overwrite existing output files\n"
+        "  -k, --keep      Keep original file (default, for gzip compat)\n"
+        "  -c, --stdout    Write output to stdout\n"
+        "  -q, --quiet     Suppress non-error output\n"
+        "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
         "  mcx compress --best myfile.txt       # maximum compression\n"
@@ -608,6 +614,8 @@ int main(int argc, char* argv[])
                 g_force = 1;
             } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--stdout") == 0) {
                 g_stdout = 1; g_quiet = 1;
+            } else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--keep") == 0) {
+                /* No-op: MCX keeps original files by default (gzip/xz compat) */
             } else if (argv[i][0] != '-') {
                 input = argv[i];
             }
@@ -632,6 +640,8 @@ int main(int argc, char* argv[])
                 g_force = 1;
             } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--stdout") == 0) {
                 g_stdout = 1; g_quiet = 1;
+            } else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--keep") == 0) {
+                /* No-op: MCX keeps original files by default (gzip/xz compat) */
             } else if (argv[i][0] != '-') {
                 input = argv[i];
             }
