@@ -85,6 +85,29 @@
 - BWT-compressed files (text) decompress at ~4.5–6 MB/s consistently
 - LZRC-compressed files decompress at ~12–26 MB/s
 
+## Silesia Corpus — Level 24 (LZRC Fast)
+
+LZRC with hash chain match finder — ~3× faster than L26, 2-5% larger.
+
+| File | Size | MCX L24 | Ratio |
+|------|------|---------|-------|
+| dickens | 9.7 MB | 3,548 KB | 2.81× |
+| mozilla | 48.8 MB | 15,833 KB | 3.16× |
+| mr | 9.5 MB | 3,197 KB | 3.05× |
+| nci | 32.0 MB | 2,497 KB | 13.13× |
+| ooffice | 5.9 MB | 2,734 KB | 2.20× |
+| osdb | 9.6 MB | 3,322 KB | 2.96× |
+| reymont | 6.3 MB | 1,829 KB | 3.54× |
+| samba | 20.6 MB | 4,490 KB | 4.70× |
+| sao | 6.9 MB | 4,992 KB | 1.42× |
+| webster | 39.5 MB | 10,911 KB | 3.71× |
+| xml | 5.1 MB | 561 KB | 9.30× |
+| x-ray | 8.1 MB | 5,090 KB | 1.63× |
+| **TOTAL** | **202.1 MB** | **59,004 KB** | **3.43×** |
+
+L24 is ideal for binary data where L26's full binary tree is too slow.
+For text, BWT (L12/L20) still dominates.
+
 ## LZRC v2.0 Engine — Level 26
 
 Direct LZRC (LZ + Range Coder, no BWT fallback):
