@@ -127,9 +127,8 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
             best = sz5;
             five_won = 1;
         }
-        /* Only try 6 tables if 5 was better than 4 AND data is large enough
-         * but not huge (>2MB blocks have diminishing returns from more tables) */
-        if (five_won && src_size > 200000 && src_size < 2000000) {
+        /* Try 6 tables if 5 was better than 4 (trend: more tables help) */
+        if (five_won && src_size > 200000) {
             size_t sz6 = mt_compress_ntables(alt, dst_cap, src, src_size, 6);
             if (!mcx_is_error(sz6) && (mcx_is_error(best) || sz6 < best)) {
                 memcpy(dst, alt, sz6);
