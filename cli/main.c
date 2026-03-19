@@ -65,7 +65,15 @@ static uint8_t* read_file(const char* path, size_t* size_out)
 {
     FILE* f = fopen(path, "rb");
     if (f == NULL) {
-        fprintf(stderr, "Error: cannot open '%s'\n", path);
+        int err = errno;
+        if (err == ENOENT)
+            fprintf(stderr, "Error: file not found: '%s'\n", path);
+        else if (err == EACCES)
+            fprintf(stderr, "Error: permission denied: '%s'\n", path);
+        else if (err == EISDIR)
+            fprintf(stderr, "Error: '%s' is a directory, not a file\n", path);
+        else
+            fprintf(stderr, "Error: cannot open '%s': %s\n", path, strerror(err));
         return NULL;
     }
 
@@ -74,14 +82,14 @@ static uint8_t* read_file(const char* path, size_t* size_out)
     fseek(f, 0, SEEK_SET);
 
     if (file_size <= 0) {
-        fprintf(stderr, "Error: empty or unreadable file '%s'\n", path);
+        fprintf(stderr, "Error: '%s' is empty or unreadable (size=%ld)\n", path, file_size);
         fclose(f);
         return NULL;
     }
 
     uint8_t* data = (uint8_t*)malloc((size_t)file_size);
     if (data == NULL) {
-        fprintf(stderr, "Error: out of memory (need %ld bytes)\n", file_size);
+        fprintf(stderr, "Error: out of memory allocating %ld bytes for '%s'\n", file_size, path);
         fclose(f);
         return NULL;
     }
@@ -90,7 +98,7 @@ static uint8_t* read_file(const char* path, size_t* size_out)
     fclose(f);
 
     if (read != (size_t)file_size) {
-        fprintf(stderr, "Error: could not read entire file '%s'\n", path);
+        fprintf(stderr, "Error: short read on '%s' (got %zu of %ld bytes)\n", path, read, file_size);
         free(data);
         return NULL;
     }
@@ -103,15 +111,25 @@ static int write_file(const char* path, const uint8_t* data, size_t size)
 {
     FILE* f = fopen(path, "wb");
     if (f == NULL) {
-        fprintf(stderr, "Error: cannot create '%s'\n", path);
+        int err = errno;
+        if (err == EACCES)
+            fprintf(stderr, "Error: permission denied writing '%s'\n", path);
+        else if (err == ENOENT)
+            fprintf(stderr, "Error: directory does not exist for '%s'\n", path);
+        else if (err == ENOSPC)
+            fprintf(stderr, "Error: no space left on device for '%s'\n", path);
+        else
+            fprintf(stderr, "Error: cannot create '%s': %s\n", path, strerror(err));
         return -1;
     }
 
     size_t written = fwrite(data, 1, size, f);
-    fclose(f);
-
-    if (written != size) {
-        fprintf(stderr, "Error: could not write entire file '%s'\n", path);
+    if (fclose(f) != 0 || written != size) {
+        int err = errno;
+        if (err == ENOSPC)
+            fprintf(stderr, "Error: disk full while writing '%s' (wrote %zu of %zu bytes)\n", path, written, size);
+        else
+            fprintf(stderr, "Error: write failed on '%s': %s (wrote %zu of %zu bytes)\n", path, strerror(err), written, size);
         return -1;
     }
 
@@ -145,7 +163,15 @@ static int cmd_compress(const char* input, const char* output, int level)
 {
     FILE* fin = fopen(input, "rb");
     if (!fin) {
-        fprintf(stderr, "Error: cannot open '%s': %s\n", input, strerror(errno));
+        int err = errno;
+        if (err == ENOENT)
+            fprintf(stderr, "Error: file not found: '%s'\n", input);
+        else if (err == EACCES)
+            fprintf(stderr, "Error: permission denied: '%s'\n", input);
+        else if (err == EISDIR)
+            fprintf(stderr, "Error: '%s' is a directory, not a file\n", input);
+        else
+            fprintf(stderr, "Error: cannot open '%s': %s\n", input, strerror(err));
         return 1;
     }
     
@@ -303,7 +329,13 @@ static int cmd_decompress(const char* input, const char* output)
 {
     FILE* fin = fopen(input, "rb");
     if (!fin) {
-        fprintf(stderr, "Error: cannot open '%s': %s\n", input, strerror(errno));
+        int err = errno;
+        if (err == ENOENT)
+            fprintf(stderr, "Error: file not found: '%s'\n", input);
+        else if (err == EACCES)
+            fprintf(stderr, "Error: permission denied: '%s'\n", input);
+        else
+            fprintf(stderr, "Error: cannot open '%s': %s\n", input, strerror(err));
         return 1;
     }
     
@@ -375,6 +407,7 @@ static int cmd_decompress(const char* input, const char* output)
 
     if (mcx_is_error(total_out)) {
         fprintf(stderr, "Error: decompression failed: %s\n", mcx_get_error_name(total_out));
+        fprintf(stderr, "  Hint: is '%s' a valid .mcx file? Try 'mcx info %s' to check.\n", input, input);
         free(dst_buf); fclose(fin); fclose(fout);
         return 1;
     }
@@ -551,6 +584,11 @@ int main(int argc, char* argv[])
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
                 level = atoi(argv[++i]);
+                if (level < 1 || level > 26) {
+                    fprintf(stderr, "Error: invalid level %d (must be 1-26)\n"
+                            "  Recommended: -l 3 (fast), -l 6 (balanced), -l 12 (high), -l 20 (best)\n", level);
+                    return 1;
+                }
             } else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) {
                 output = argv[++i];
             } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
@@ -565,7 +603,7 @@ int main(int argc, char* argv[])
         }
 
         if (input == NULL) {
-            fprintf(stderr, "Error: no input file specified\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
             return 1;
         }
         return cmd_compress(input, output, level);
@@ -589,21 +627,21 @@ int main(int argc, char* argv[])
         }
 
         if (input == NULL) {
-            fprintf(stderr, "Error: no input file specified\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
             return 1;
         }
         return cmd_decompress(input, output);
 
     } else if (strcmp(argv[1], "info") == 0) {
         if (argc < 3) {
-            fprintf(stderr, "Error: no input file specified\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
             return 1;
         }
         return cmd_info(argv[2]);
 
     } else if (strcmp(argv[1], "cat") == 0) {
         if (argc < 3) {
-            fprintf(stderr, "Error: no input file specified\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
             return 1;
         }
         /* Decompress to stdout */
@@ -623,7 +661,7 @@ int main(int argc, char* argv[])
 
     } else if (strcmp(argv[1], "bench") == 0) {
         if (argc < 3) {
-            fprintf(stderr, "Error: no input file specified\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
             return 1;
         }
         return cmd_bench(argv[2]);
@@ -667,8 +705,16 @@ int main(int argc, char* argv[])
         return fail > 0 ? 1 : 0;
 
     } else {
-        fprintf(stderr, "Unknown command: '%s'\n\n", argv[1]);
-        print_usage();
+        fprintf(stderr, "Error: unknown command '%s'\n", argv[1]);
+        /* Suggest closest match for common typos */
+        if (strstr(argv[1], "comp") || strcmp(argv[1], "c") == 0 || strcmp(argv[1], "zip") == 0)
+            fprintf(stderr, "  Did you mean: mcx compress?\n");
+        else if (strstr(argv[1], "decomp") || strcmp(argv[1], "d") == 0 || strcmp(argv[1], "unzip") == 0 || strstr(argv[1], "extract"))
+            fprintf(stderr, "  Did you mean: mcx decompress?\n");
+        else if (strcmp(argv[1], "i") == 0 || strstr(argv[1], "header") || strstr(argv[1], "stat"))
+            fprintf(stderr, "  Did you mean: mcx info?\n");
+        else
+            fprintf(stderr, "  Available commands: compress, decompress, info, cat, bench, test\n");
         return 1;
     }
 }
