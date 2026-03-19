@@ -44,10 +44,10 @@ Direct LZRC (LZ + Range Coder, no BWT fallback):
 
 | File | LZRC | Ratio | Speed |
 |------|------|-------|-------|
-| alice29 | 50 KB | **2.99×** | 0.8 MB/s |
-| ooffice | 2,686 KB | **2.24×** | 0.7 MB/s |
-| dickens | 3,118 KB | **3.19×** | 0.5 MB/s |
-| samba | 4,173 KB | **5.06×** | 0.4 MB/s |
+| alice29 | 50 KB | **2.99×** | 0.9 MB/s |
+| ooffice | 2,671 KB | **2.25×** | 0.7 MB/s |
+| dickens | 2,990 KB | **3.33×** | 0.5 MB/s |
+| samba | 4,175 KB | **5.06×** | 0.4 MB/s |
 | mozilla | 15,507 KB | **3.23×** | 0.3 MB/s |
 
 ## Compression Levels
