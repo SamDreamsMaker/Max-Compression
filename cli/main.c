@@ -53,6 +53,7 @@ static void print_usage(void)
         "  mcx diff       <a.mcx> <b.mcx>         # compare two archives\n"
         "  mcx info       <input.mcx>\n"
         "  mcx ls         <file.mcx> [file2.mcx ...]\n"
+        "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
         "  mcx bench      <input>                  # benchmark all levels\n"
         "  mcx test                                # run self-tests\n"
@@ -757,6 +758,95 @@ static int cmd_bench(const char* input)
     return 0;
 }
 
+/* ─── CRC32 (IEEE 802.3) ─────────────────────────────────────────────── */
+
+static uint32_t g_crc32_table[256];
+static int g_crc32_ready = 0;
+
+static void init_crc32(void) {
+    if (g_crc32_ready) return;
+    for (uint32_t i = 0; i < 256; i++) {
+        uint32_t c = i;
+        for (int j = 0; j < 8; j++)
+            c = (c >> 1) ^ (0xEDB88320 & (-(c & 1)));
+        g_crc32_table[i] = c;
+    }
+    g_crc32_ready = 1;
+}
+
+static uint32_t compute_crc32(const uint8_t* data, size_t len) {
+    init_crc32();
+    uint32_t crc = 0xFFFFFFFF;
+    for (size_t i = 0; i < len; i++)
+        crc = g_crc32_table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+    return crc ^ 0xFFFFFFFF;
+}
+
+/* FNV-1a 64-bit hash */
+static uint64_t compute_fnv1a64(const uint8_t* data, size_t len) {
+    uint64_t h = 0xcbf29ce484222325ULL;
+    for (size_t i = 0; i < len; i++) {
+        h ^= data[i];
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
+/* ─── Hash command ───────────────────────────────────────────────────── */
+
+static int cmd_hash(int argc, char** argv)
+{
+    if (argc < 3) {
+        fprintf(stderr, "Usage: mcx hash <file.mcx> [file2.mcx ...]\n"
+                "  Show CRC32 and FNV-1a hash of decompressed content.\n");
+        return 1;
+    }
+
+    int errors = 0;
+    for (int i = 2; i < argc; i++) {
+        if (argv[i][0] == '-') continue; /* skip flags */
+
+        size_t src_size;
+        uint8_t* src = read_file(argv[i], &src_size);
+        if (!src) { errors++; continue; }
+
+        /* Check if it's a valid MCX file */
+        mcx_frame_info info;
+        size_t r = mcx_get_frame_info(&info, src, src_size);
+        if (mcx_is_error(r)) {
+            /* Not an MCX file — hash the raw file */
+            uint32_t crc = compute_crc32(src, src_size);
+            uint64_t fnv = compute_fnv1a64(src, src_size);
+            printf("%08x  %016llx  %s (raw, %zu bytes)\n",
+                   crc, (unsigned long long)fnv, argv[i], src_size);
+            free(src);
+            continue;
+        }
+
+        /* Decompress in memory */
+        uint8_t* dec = (uint8_t*)malloc((size_t)info.original_size + 1024);
+        if (!dec) {
+            fprintf(stderr, "Error: out of memory for '%s'\n", argv[i]);
+            free(src); errors++; continue;
+        }
+
+        size_t dsz = mcx_decompress(dec, (size_t)info.original_size + 1024, src, src_size);
+        free(src);
+
+        if (mcx_is_error(dsz)) {
+            fprintf(stderr, "Error: decompression failed for '%s'\n", argv[i]);
+            free(dec); errors++; continue;
+        }
+
+        uint32_t crc = compute_crc32(dec, dsz);
+        uint64_t fnv = compute_fnv1a64(dec, dsz);
+        printf("%08x  %016llx  %s (%zu bytes decompressed)\n",
+               crc, (unsigned long long)fnv, argv[i], dsz);
+        free(dec);
+    }
+    return errors > 0 ? 1 : 0;
+}
+
 /* ─── Main ───────────────────────────────────────────────────────────── */
 
 int main(int argc, char* argv[])
@@ -1096,6 +1186,9 @@ int main(int argc, char* argv[])
                diff < 0 ? "B is smaller ✓" : diff > 0 ? "A is smaller ✓" : "identical size");
         free(f1); free(f2);
         return 0;
+
+    } else if (strcmp(argv[1], "hash") == 0) {
+        return cmd_hash(argc, argv);
 
     } else if (strcmp(argv[1], "bench") == 0) {
         if (argc < 3) {
