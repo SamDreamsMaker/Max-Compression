@@ -315,6 +315,20 @@ size_t mcx_bwt_forward(uint8_t* dst, size_t* primary_idx,
 
 /* ─── Inverse BWT ────────────────────────────────────────────────────── */
 
+/**
+ * Optimized inverse BWT using merged LF-mapping.
+ *
+ * The classic approach uses two separate arrays: src[] for characters and
+ * T[] for the LF-mapping. Each reconstruction step accesses both arrays
+ * at random positions, causing 2 cache misses per step for large blocks.
+ *
+ * Optimization: merge character + next-index into a single array element.
+ * - Blocks ≤ 16MB: pack into uint32_t (char in top 8 bits, index in low 24)
+ * - Blocks > 16MB: pack into uint64_t (char in top 8 bits, index in low 32)
+ *
+ * This halves cache misses from 2 to 1 per step, which is the dominant
+ * cost for blocks that exceed L2/L3 cache size.
+ */
 size_t mcx_bwt_inverse(uint8_t* dst, size_t primary_idx,
                        const uint8_t* src, size_t size)
 {
@@ -344,37 +358,83 @@ size_t mcx_bwt_inverse(uint8_t* dst, size_t primary_idx,
         sum += count[c];
     }
 
-    /* Build LF mapping vector T.
-     * Use uint32_t — block size ≤ 64MB fits in 32 bits. */
-    uint32_t* T = (uint32_t*)malloc(size * sizeof(uint32_t));
-    if (T == NULL) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+    if (size <= (16U << 20)) {
+        /* ── Fast path: blocks ≤ 16MB — merged 32-bit LF table ────────
+         * Layout: merged[i] = (src[i] << 24) | lf_index[i]
+         * One cache line fetch gives us both the character and next index. */
+        uint32_t* M = (uint32_t*)malloc(size * sizeof(uint32_t));
+        if (M == NULL) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
 
-    for (i = 0; i < size; i++) {
-        T[i] = (uint32_t)cumul[src[i]]++;
-    }
+        for (i = 0; i < size; i++) {
+            M[i] = ((uint32_t)src[i] << 24) | (uint32_t)cumul[src[i]]++;
+        }
 
-    /* Reconstruct original data tracing backwards.
-     * Branchless sentinel adjustment: idx_L = r - (r >= primary_idx) */
-    uint32_t r = 0;
-    uint32_t pidx32 = (uint32_t)primary_idx;
+        uint32_t r = 0;
+        uint32_t pidx32 = (uint32_t)primary_idx;
 #if defined(__GNUC__) || defined(__clang__)
-    if (size > 256 * 1024) { /* Prefetch helps when T > L2 cache */
-        for (i = 0; i < size; i++) {
+        if (size > 256 * 1024) {
+            /* Prefetch 2 steps ahead for better pipeline overlap */
             uint32_t idx_L = r - (r >= pidx32);
-            dst[size - 1 - i] = src[idx_L];
-            r = T[idx_L] + 1;
-            __builtin_prefetch(&T[r - (r >= pidx32)], 0, 0);
-        }
-    } else
+            uint32_t val = M[idx_L];
+            r = (val & 0x00FFFFFF) + 1;
+
+            for (i = 0; i < size - 1; i++) {
+                dst[size - 1 - i] = (uint8_t)(val >> 24);
+                idx_L = r - (r >= pidx32);
+                val = M[idx_L];
+                r = (val & 0x00FFFFFF) + 1;
+                __builtin_prefetch(&M[r - (r >= pidx32)], 0, 0);
+            }
+            dst[0] = (uint8_t)(val >> 24);
+        } else
 #endif
-    {
-        for (i = 0; i < size; i++) {
-            uint32_t idx_L = r - (r >= pidx32);
-            dst[size - 1 - i] = src[idx_L];
-            r = T[idx_L] + 1;
+        {
+            for (i = 0; i < size; i++) {
+                uint32_t idx_L = r - (r >= pidx32);
+                uint32_t val = M[idx_L];
+                dst[size - 1 - i] = (uint8_t)(val >> 24);
+                r = (val & 0x00FFFFFF) + 1;
+            }
         }
+
+        free(M);
+    } else {
+        /* ── Large blocks > 16MB — merged 64-bit LF table ──────────── */
+        uint64_t* M = (uint64_t*)malloc(size * sizeof(uint64_t));
+        if (M == NULL) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+
+        for (i = 0; i < size; i++) {
+            M[i] = ((uint64_t)src[i] << 32) | (uint32_t)cumul[src[i]]++;
+        }
+
+        uint32_t r = 0;
+        uint32_t pidx32 = (uint32_t)primary_idx;
+#if defined(__GNUC__) || defined(__clang__)
+        if (1) {
+            uint32_t idx_L = r - (r >= pidx32);
+            uint64_t val = M[idx_L];
+            r = (uint32_t)(val & 0xFFFFFFFF) + 1;
+
+            for (i = 0; i < size - 1; i++) {
+                dst[size - 1 - i] = (uint8_t)(val >> 32);
+                idx_L = r - (r >= pidx32);
+                val = M[idx_L];
+                r = (uint32_t)(val & 0xFFFFFFFF) + 1;
+                __builtin_prefetch(&M[r - (r >= pidx32)], 0, 0);
+            }
+            dst[0] = (uint8_t)(val >> 32);
+        }
+#else
+        {
+            for (i = 0; i < size; i++) {
+                uint32_t idx_L = r - (r >= pidx32);
+                uint64_t val = M[idx_L];
+                dst[size - 1 - i] = (uint8_t)(val >> 32);
+                r = (uint32_t)(val & 0xFFFFFFFF) + 1;
+            }
+        }
+#endif
     }
 
-    free(T);
     return size;
 }
