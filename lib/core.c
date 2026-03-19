@@ -893,24 +893,47 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 /* For large text blocks in L20+, try multi-table rANS (like bzip2's
                  * multi-table Huffman). Falls back to single rANS if multi is larger. */
                 if (level >= 12 && stage_size > 32768 && genome.use_bwt && !genome.use_delta) {
-                    /* Try both single and multi-table rANS, keep smaller */
+                    /* Try single, multi-table, and CM-rANS (order-1 context) — keep smallest */
                     size_t avail = max_out - payload_offset;
                     uint8_t* alt_buf = (uint8_t*)malloc(avail);
+                    uint8_t* cm_buf  = (uint8_t*)malloc(avail);
                     if (alt_buf) {
                         size_t single_sz = mcx_rans_compress(out1 + payload_offset, avail, stage_in, stage_size);
-                        size_t multi_sz = mcx_multi_rans_compress(alt_buf, avail, stage_in, stage_size);
-                        if (!mcx_is_error(multi_sz) && (mcx_is_error(single_sz) || multi_sz < single_sz)) {
+                        size_t multi_sz  = mcx_multi_rans_compress(alt_buf, avail, stage_in, stage_size);
+                        size_t cm_sz     = 0;
+                        int best_is_cm   = 0;
+                        
+                        /* Try CM-rANS (order-1 context) for blocks > 64KB.
+                         * Order-1 context models byte-to-byte correlations in BWT output.
+                         * Overhead: ~1.2MB tables, amortized on larger blocks. */
+                        if (cm_buf && stage_size > 65536) {
+                            cm_sz = mcx_cmrans_compress(cm_buf, avail, stage_in, stage_size);
+                        }
+                        
+                        /* Pick the smallest result */
+                        entropy_size = single_sz;
+                        
+                        if (!mcx_is_error(multi_sz) && (mcx_is_error(entropy_size) || multi_sz < entropy_size)) {
                             memcpy(out1 + payload_offset, alt_buf, multi_sz);
                             entropy_size = multi_sz;
                             genome.cm_learning = 6; /* Signal multi-table to decoder */
                             out1[0] = mcx_encode_genome(&genome);
-                        } else {
-                            entropy_size = single_sz;
                         }
+                        
+                        if (!mcx_is_error(cm_sz) && cm_sz > 0 && (mcx_is_error(entropy_size) || cm_sz < entropy_size)) {
+                            memcpy(out1 + payload_offset, cm_buf, cm_sz);
+                            entropy_size = cm_sz;
+                            genome.entropy_coder = 2; /* Signal CM-rANS to decoder */
+                            genome.cm_learning = 0;
+                            out1[0] = mcx_encode_genome(&genome);
+                            best_is_cm = 1;
+                        }
+                        (void)best_is_cm;
                         free(alt_buf);
                     } else {
                         entropy_size = mcx_rans_compress(out1 + payload_offset, avail, stage_in, stage_size);
                     }
+                    if (cm_buf) free(cm_buf);
                 } else {
                     entropy_size = mcx_rans_compress(out1 + payload_offset, max_out - payload_offset, stage_in, stage_size);
                 }
