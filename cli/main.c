@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
 
@@ -137,24 +138,37 @@ static void make_decompress_output(char* out, size_t out_cap, const char* input)
 /* ─── Commands ───────────────────────────────────────────────────────── */
 
 static int g_quiet = 0;  /* Suppress non-error output */
+static int g_force = 0;  /* Overwrite existing output files */
+static int g_stdout = 0; /* Write to stdout instead of file */
 
 static int cmd_compress(const char* input, const char* output, int level)
 {
     FILE* fin = fopen(input, "rb");
     if (!fin) {
-        fprintf(stderr, "Error: cannot open '%s'\n", input);
+        fprintf(stderr, "Error: cannot open '%s': %s\n", input, strerror(errno));
         return 1;
     }
     
     char auto_output[1024];
-    if (output == NULL) {
+    if (!g_stdout && output == NULL) {
         make_compress_output(auto_output, sizeof(auto_output), input);
         output = auto_output;
     }
     
-    FILE* fout = fopen(output, "wb");
+    /* Check if output exists (unless --force or --stdout) */
+    if (!g_stdout && !g_force && output) {
+        FILE* check = fopen(output, "rb");
+        if (check) {
+            fclose(check);
+            fprintf(stderr, "Error: '%s' already exists (use -f to overwrite)\n", output);
+            fclose(fin);
+            return 1;
+        }
+    }
+    
+    FILE* fout = g_stdout ? stdout : fopen(output, "wb");
     if (!fout) {
-        fprintf(stderr, "Error: cannot create '%s'\n", output);
+        fprintf(stderr, "Error: cannot create '%s': %s\n", output, strerror(errno));
         fclose(fin);
         return 1;
     }
@@ -274,8 +288,11 @@ static int cmd_compress(const char* input, const char* output, int level)
 
     if (!g_quiet) printf("Done!\n");
     if (!g_quiet) printf("  Input:  %zu bytes\n", src_size);
-    if (!g_quiet) printf("  Output: %zu bytes -> '%s'\n", total_out, output);
-    if (!g_quiet) printf("  Ratio:  %.2fx (%.1f%% smaller)\n", ratio, savings);
+    if (!g_quiet) {
+        if (g_stdout) printf("  Output: %zu bytes -> stdout\n", total_out);
+        else printf("  Output: %zu bytes -> '%s'\n", total_out, output);
+        printf("  Ratio:  %.2fx (%.1f%% smaller)\n", ratio, savings);
+    }
 
     fclose(fin);
     fclose(fout);
@@ -286,19 +303,30 @@ static int cmd_decompress(const char* input, const char* output)
 {
     FILE* fin = fopen(input, "rb");
     if (!fin) {
-        fprintf(stderr, "Error: cannot open '%s'\n", input);
+        fprintf(stderr, "Error: cannot open '%s': %s\n", input, strerror(errno));
         return 1;
     }
     
     char auto_output[1024];
-    if (output == NULL) {
+    if (!g_stdout && output == NULL) {
         make_decompress_output(auto_output, sizeof(auto_output), input);
         output = auto_output;
     }
     
-    FILE* fout = fopen(output, "wb");
+    /* Check if output exists (unless --force or --stdout) */
+    if (!g_stdout && !g_force && output) {
+        FILE* check = fopen(output, "rb");
+        if (check) {
+            fclose(check);
+            fprintf(stderr, "Error: '%s' already exists (use -f to overwrite)\n", output);
+            fclose(fin);
+            return 1;
+        }
+    }
+    
+    FILE* fout = g_stdout ? stdout : fopen(output, "wb");
     if (!fout) {
-        fprintf(stderr, "Error: cannot create '%s'\n", output);
+        fprintf(stderr, "Error: cannot create '%s': %s\n", output, strerror(errno));
         fclose(fin);
         return 1;
     }
@@ -526,6 +554,10 @@ int main(int argc, char* argv[])
                 output = argv[++i];
             } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
                 g_quiet = 1;
+            } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--force") == 0) {
+                g_force = 1;
+            } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--stdout") == 0) {
+                g_stdout = 1; g_quiet = 1;
             } else if (argv[i][0] != '-') {
                 input = argv[i];
             }
@@ -546,6 +578,10 @@ int main(int argc, char* argv[])
                 output = argv[++i];
             } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
                 g_quiet = 1;
+            } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--force") == 0) {
+                g_force = 1;
+            } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--stdout") == 0) {
+                g_stdout = 1; g_quiet = 1;
             } else if (argv[i][0] != '-') {
                 input = argv[i];
             }
