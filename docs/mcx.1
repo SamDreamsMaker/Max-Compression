@@ -32,6 +32,12 @@ mcx \- high\-ratio lossless data compression tool
 .B mcx diff
 \fIFILE1\fR \fIFILE2\fR
 .br
+.B mcx stat
+\fIINPUT\fR
+.br
+.B mcx hash
+\fIFILE\fR ...
+.br
 .B mcx ls
 \fIFILE\fR ...
 .br
@@ -59,10 +65,29 @@ Compress a file. Output defaults to \fIINPUT\fR.mcx.
 Decompress an MCX file. Output defaults to \fIINPUT\fR with .mcx removed.
 .TP
 .B info
-Display frame metadata (size, level, strategy) without decompressing.
+Display frame metadata (size, level, strategy, block count, per\-block
+genome configuration) without decompressing.
 .TP
 .B cat
 Decompress to stdout (equivalent to \fBdecompress \-c\fR).
+.TP
+.B stat
+Display file statistics without compressing: entropy, byte distribution,
+run\-length analysis, and content type detection.
+.TP
+.B hash
+Show CRC32 and FNV\-1a 64\-bit hashes of decompressed content from MCX
+files, or of raw content for non\-MCX files.
+.TP
+.B verify
+Decompress and verify integrity. Optionally compare against an original file.
+.TP
+.B diff
+Compare two compressed MCX files (sizes, ratios, strategies).
+.TP
+.B ls
+List compressed MCX files in a table (compressed size, original size,
+ratio, level, strategy).
 .TP
 .B bench
 Benchmark compression on a file across all major levels.
@@ -123,6 +148,18 @@ Write output to stdout instead of a file. Implies \fB\-q\fR.
 .BR \-o ", " \-\-output =\fIFILE\fR
 Output file path. If not specified, appends .mcx for compression
 or removes .mcx for decompression.
+.TP
+.BR \-\-delete
+Delete source file after successful compression or decompression.
+By default, source files are kept.
+.TP
+.BR \-r ", " \-\-recursive
+Recurse into directories. For compression, compresses all files
+in the directory tree (skipping .mcx files). For decompression,
+processes all .mcx files found recursively.
+.TP
+.BR \-t ", " \-\-threads =\fIN\fR
+Use N threads for compression (default: auto\-detect).
 .TP
 .BR \-q ", " \-\-quiet
 Suppress all non\-error output. Useful for scripts and pipelines.
