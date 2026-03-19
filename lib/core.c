@@ -1056,6 +1056,36 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     }
 skip_e8e9:
 
+    /* ── Sorted integer delta trial (L10+, numeric/binary data) ── */
+    if (level >= 10 && level != 21 && /* 21 = E8/E9 recursive level */
+        (analysis.type == MCX_DTYPE_BINARY ||
+         analysis.type == MCX_DTYPE_NUMERIC ||
+         analysis.type == MCX_DTYPE_UNKNOWN) &&
+        src_size >= 64) {
+        int int_width = mcx_sorted_int_detect(in, src_size);
+        if (int_width > 0) {
+            uint8_t* id_buf = (uint8_t*)malloc(src_size);
+            uint8_t* id_dst = (uint8_t*)malloc(dst_cap);
+            if (id_buf && id_dst) {
+                memcpy(id_buf, in, src_size);
+                mcx_int_delta_encode(id_buf, src_size, int_width);
+                /* Compress at level 21 to avoid recursive trials */
+                size_t id_size = mcx_compress(id_dst, dst_cap, id_buf, src_size, 21);
+                if (!mcx_is_error(id_size) && id_size < offset) {
+                    memcpy(dst, id_dst, id_size);
+                    /* Set int-delta flag + width in frame header flags byte */
+                    ((uint8_t*)dst)[5] |= MCX_FLAG_INT_DELTA;
+                    if (int_width == 4) {
+                        ((uint8_t*)dst)[5] |= MCX_FLAG_INT_DELTA_W4;
+                    }
+                    offset = id_size;
+                }
+            }
+            if (id_buf) free(id_buf);
+            if (id_dst) free(id_dst);
+        }
+    }
+
     return offset;
 }
 
@@ -1101,6 +1131,11 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
         memcpy(out, in + offset, orig_size);
         /* Apply E8/E9 inverse if flag is set */
         if (header.flags & MCX_FLAG_E8E9) mcx_e8e9_decode(out, orig_size);
+        /* Apply integer delta inverse if flag is set */
+        if (header.flags & MCX_FLAG_INT_DELTA) {
+            int iw = (header.flags & MCX_FLAG_INT_DELTA_W4) ? 4 : 2;
+            mcx_int_delta_decode(out, orig_size, iw);
+        }
         return orig_size;
 
     } else if (strategy == MCX_STRATEGY_FAST) {
@@ -1600,6 +1635,11 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
 
         /* Apply E8/E9 inverse if flag is set */
         if (header.flags & MCX_FLAG_E8E9) mcx_e8e9_decode(out, orig_size);
+        /* Apply integer delta inverse if flag is set */
+        if (header.flags & MCX_FLAG_INT_DELTA) {
+            int iw = (header.flags & MCX_FLAG_INT_DELTA_W4) ? 4 : 2;
+            mcx_int_delta_decode(out, orig_size, iw);
+        }
         return orig_size;
     }
 

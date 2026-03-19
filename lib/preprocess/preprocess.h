@@ -78,4 +78,31 @@ size_t mcx_rle_encode(uint8_t* dst, size_t dst_cap,
 size_t mcx_rle_decode(uint8_t* dst, size_t dst_cap,
                       const uint8_t* src, size_t src_size);
 
+/* ─── Sorted Integer Delta ───────────────────────────────────────────── */
+
+/**
+ * Detect if data looks like a sorted integer sequence.
+ *
+ * @param data  Input data
+ * @param size  Data size
+ * @return      Detected integer width (2 or 4), or 0 if not sorted ints
+ */
+int mcx_sorted_int_detect(const uint8_t* data, size_t size);
+
+/**
+ * Apply integer-width delta encoding in-place.
+ * For width=2: treats data as uint16_t LE, stores deltas.
+ * For width=4: treats data as uint32_t LE, stores deltas.
+ *
+ * @param data   Data buffer (modified in-place)
+ * @param size   Data size in bytes
+ * @param width  Integer width (2 or 4)
+ */
+void mcx_int_delta_encode(uint8_t* data, size_t size, int width);
+
+/**
+ * Reverse integer-width delta encoding in-place.
+ */
+void mcx_int_delta_decode(uint8_t* data, size_t size, int width);
+
 #endif /* MCX_PREPROCESS_H */

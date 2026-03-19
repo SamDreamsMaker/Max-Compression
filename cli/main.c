@@ -727,6 +727,9 @@ static int cmd_info(const char* input)
     /* Flags */
     if (info.flags & MCX_FLAG_E8E9)
         printf("Filters:          E8/E9 x86\n");
+    if (info.flags & MCX_FLAG_INT_DELTA)
+        printf("Filters:          Int-delta (%d-bit)\n",
+               (info.flags & MCX_FLAG_INT_DELTA_W4) ? 32 : 16);
     if (info.flags & MCX_FLAG_STREAMING)
         printf("Mode:             Streaming\n");
 

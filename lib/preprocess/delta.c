@@ -29,6 +29,111 @@ void mcx_delta_decode(uint8_t* data, size_t size)
     }
 }
 
+/* ─── Sorted Integer Delta ────────────────────────────────────────────── */
+
+static inline uint16_t read16le(const uint8_t* p) {
+    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+static inline void write16le(uint8_t* p, uint16_t v) {
+    p[0] = (uint8_t)(v);
+    p[1] = (uint8_t)(v >> 8);
+}
+static inline uint32_t read32le(const uint8_t* p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+static inline void write32le(uint8_t* p, uint32_t v) {
+    p[0] = (uint8_t)(v);
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+int mcx_sorted_int_detect(const uint8_t* data, size_t size)
+{
+    if (!data || size < 64) return 0;
+
+    /* Sample up to 4KB from the start */
+    size_t sample = size < 4096 ? size : 4096;
+
+    /* Try 16-bit LE sorted detection first (prefer tighter width) */
+    if (size >= 4 && (size % 2) == 0) {
+        size_t n16 = sample / 2;
+        if (n16 >= 4) {
+            size_t sorted = 0;
+            uint16_t prev = read16le(data);
+            for (size_t i = 1; i < n16; i++) {
+                uint16_t cur = read16le(data + i * 2);
+                if (cur >= prev) sorted++;
+                prev = cur;
+            }
+            double ratio = (double)sorted / (double)(n16 - 1);
+            if (ratio >= 0.85) return 2;
+        }
+    }
+
+    /* Try 32-bit LE sorted detection */
+    if (size >= 8 && (size % 4) == 0) {
+        size_t n32 = sample / 4;
+        if (n32 >= 4) {
+            size_t sorted = 0;
+            uint32_t prev = read32le(data);
+            for (size_t i = 1; i < n32; i++) {
+                uint32_t cur = read32le(data + i * 4);
+                if (cur >= prev) sorted++;
+                prev = cur;
+            }
+            double ratio = (double)sorted / (double)(n32 - 1);
+            if (ratio >= 0.85) return 4;
+        }
+    }
+
+    return 0;
+}
+
+void mcx_int_delta_encode(uint8_t* data, size_t size, int width)
+{
+    if (!data || size < (size_t)(width * 2)) return;
+
+    if (width == 4) {
+        size_t n = size / 4;
+        /* Process in reverse for in-place */
+        for (size_t i = n - 1; i >= 1; i--) {
+            uint32_t cur  = read32le(data + i * 4);
+            uint32_t prev = read32le(data + (i - 1) * 4);
+            write32le(data + i * 4, cur - prev);
+        }
+    } else if (width == 2) {
+        size_t n = size / 2;
+        for (size_t i = n - 1; i >= 1; i--) {
+            uint16_t cur  = read16le(data + i * 2);
+            uint16_t prev = read16le(data + (i - 1) * 2);
+            write16le(data + i * 2, cur - prev);
+        }
+    }
+}
+
+void mcx_int_delta_decode(uint8_t* data, size_t size, int width)
+{
+    if (!data || size < (size_t)(width * 2)) return;
+
+    if (width == 4) {
+        size_t n = size / 4;
+        for (size_t i = 1; i < n; i++) {
+            uint32_t prev  = read32le(data + (i - 1) * 4);
+            uint32_t delta = read32le(data + i * 4);
+            write32le(data + i * 4, prev + delta);
+        }
+    } else if (width == 2) {
+        size_t n = size / 2;
+        for (size_t i = 1; i < n; i++) {
+            uint16_t prev  = read16le(data + (i - 1) * 2);
+            uint16_t delta = read16le(data + i * 2);
+            write16le(data + i * 2, prev + delta);
+        }
+    }
+}
+
 /* ─── Move-to-Front ──────────────────────────────────────────────────── */
 
 void mcx_mtf_encode(uint8_t* data, size_t size)

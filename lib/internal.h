@@ -60,6 +60,8 @@ typedef enum {
 #define MCX_FLAG_STREAMING       0x02
 #define MCX_FLAG_E8E9            0x04  /* E8/E9 x86 filter was applied */
 #define MCX_FLAG_ADAPTIVE_BLOCKS 0x08  /* Variable-sized blocks (original sizes stored in frame) */
+#define MCX_FLAG_INT_DELTA       0x10  /* Sorted integer delta preprocessing applied */
+#define MCX_FLAG_INT_DELTA_W4    0x20  /* Int-delta width: 0=16-bit, 1=32-bit */
 
 typedef struct {
     uint32_t magic;
