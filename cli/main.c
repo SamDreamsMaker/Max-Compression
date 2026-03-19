@@ -857,6 +857,61 @@ int main(int argc, char* argv[])
         free(dec);
         return 0;
 
+    } else if (strcmp(argv[1], "verify") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: mcx verify <file.mcx> [original]\n");
+            return 1;
+        }
+        size_t src_size;
+        uint8_t* src = read_file(argv[2], &src_size);
+        if (!src) return 1;
+        
+        mcx_frame_info info;
+        size_t r = mcx_get_frame_info(&info, src, src_size);
+        if (mcx_is_error(r)) {
+            fprintf(stderr, "Error: Not a valid MCX file\n");
+            free(src); return 1;
+        }
+        
+        uint8_t* dec = (uint8_t*)malloc((size_t)info.original_size + 1024);
+        if (!dec) { fprintf(stderr, "Error: out of memory\n"); free(src); return 1; }
+        
+        double t0 = get_time_sec();
+        size_t dsz = mcx_decompress(dec, (size_t)info.original_size + 1024, src, src_size);
+        double dt = get_time_sec() - t0;
+        free(src);
+        
+        if (mcx_is_error(dsz)) {
+            fprintf(stderr, "FAIL: decompression error\n");
+            free(dec); return 1;
+        }
+        
+        printf("%s: OK (%.2fx, %zu → %zu bytes, %.1f MB/s)\n",
+               argv[2], (double)dsz / src_size, src_size, dsz,
+               dsz / dt / 1048576.0);
+        
+        /* If original file provided, compare */
+        if (argc >= 4) {
+            size_t orig_size;
+            uint8_t* orig = read_file(argv[3], &orig_size);
+            if (orig) {
+                if (orig_size != dsz) {
+                    fprintf(stderr, "FAIL: size mismatch (original %zu, decompressed %zu)\n",
+                            orig_size, dsz);
+                    free(orig); free(dec); return 1;
+                }
+                if (memcmp(orig, dec, dsz) != 0) {
+                    fprintf(stderr, "FAIL: content mismatch\n");
+                    free(orig); free(dec); return 1;
+                }
+                printf("  Verified against %s: MATCH\n", argv[3]);
+                free(orig);
+            }
+        }
+        
+        free(dec);
+        return 0;
+
     } else if (strcmp(argv[1], "diff") == 0) {
         if (argc < 4) {
             fprintf(stderr, "Usage: mcx diff <file1.mcx> <file2.mcx>\n");
