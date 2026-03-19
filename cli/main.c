@@ -35,6 +35,7 @@ static void print_usage(void)
         "  mcx cat        <input.mcx>   # decompress to stdout\n"
         "  mcx bench      <input>       # benchmark all levels\n"
         "  mcx test                     # run self-tests\n"
+        "  mcx version                  # detailed build info\n"
         "  mcx --version\n"
         "  mcx --help\n"
         "\n"
@@ -583,6 +584,53 @@ int main(int argc, char* argv[])
     }
     if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0) {
         printf("mcx %s\n", mcx_version_string());
+        return 0;
+    }
+
+    /* version subcommand — detailed build info */
+    if (strcmp(argv[1], "version") == 0) {
+        printf("MaxCompression v%s\n", mcx_version_string());
+        printf("  Library:    libmaxcomp %s\n", mcx_version_string());
+#ifdef __GNUC__
+        printf("  Compiler:   GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+#elif defined(__clang__)
+        printf("  Compiler:   Clang %d.%d.%d\n", __clang_major__, __clang_minor__, __clang_patchlevel__);
+#elif defined(_MSC_VER)
+        printf("  Compiler:   MSVC %d\n", _MSC_VER);
+#else
+        printf("  Compiler:   unknown\n");
+#endif
+        printf("  Build:      %s %s\n", __DATE__, __TIME__);
+#ifdef _OPENMP
+        printf("  OpenMP:     yes\n");
+#else
+        printf("  OpenMP:     no\n");
+#endif
+        printf("  Platform:   %s\n",
+#if defined(__linux__)
+            "Linux"
+#elif defined(__APPLE__)
+            "macOS"
+#elif defined(_WIN32)
+            "Windows"
+#else
+            "unknown"
+#endif
+        );
+        printf("  Arch:       %s\n",
+#if defined(__x86_64__) || defined(_M_X64)
+            "x86_64"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+            "aarch64"
+#elif defined(__i386__) || defined(_M_IX86)
+            "x86"
+#elif defined(__arm__) || defined(_M_ARM)
+            "arm"
+#else
+            "unknown"
+#endif
+        );
+        printf("  Levels:     1-26 (BWT up to L20, LZRC L24/L26)\n");
         return 0;
     }
 
