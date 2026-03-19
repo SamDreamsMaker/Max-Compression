@@ -6,8 +6,23 @@ All notable changes to MaxCompression are documented in this file.
 
 ### Added
 - **`mcx test` self-test command** — verifies all compression levels in one command.
+- **`mcx verify` command** — integrity check with optional original file comparison.
+- **`mcx diff` command** — compare two compressed archives (size, ratio, strategy).
+- **`mcx ls` command** — compact multi-file listing (compressed size, ratio, level, strategy).
+- **Multi-file compress/decompress** — `mcx compress file1 file2 ...` and `mcx decompress *.mcx`.
+- **Decompress aliases** — `mcx extract`, `mcx x`, `mcx d` (gzip/tar-style convenience).
+- **`--recursive/-r` flag** — compress/decompress all files in a directory tree.
+- **`--threads/-t` flag** — control OpenMP thread count.
 - **`-q/--quiet` flag** — suppress non-error output for scripting.
+- **`-f/--force`, `-c/--stdout`, `--delete`, `-k/--keep` flags** — gzip-compatible CLI options.
+- **`.mcx` double-compress warning** — warns when compressing already-compressed files.
+- **Shell completions** — Bash, Zsh, and Fish completion scripts.
+- **Multi-file roundtrip CI test** — validates multi-file compress/decompress in ctest.
 - **Edge case tests** — boundary conditions, patterns, frame info validation.
+- **BENCHMARKS.md** — comprehensive standalone benchmark document.
+- **Demo script** (`benchmarks/demo.sh`) — MCX vs gzip/bzip2/xz comparison.
+- **`.gitattributes`** — consistent line endings across platforms.
+- **`.clang-format`** — code formatting config.
 - **GitHub issue templates** (bug report + feature request).
 - **SECURITY.md** — vulnerability disclosure policy.
 - **.editorconfig** — consistent code style across editors.
@@ -16,6 +31,7 @@ All notable changes to MaxCompression are documented in this file.
 ### Changed
 - **rANS entropy for LZ blocks** — 0.5-2% smaller than FSE at L1-L9.
   - alice29 L6: 65739→63814 (-2.9%), L9: 64442→62728 (-2.9%).
+- **Separate rep-match length model** (LZMA-style) — improved LZRC compression.
 - **AAC enabled at L7+** (was L9+) — better ratio at moderate speed.
 - **Larger HC hash table** (1M entries) — L6 -1.4%, L9 -0.9%.
 - **Better greedy hash populating** — L1 -3.7% ratio improvement.
@@ -23,9 +39,10 @@ All notable changes to MaxCompression are documented in this file.
 - **rANS decoder unrolled** — 2 symbols per iteration.
 - **BWT inverse prefetch** for blocks >256KB (+5% decompress on large files).
 - **RC_UNLIKELY branch hints** for range coder normalize.
+- Updated man page with all new commands, flags, and aliases.
 - Updated ROADMAP.md with rejected experiments table.
 - Updated API.md with `mcx_get_frame_info` documentation.
-- Updated man page with `-q/--quiet` flag and L24 level.
+- Updated README with enwik8 results and new CLI commands.
 
 ## [2.1.0] — 2026-03-18
 
