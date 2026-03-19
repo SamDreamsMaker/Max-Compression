@@ -21,6 +21,9 @@
 #include <time.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 /* ─── Timing ─────────────────────────────────────────────────────────── */
 
@@ -73,6 +76,7 @@ static void print_usage(void)
         "      --delete    Delete source file after successful operation\n"
         "  -c, --stdout    Write output to stdout\n"
         "  -q, --quiet     Suppress non-error output\n"
+        "  -t, --threads N Use N threads (default: auto)\n"
         "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
@@ -185,6 +189,7 @@ static int g_quiet = 0;  /* Suppress non-error output */
 static int g_force = 0;  /* Overwrite existing output files */
 static int g_stdout = 0; /* Write to stdout instead of file */
 static int g_delete = 0; /* Delete source file after success */
+static int g_threads = 0; /* Thread count (0 = auto) */
 
 static int cmd_compress(const char* input, const char* output, int level)
 {
@@ -739,6 +744,8 @@ int main(int argc, char* argv[])
                 g_delete = 0;
             } else if (strcmp(argv[i], "--delete") == 0) {
                 g_delete = 1;
+            } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threads") == 0) {
+                if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (argv[i][0] != '-') {
                 input = argv[i];
             }
@@ -748,6 +755,9 @@ int main(int argc, char* argv[])
             fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
             return 1;
         }
+#ifdef _OPENMP
+        if (g_threads > 0) omp_set_num_threads(g_threads);
+#endif
         return cmd_compress(input, output, level);
 
     } else if (strcmp(argv[1], "decompress") == 0) {
