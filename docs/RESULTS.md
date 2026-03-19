@@ -44,17 +44,21 @@
 | x-ray | 8.5 MB | 5,851 KB | **1.41×** |
 | **TOTAL** | **211.9 MB** | **69,889 KB** | **2.96×** |
 
-## Canterbury Corpus — Level 20
+## Canterbury Corpus — All Levels
 
-| File | Size | MCX L20 | Ratio |
-|------|------|---------|-------|
-| alice29.txt | 149 KB | 42 KB | **3.53×** |
-| fields.c | 11 KB | 3 KB | **3.42×** |
-| grammar.lsp | 4 KB | 1 KB | **2.46×** |
-| kennedy.xls | 1,006 KB | 20 KB | **50.11×** |
-| lcet10.txt | 419 KB | 105 KB | **3.98×** |
-| plrabn12.txt | 471 KB | 141 KB | **3.33×** |
-| ptt5 | 502 KB | 49 KB | **10.19×** |
+| File | Size | L6 | L6× | L9 | L9× | L20 | L20× |
+|------|------|-----|-----|-----|-----|------|------|
+| alice29.txt | 152 KB | 62 KB | 2.38× | 61 KB | 2.42× | 42 KB | **3.53×** |
+| asyoulik.txt | 122 KB | 56 KB | 2.18× | 55 KB | 2.20× | 39 KB | **3.15×** |
+| cp.html | 24 KB | 10 KB | 2.48× | 10 KB | 2.52× | 8 KB | **3.15×** |
+| fields.c | 11 KB | 4 KB | 2.55× | 4 KB | 2.70× | 3 KB | **3.39×** |
+| grammar.lsp | 4 KB | 2 KB | 2.03× | 2 KB | 2.21× | 1 KB | **2.46×** |
+| kennedy.xls | 1,006 KB | 209 KB | 4.80× | 109 KB | 9.25× | 20 KB | **50.11×** |
+| lcet10.txt | 417 KB | 162 KB | 2.57× | 160 KB | 2.60× | 105 KB | **3.98×** |
+| plrabn12.txt | 471 KB | 221 KB | 2.13× | 218 KB | 2.16× | 141 KB | **3.33×** |
+| ptt5 | 501 KB | 61 KB | 8.18× | 58 KB | 8.70× | 49 KB | **10.19×** |
+| sum | 37 KB | 14 KB | 2.60× | 14 KB | 2.64× | 11 KB | **3.33×** |
+| xargs.1 | 4 KB | 2 KB | 1.68× | 2 KB | 1.84× | 2 KB | **2.14×** |
 
 ## LZRC v2.0 Engine — Level 26
 
