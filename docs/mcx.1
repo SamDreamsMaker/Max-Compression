@@ -26,6 +26,15 @@ mcx \- high\-ratio lossless data compression tool
 .B mcx cat
 \fIINPUT\fR
 .br
+.B mcx verify
+\fIINPUT\fR [\fIORIGINAL\fR]
+.br
+.B mcx diff
+\fIFILE1\fR \fIFILE2\fR
+.br
+.B mcx ls
+\fIFILE\fR ...
+.br
 .B mcx bench
 \fIINPUT\fR
 .br
@@ -148,6 +157,21 @@ Show file info:
 .TP
 Benchmark all levels:
 .B mcx bench data.bin
+.TP
+Verify integrity:
+.B mcx verify data.mcx
+.TP
+Verify against original:
+.B mcx verify data.mcx original.bin
+.TP
+Compare two compressed files:
+.B mcx diff old.mcx new.mcx
+.TP
+Multi-file compress:
+.B mcx compress *.txt
+.TP
+Decompress with alias:
+.B mcx x data.mcx
 .SH COMPRESSION RATIOS
 Silesia benchmark corpus (202 MB), 12 files:
 .PP
