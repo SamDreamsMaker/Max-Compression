@@ -110,6 +110,20 @@ test: Add LZRC roundtrip tests
 refactor: Extract distance model into lz_models.h
 ```
 
+## Pull Request Checklist
+
+Before submitting a PR, verify:
+
+- [ ] Code compiles clean with `-Wall -Wextra` (no new warnings)
+- [ ] All existing tests pass: `cd build && ctest --output-on-failure`
+- [ ] Roundtrip verified: compressed → decompressed matches original exactly
+- [ ] New tests added for any new functionality
+- [ ] No compression ratio regression on Canterbury/Silesia corpora
+- [ ] Commit messages follow Conventional Commits format
+- [ ] Documentation updated (README, man page, CHANGELOG) if user-facing
+- [ ] No hardcoded paths or platform-specific code in library (CLI may use POSIX)
+- [ ] Memory: no leaks under valgrind for typical usage paths
+
 ## Testing Requirements
 
 ### All Changes Must:
