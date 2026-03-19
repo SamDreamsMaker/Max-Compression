@@ -29,6 +29,18 @@ option(BUILD_SHARED_LIBS   "Build shared library (DLL/so/dylib)"   ON)
 option(MCX_BUILD_CLI       "Build the mcx command-line tool"       ON)
 option(MCX_BUILD_TESTS     "Build unit tests"                      ON)
 option(MCX_BUILD_BENCHMARKS "Build benchmarks"                     ON)
+option(MCX_CODE_COVERAGE   "Build with gcov code coverage"         OFF)
+
+# ─── Code Coverage ───────────────────────────────────────────────────
+if(MCX_CODE_COVERAGE)
+    if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        message(FATAL_ERROR "Code coverage requires GCC (CMAKE_C_COMPILER=gcc)")
+    endif()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
+    message(STATUS "Code coverage enabled (gcov)")
+endif()
 
 # ─── Output directories ─────────────────────────────────────────────
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
