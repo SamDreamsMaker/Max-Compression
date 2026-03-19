@@ -59,6 +59,7 @@ typedef enum {
 #define MCX_FLAG_HAS_ORIG_SIZE   0x01
 #define MCX_FLAG_STREAMING       0x02
 #define MCX_FLAG_E8E9            0x04  /* E8/E9 x86 filter was applied */
+#define MCX_FLAG_ADAPTIVE_BLOCKS 0x08  /* Variable-sized blocks (original sizes stored in frame) */
 
 typedef struct {
     uint32_t magic;
@@ -165,5 +166,11 @@ typedef struct {
 
 /** Maximum block size (1 MB). */
 #define MCX_MAX_BLOCK_SIZE      (64 * 1024 * 1024) /* 64MB blocks — +2% on large text (webster) */
+
+/** Minimum block size for adaptive blocking (1 MB). */
+#define MCX_MIN_BLOCK_SIZE      (1 * 1024 * 1024)
+
+/** Entropy analysis window size for adaptive blocking (256 KB). */
+#define MCX_ENTROPY_WINDOW      (256 * 1024)
 
 #endif /* MCX_INTERNAL_H */

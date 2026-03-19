@@ -41,4 +41,20 @@ double mcx_entropy(const uint8_t* data, size_t size);
  */
 mcx_data_type_t mcx_detect_type(const uint8_t* data, size_t size);
 
+/**
+ * Compute adaptive block boundaries based on entropy analysis.
+ * Scans input in MCX_ENTROPY_WINDOW-sized windows, groups consecutive
+ * windows with similar entropy into blocks. High-entropy regions get
+ * smaller blocks (faster processing), low-entropy regions get larger
+ * blocks (better BWT context).
+ *
+ * @param data       Pointer to the input data
+ * @param size       Total input size
+ * @param out_sizes  Output array of block sizes (caller must free)
+ * @param out_count  Output: number of blocks
+ * @return           0 on success, -1 on error
+ */
+int mcx_adaptive_blocks(const uint8_t* data, size_t size,
+                        size_t** out_sizes, uint32_t* out_count);
+
 #endif /* MCX_ANALYZER_H */

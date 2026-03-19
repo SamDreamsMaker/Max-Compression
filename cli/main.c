@@ -739,7 +739,8 @@ static int cmd_info(const char* input)
             memcpy(&num_blocks, src + offset, 4);
             offset += 4;
 
-            printf("Blocks:           %u\n", num_blocks);
+            printf("Blocks:           %u%s\n", num_blocks,
+                   (info.flags & MCX_FLAG_ADAPTIVE_BLOCKS) ? " (adaptive)" : "");
 
             if (num_blocks > 0 && num_blocks <= 10000 &&
                 offset + (size_t)num_blocks * 4 <= src_size) {
@@ -750,6 +751,11 @@ static int cmd_info(const char* input)
                         memcpy(&bsizes[b], src + offset + b * 4, 4);
                     }
                     offset += (size_t)num_blocks * 4;
+
+                    /* Skip original block sizes array if adaptive blocks */
+                    if (info.flags & MCX_FLAG_ADAPTIVE_BLOCKS) {
+                        offset += (size_t)num_blocks * 4;
+                    }
 
                     /* Parse each block's genome byte */
                     printf("\n  %-6s %10s  %-6s %-5s %-5s %-7s %-8s\n",

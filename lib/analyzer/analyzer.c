@@ -123,3 +123,103 @@ mcx_analysis_t mcx_analyze(const uint8_t* data, size_t size)
 
     return result;
 }
+
+/* ─── Adaptive Block Sizing ──────────────────────────────────────────── */
+
+int mcx_adaptive_blocks(const uint8_t* data, size_t size,
+                        size_t** out_sizes, uint32_t* out_count)
+{
+    if (!data || size == 0 || !out_sizes || !out_count) return -1;
+
+    /* If data fits in one block, no need for adaptive sizing */
+    if (size <= MCX_MIN_BLOCK_SIZE) {
+        size_t* sizes = (size_t*)malloc(sizeof(size_t));
+        if (!sizes) return -1;
+        sizes[0] = size;
+        *out_sizes = sizes;
+        *out_count = 1;
+        return 0;
+    }
+
+    /* Scan entropy in windows */
+    size_t num_windows = (size + MCX_ENTROPY_WINDOW - 1) / MCX_ENTROPY_WINDOW;
+    double* window_entropy = (double*)malloc(num_windows * sizeof(double));
+    if (!window_entropy) return -1;
+
+    for (size_t w = 0; w < num_windows; w++) {
+        size_t woff = w * MCX_ENTROPY_WINDOW;
+        size_t wlen = MCX_MIN(MCX_ENTROPY_WINDOW, size - woff);
+        window_entropy[w] = mcx_entropy(data + woff, wlen);
+    }
+
+    /* Classify windows: high entropy (>7.0) vs low entropy */
+    #define ENTROPY_THRESHOLD 7.0
+
+    /* Group windows into blocks.
+     * Strategy: merge consecutive windows of the same class.
+     * High-entropy blocks: max 4MB (no benefit from large BWT)
+     * Low-entropy blocks: max MCX_MAX_BLOCK_SIZE (BWT benefits from context) */
+    #define HIGH_ENTROPY_MAX_BLOCK  (4 * 1024 * 1024)
+
+    /* Worst case: each window is its own block */
+    size_t* block_sizes = (size_t*)malloc(num_windows * sizeof(size_t));
+    if (!block_sizes) { free(window_entropy); return -1; }
+
+    uint32_t nblocks = 0;
+    size_t current_block = 0;
+    int current_class = (window_entropy[0] > ENTROPY_THRESHOLD) ? 1 : 0;
+    size_t max_for_class = current_class ? HIGH_ENTROPY_MAX_BLOCK : MCX_MAX_BLOCK_SIZE;
+
+    for (size_t w = 0; w < num_windows; w++) {
+        int wclass = (window_entropy[w] > ENTROPY_THRESHOLD) ? 1 : 0;
+        size_t woff = w * MCX_ENTROPY_WINDOW;
+        size_t wlen = MCX_MIN(MCX_ENTROPY_WINDOW, size - woff);
+
+        /* Start new block if class changes or current block would exceed max */
+        if (wclass != current_class || current_block + wlen > max_for_class) {
+            if (current_block > 0) {
+                block_sizes[nblocks++] = current_block;
+            }
+            current_class = wclass;
+            max_for_class = current_class ? HIGH_ENTROPY_MAX_BLOCK : MCX_MAX_BLOCK_SIZE;
+            current_block = wlen;
+        } else {
+            current_block += wlen;
+        }
+    }
+    /* Flush last block */
+    if (current_block > 0) {
+        block_sizes[nblocks++] = current_block;
+    }
+
+    /* Merge tiny blocks (< MCX_MIN_BLOCK_SIZE) with neighbors */
+    for (uint32_t i = 0; i < nblocks; i++) {
+        if (block_sizes[i] < MCX_MIN_BLOCK_SIZE && nblocks > 1) {
+            if (i + 1 < nblocks) {
+                /* Merge with next */
+                block_sizes[i + 1] += block_sizes[i];
+                /* Shift left */
+                for (uint32_t j = i; j + 1 < nblocks; j++) {
+                    block_sizes[j] = block_sizes[j + 1];
+                }
+                nblocks--;
+                i--; /* Re-check this position */
+            } else if (i > 0) {
+                /* Merge with previous */
+                block_sizes[i - 1] += block_sizes[i];
+                nblocks--;
+            }
+        }
+    }
+
+    free(window_entropy);
+
+    /* Shrink allocation */
+    size_t* final = (size_t*)realloc(block_sizes, nblocks * sizeof(size_t));
+    *out_sizes = final ? final : block_sizes;
+    *out_count = nblocks;
+    return 0;
+
+    #undef ENTROPY_THRESHOLD
+    #undef HIGH_ENTROPY_MAX_BLOCK
+}

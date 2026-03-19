@@ -254,12 +254,46 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
     /* ── Define Block layout ── */
     uint32_t num_blocks = 1;
+    size_t* orig_block_sizes = NULL;  /* Per-block original sizes (adaptive) */
+    int adaptive_blocks = 0;
+
     if (src_size > 0 && strategy != MCX_STRATEGY_STORE && strategy != MCX_STRATEGY_FAST) {
-        num_blocks = (uint32_t)((src_size + MCX_MAX_BLOCK_SIZE - 1) / MCX_MAX_BLOCK_SIZE);
+        /* Try adaptive block sizing for BWT strategies on multi-block data */
+        if (src_size > MCX_MAX_BLOCK_SIZE &&
+            (strategy == MCX_STRATEGY_DEFAULT || strategy == MCX_STRATEGY_BEST ||
+             strategy == MCX_STRATEGY_STRIDE)) {
+            uint32_t adaptive_count = 0;
+            size_t* adaptive_sizes = NULL;
+            if (mcx_adaptive_blocks(in, src_size, &adaptive_sizes, &adaptive_count) == 0 &&
+                adaptive_count > 0) {
+                /* Check if adaptive gave different sizing than uniform */
+                uint32_t uniform_count = (uint32_t)((src_size + MCX_MAX_BLOCK_SIZE - 1) / MCX_MAX_BLOCK_SIZE);
+                if (adaptive_count != uniform_count) {
+                    num_blocks = adaptive_count;
+                    orig_block_sizes = adaptive_sizes;
+                    adaptive_blocks = 1;
+                    header.flags |= MCX_FLAG_ADAPTIVE_BLOCKS;
+                    /* Re-write header with updated flags */
+                    write_frame_header(out, &header);
+                } else {
+                    free(adaptive_sizes);
+                    num_blocks = uniform_count;
+                }
+            } else {
+                if (adaptive_sizes) free(adaptive_sizes);
+                num_blocks = (uint32_t)((src_size + MCX_MAX_BLOCK_SIZE - 1) / MCX_MAX_BLOCK_SIZE);
+            }
+        } else {
+            num_blocks = (uint32_t)((src_size + MCX_MAX_BLOCK_SIZE - 1) / MCX_MAX_BLOCK_SIZE);
+        }
     }
     size_t block_sizes_offset = 0;
+
     if (strategy != MCX_STRATEGY_STORE && strategy != MCX_STRATEGY_FAST) {
-        if (offset + 4 + num_blocks * 4 > dst_cap) {
+        size_t header_need = 4 + num_blocks * 4;
+        if (adaptive_blocks) header_need += num_blocks * 4; /* original sizes too */
+        if (offset + header_need > dst_cap) {
+            if (orig_block_sizes) free(orig_block_sizes);
             return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
         }
         
@@ -270,6 +304,15 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         /* Reserve space for the array of N compressed block sizes */
         block_sizes_offset = offset;
         offset += num_blocks * 4;
+
+        /* For adaptive blocks: write original block sizes */
+        if (adaptive_blocks) {
+            for (uint32_t b = 0; b < num_blocks; b++) {
+                uint32_t obs32 = (uint32_t)orig_block_sizes[b];
+                memcpy(out + offset, &obs32, 4);
+                offset += 4;
+            }
+        }
     }
 
     /* ── Stage 1 & 3: Compress based on strategy ── */
@@ -309,14 +352,41 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             omp_set_nested(0); /* Prevent inner CM-rANS OMP from corrupting heap */
         }
 #endif
+        /* Pre-compute cumulative source offsets for adaptive blocks */
+        size_t* block_src_offsets = NULL;
+        size_t* block_src_sizes_arr = NULL;
+        if (adaptive_blocks && orig_block_sizes) {
+            block_src_offsets = (size_t*)malloc(num_blocks * sizeof(size_t));
+            block_src_sizes_arr = (size_t*)malloc(num_blocks * sizeof(size_t));
+            if (block_src_offsets && block_src_sizes_arr) {
+                size_t cum = 0;
+                for (uint32_t i = 0; i < num_blocks; i++) {
+                    block_src_offsets[i] = cum;
+                    block_src_sizes_arr[i] = orig_block_sizes[i];
+                    cum += orig_block_sizes[i];
+                }
+            } else {
+                free(block_src_offsets); free(block_src_sizes_arr);
+                free(block_buffers); free(block_sizes);
+                if (orig_block_sizes) free(orig_block_sizes);
+                return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+            }
+        }
+
         #pragma omp parallel for schedule(dynamic)
         for (b = 0; b < (int32_t)num_blocks; b++) {
             if (omp_err) continue;
             
-            size_t src_offset = (size_t)b * MCX_MAX_BLOCK_SIZE;
-            size_t block_src_size = src_size - src_offset;
-            if (block_src_size > MCX_MAX_BLOCK_SIZE) {
-                block_src_size = MCX_MAX_BLOCK_SIZE;
+            size_t src_offset, block_src_size;
+            if (adaptive_blocks && block_src_offsets) {
+                src_offset = block_src_offsets[b];
+                block_src_size = block_src_sizes_arr[b];
+            } else {
+                src_offset = (size_t)b * MCX_MAX_BLOCK_SIZE;
+                block_src_size = src_size - src_offset;
+                if (block_src_size > MCX_MAX_BLOCK_SIZE) {
+                    block_src_size = MCX_MAX_BLOCK_SIZE;
+                }
             }
 
             if (strategy == MCX_STRATEGY_LZ_FAST || strategy == MCX_STRATEGY_LZ_HC) {
@@ -868,6 +938,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 if (block_buffers[b]) free(block_buffers[b]);
             }
             free(block_buffers); free(block_sizes);
+            if (block_src_offsets) free(block_src_offsets);
+            if (block_src_sizes_arr) free(block_src_sizes_arr);
+            if (orig_block_sizes) free(orig_block_sizes);
             return MCX_ERROR(MCX_ERR_GENERIC);
         }
 
@@ -889,6 +962,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
         }
         free(block_buffers);
         free(block_sizes);
+        if (block_src_offsets) free(block_src_offsets);
+        if (block_src_sizes_arr) free(block_src_sizes_arr);
+        if (orig_block_sizes) free(orig_block_sizes);
     }
 
     /* ── Multi-trial for L20+: try alternative strategies, keep smallest ── */
@@ -1053,10 +1129,39 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
         }
         offset += num_blocks * 4;
 
+        /* Read original block sizes if adaptive blocks flag is set */
+        size_t* orig_block_sizes_dec = NULL;
+        size_t* dst_block_offsets = NULL;
+        if (header.flags & MCX_FLAG_ADAPTIVE_BLOCKS) {
+            if (offset + num_blocks * 4 > src_size) {
+                free(block_sizes);
+                return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+            }
+            orig_block_sizes_dec = (size_t*)malloc(num_blocks * sizeof(size_t));
+            dst_block_offsets = (size_t*)malloc(num_blocks * sizeof(size_t));
+            if (!orig_block_sizes_dec || !dst_block_offsets) {
+                free(block_sizes);
+                if (orig_block_sizes_dec) free(orig_block_sizes_dec);
+                if (dst_block_offsets) free(dst_block_offsets);
+                return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+            }
+            size_t cum_dst = 0;
+            for (uint32_t b = 0; b < num_blocks; b++) {
+                uint32_t obs32;
+                memcpy(&obs32, in + offset + (b * 4), 4);
+                orig_block_sizes_dec[b] = (size_t)obs32;
+                dst_block_offsets[b] = cum_dst;
+                cum_dst += orig_block_sizes_dec[b];
+            }
+            offset += num_blocks * 4;
+        }
+
         /* Calculate absolute offset boundaries to decouple thread reads */
         size_t* block_offsets = (size_t*)malloc(num_blocks * sizeof(size_t));
         if (!block_offsets) {
             free(block_sizes);
+            if (orig_block_sizes_dec) free(orig_block_sizes_dec);
+            if (dst_block_offsets) free(dst_block_offsets);
             return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
         }
         
@@ -1068,6 +1173,8 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
         
         if (current_offset > src_size) {
             free(block_sizes); free(block_offsets);
+            if (orig_block_sizes_dec) free(orig_block_sizes_dec);
+            if (dst_block_offsets) free(dst_block_offsets);
             return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
         }
 
@@ -1078,10 +1185,16 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
         for (b = 0; b < (int32_t)num_blocks; b++) {
             if (omp_err) continue;
 
-            size_t dst_offset = (size_t)b * MCX_MAX_BLOCK_SIZE;
-            size_t block_dst_size = orig_size - dst_offset;
-            if (block_dst_size > MCX_MAX_BLOCK_SIZE) {
-                block_dst_size = MCX_MAX_BLOCK_SIZE;
+            size_t dst_offset, block_dst_size;
+            if (orig_block_sizes_dec) {
+                dst_offset = dst_block_offsets[b];
+                block_dst_size = orig_block_sizes_dec[b];
+            } else {
+                dst_offset = (size_t)b * MCX_MAX_BLOCK_SIZE;
+                block_dst_size = orig_size - dst_offset;
+                if (block_dst_size > MCX_MAX_BLOCK_SIZE) {
+                    block_dst_size = MCX_MAX_BLOCK_SIZE;
+                }
             }
 
             size_t chunk_src_offset = block_offsets[b];
@@ -1478,6 +1591,8 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
 
         free(block_sizes);
         free(block_offsets);
+        if (orig_block_sizes_dec) free(orig_block_sizes_dec);
+        if (dst_block_offsets) free(dst_block_offsets);
 
         if (omp_err) {
             return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
