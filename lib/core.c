@@ -24,6 +24,20 @@
 #include "entropy/adaptive_ac.h"
 #include "preprocess/preprocess.h"
 #include "lz/lzrc.h"
+#include <time.h>
+
+/* Decompress profiling: set MCX_PROFILE=1 to enable stage timing */
+static int mcx_profile_enabled = -1; /* -1 = not checked yet */
+static inline int mcx_profile(void) {
+    if (mcx_profile_enabled < 0) {
+        const char* env = getenv("MCX_PROFILE");
+        mcx_profile_enabled = (env && env[0] == '1') ? 1 : 0;
+    }
+    return mcx_profile_enabled;
+}
+static inline double mcx_time_ms(struct timespec* start, struct timespec* end) {
+    return (end->tv_sec - start->tv_sec) * 1000.0 + (end->tv_nsec - start->tv_nsec) / 1000000.0;
+}
 
 /* RLE2 (RUNA/RUNB) */
 extern size_t mcx_rle2_encode(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
@@ -1311,6 +1325,10 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 continue;
             }
 
+            struct timespec _prof_t0, _prof_t1, _prof_t2, _prof_t3, _prof_t4;
+            int _do_prof = mcx_profile();
+            if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t0);
+
             size_t dec_res;
             if (genome.entropy_coder == 2) {
                 dec_res = mcx_cmrans_decompress(
@@ -1328,6 +1346,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 dec_res = mcx_huffman_decompress(
                     buf1, rle_size + 1024, in + chunk_src_offset + payload_offset, chunk_comp_size - payload_offset);
             }
+            if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t1);
 
             if (MCX_IS_ERROR(dec_res)) {
                 #pragma omp critical
@@ -1349,6 +1368,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 } else {
                     rle_dec = mcx_rle_decode(buf2, bwt_target_size + 1024, stage_out, stage_size);
                 }
+                if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t2);
                 if (MCX_IS_ERROR(rle_dec) || rle_dec == 0) {
                     #pragma omp critical
                     { omp_err = 1; }
@@ -1356,6 +1376,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                     continue;
                 }
                 mcx_mtf_decode(buf2, rle_dec);
+                if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t3);
                 stage_out = buf2;
                 stage_size = rle_dec;
             } else if (genome.cm_learning >= 6 && genome.entropy_coder != 2) {
@@ -1383,11 +1404,31 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 uint8_t* bwt_dst = ((strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE) && babel_dec_buf)
                                  ? babel_dec_buf : (out + dst_offset);
                 size_t bwt_dec = mcx_bwt_inverse(bwt_dst, primary_idx, stage_out, stage_size);
+                if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t4);
                 if (MCX_IS_ERROR(bwt_dec) || bwt_dec != bwt_target_size) {
                     #pragma omp critical
                     { omp_err = 1; }
                     free(buf1); free(buf2); if (babel_dec_buf) free(babel_dec_buf);
                     continue;
+                }
+                if (_do_prof) {
+                    fprintf(stderr, "[PROFILE] Block %d (%zu bytes):\n", b,
+                            bwt_target_size);
+                    fprintf(stderr, "  rANS decode:   %7.2f ms\n",
+                            mcx_time_ms(&_prof_t0, &_prof_t1));
+                    if (genome.use_mtf_rle) {
+                        fprintf(stderr, "  RLE2 decode:   %7.2f ms\n",
+                                mcx_time_ms(&_prof_t1, &_prof_t2));
+                        fprintf(stderr, "  MTF decode:    %7.2f ms\n",
+                                mcx_time_ms(&_prof_t2, &_prof_t3));
+                        fprintf(stderr, "  BWT inverse:   %7.2f ms\n",
+                                mcx_time_ms(&_prof_t3, &_prof_t4));
+                    } else {
+                        fprintf(stderr, "  BWT inverse:   %7.2f ms\n",
+                                mcx_time_ms(&_prof_t1, &_prof_t4));
+                    }
+                    fprintf(stderr, "  TOTAL:         %7.2f ms\n",
+                            mcx_time_ms(&_prof_t0, &_prof_t4));
                 }
                 stage_out = bwt_dst;
             } else {
