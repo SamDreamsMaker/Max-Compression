@@ -25,6 +25,7 @@ lz/hc_match.c
     babel/babel_stride.c
     preprocess/rle2.c
 preprocess/e8e9.c
+preprocess/lzp.c
     # babel/babel_dict.c  # Moved to experimental/
     entropy/adaptive_ac.c
     entropy/multi_rans.c

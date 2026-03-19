@@ -1079,6 +1079,56 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     }
 skip_e8e9:
 
+    /* ── LZP trial (L12+, mixed code/text with repeated blocks) ──
+     * LZP (LZ-Prediction) removes long repeated sequences before BWT.
+     * Particularly effective on files with duplicated sections (code,
+     * structured data, concatenated text). Skip on high-entropy or tiny files.
+     *
+     * When LZP wins, output is a wrapper frame:
+     *   [20B outer header (MCX_FLAG_LZP, original_size=final_size)]
+     *   [8B lzp_intermediate_size]
+     *   [complete inner MCX frame (decompresses to lzp_intermediate_size bytes)]
+     * Decompress: inner decompress → LZP decode → final output. */
+    if (level >= 12 && level != 21 &&
+        strategy != MCX_STRATEGY_STORE &&
+        analysis.type != MCX_DTYPE_HIGH_ENTROPY &&
+        src_size >= 1024 && src_size <= (64 << 20)) {
+        size_t lzp_cap = src_size + 256;
+        uint8_t* lzp_buf = (uint8_t*)malloc(lzp_cap);
+        if (lzp_buf) {
+            size_t lzp_size = mcx_lzp_encode(lzp_buf, lzp_cap, in, src_size);
+            /* Only try if LZP reduced size by at least 2% */
+            if (lzp_size > 0 && lzp_size < src_size * 98 / 100) {
+                size_t inner_cap = dst_cap > 28 ? dst_cap - 28 : 0;
+                uint8_t* inner_buf = (uint8_t*)malloc(inner_cap);
+                if (inner_buf && inner_cap > 0) {
+                    size_t inner_size = mcx_compress(inner_buf, inner_cap,
+                                                     lzp_buf, lzp_size, 21);
+                    if (!mcx_is_error(inner_size) && 28 + inner_size < offset) {
+                        /* Build LZP wrapper frame */
+                        mcx_frame_header_t lzp_header;
+                        memset(&lzp_header, 0, sizeof(lzp_header));
+                        lzp_header.magic = MCX_MAGIC;
+                        lzp_header.version = MCX_FRAME_VERSION;
+                        lzp_header.flags = MCX_FLAG_HAS_ORIG_SIZE | MCX_FLAG_LZP;
+                        lzp_header.level = (uint8_t)level;
+                        lzp_header.strategy = (uint8_t)strategy;
+                        lzp_header.original_size = (uint64_t)src_size;
+                        lzp_header.header_checksum = 0;
+                        write_frame_header(out, &lzp_header);
+                        
+                        uint64_t lzp_sz64 = (uint64_t)lzp_size;
+                        memcpy(out + MCX_FRAME_HEADER_SIZE, &lzp_sz64, 8);
+                        memcpy(out + MCX_FRAME_HEADER_SIZE + 8, inner_buf, inner_size);
+                        offset = MCX_FRAME_HEADER_SIZE + 8 + inner_size;
+                    }
+                    free(inner_buf);
+                }
+            }
+            free(lzp_buf);
+        }
+    }
+
     /* ── Sorted integer delta trial (L10+, numeric/binary data) ── */
     if (level >= 10 && level != 21 && /* 21 = E8/E9 recursive level */
         (analysis.type == MCX_DTYPE_BINARY ||
@@ -1145,6 +1195,30 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
 
     offset = MCX_FRAME_HEADER_SIZE;
     strategy = (mcx_strategy_t)header.strategy;
+
+    /* ── LZP wrapper: decompress inner frame, then LZP decode ── */
+    if (header.flags & MCX_FLAG_LZP) {
+        if (offset + 8 > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        uint64_t lzp_sz64;
+        memcpy(&lzp_sz64, in + offset, 8);
+        size_t lzp_size = (size_t)lzp_sz64;
+        offset += 8;
+        
+        /* Decompress inner MCX frame to get LZP-encoded data */
+        uint8_t* lzp_buf = (uint8_t*)malloc(lzp_size);
+        if (!lzp_buf) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+        
+        size_t dec = mcx_decompress(lzp_buf, lzp_size, in + offset, src_size - offset);
+        if (MCX_IS_ERROR(dec)) { free(lzp_buf); return dec; }
+        
+        /* LZP decode to final output */
+        size_t final_size = mcx_lzp_decode(out, dst_cap, lzp_buf, dec);
+        free(lzp_buf);
+        
+        if (final_size == 0 || final_size != orig_size)
+            return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        return final_size;
+    }
 
     if (strategy == MCX_STRATEGY_STORE) {
         /* Raw copy */

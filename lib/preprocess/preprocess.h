@@ -78,6 +78,36 @@ size_t mcx_rle_encode(uint8_t* dst, size_t dst_cap,
 size_t mcx_rle_decode(uint8_t* dst, size_t dst_cap,
                       const uint8_t* src, size_t src_size);
 
+/* ─── LZP (LZ-Prediction) Preprocessing ──────────────────────────────── */
+
+/**
+ * Apply LZP preprocessing: detect and remove repeated blocks using
+ * context-based prediction (like LZ77 but offset-free).
+ *
+ * Best used before BWT on mixed code/text files with repeated sections.
+ * The decoder rebuilds the same hash table from decoded output.
+ *
+ * @param dst       Output buffer
+ * @param dst_cap   Output buffer capacity
+ * @param src       Input data
+ * @param src_size  Input data size
+ * @return          Compressed size, or 0 if LZP didn't reduce size
+ */
+size_t mcx_lzp_encode(uint8_t* dst, size_t dst_cap,
+                      const uint8_t* src, size_t src_size);
+
+/**
+ * Decode LZP preprocessed data.
+ *
+ * @param dst       Output buffer
+ * @param dst_cap   Output buffer capacity
+ * @param src       LZP-encoded data
+ * @param src_size  Encoded data size
+ * @return          Decoded size, or 0 on error
+ */
+size_t mcx_lzp_decode(uint8_t* dst, size_t dst_cap,
+                      const uint8_t* src, size_t src_size);
+
 /* ─── Sorted Integer Delta ───────────────────────────────────────────── */
 
 /**
