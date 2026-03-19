@@ -2,7 +2,7 @@
 
 All notable changes to MaxCompression are documented in this file.
 
-## [Unreleased] — v2.1.1
+## [2.1.1] — 2026-03-19
 
 ### Added
 - **`mcx test` self-test command** — verifies all compression levels in one command.
