@@ -1,0 +1,39 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Source code — always LF
+*.c text eol=lf
+*.h text eol=lf
+*.py text eol=lf
+*.sh text eol=lf linguist-language=Shell
+*.fish text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Shell completions
+completions/* text eol=lf
+
+# Binary files — do not diff or normalize
+*.mcx binary
+*.o binary
+*.a binary
+*.so binary
+*.dll binary
+*.exe binary
+*.png binary
+*.jpg binary
+*.gif binary
+
+# Man pages
+*.1 text eol=lf
+
+# Windows-specific
+*.bat text eol=crlf
+*.cmd text eol=crlf
