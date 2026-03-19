@@ -60,6 +60,31 @@
 | sum | 37 KB | 14 KB | 2.60× | 14 KB | 2.64× | 11 KB | **3.33×** |
 | xargs.1 | 4 KB | 2 KB | 1.68× | 2 KB | 1.84× | 2 KB | **2.14×** |
 
+## Decompression Speed — Silesia Corpus
+
+| File | Size | L12 Ratio | L12 Decomp | L20 Ratio | L20 Decomp |
+|------|------|-----------|------------|-----------|------------|
+| dickens | 9.7 MB | 4.07× | 4.7 MB/s | 4.07× | 4.7 MB/s |
+| mozilla | 48.8 MB | 2.93× | 5.0 MB/s | 3.22× | 16.6 MB/s |
+| mr | 9.5 MB | 4.28× | 5.5 MB/s | 4.28× | 5.5 MB/s |
+| nci | 32.0 MB | 25.65× | 5.1 MB/s | 25.65× | 5.1 MB/s |
+| ooffice | 5.9 MB | 2.18× | 5.3 MB/s | 2.56× | 12.7 MB/s |
+| osdb | 9.6 MB | 4.04× | 5.3 MB/s | 4.04× | 5.3 MB/s |
+| reymont | 6.3 MB | 5.93× | 5.6 MB/s | 5.93× | 5.6 MB/s |
+| samba | 20.6 MB | 5.03× | 5.9 MB/s | 5.05× | 26.0 MB/s |
+| sao | 6.9 MB | 1.47× | 4.7 MB/s | 1.48× | 4.5 MB/s |
+| webster | 39.5 MB | 5.81× | 4.5 MB/s | 5.81× | 4.5 MB/s |
+| xml | 5.1 MB | 12.86× | 6.2 MB/s | 12.86× | 6.3 MB/s |
+| x-ray | 8.1 MB | 2.15× | 5.1 MB/s | 2.15× | 5.1 MB/s |
+| **TOTAL** | **202.1 MB** | **4.17×** | **5.0 MB/s** | **4.35×** | **6.8 MB/s** |
+
+**Notes:**
+- Best of 3 runs, single-threaded, sd-132105 (Linux x86_64)
+- L20 is faster on mozilla/ooffice/samba because these use LZRC (range coder),
+  which decodes faster than BWT+rANS for binary data
+- BWT-compressed files (text) decompress at ~4.5–6 MB/s consistently
+- LZRC-compressed files decompress at ~12–26 MB/s
+
 ## LZRC v2.0 Engine — Level 26
 
 Direct LZRC (LZ + Range Coder, no BWT fallback):
