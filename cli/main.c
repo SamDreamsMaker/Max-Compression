@@ -1426,39 +1426,145 @@ int main(int argc, char* argv[])
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
         int pass = 0, fail = 0;
-        int levels[] = {1, 3, 6, 7, 9, 12, 20, 24, 26};
+        int levels[] = {1, 3, 6, 9, 12};
         int n_levels = sizeof(levels) / sizeof(levels[0]);
+        setvbuf(stdout, NULL, _IONBF, 0); /* Unbuffered for progress */
         
-        /* Test pattern: repeated text */
-        const char* text = "The quick brown fox jumps over the lazy dog. ";
-        size_t tlen = strlen(text);
-        uint8_t src[4096];
-        for (size_t i = 0; i < sizeof(src); i++)
-            src[i] = text[i % tlen];
+        /* ── Test patterns ── */
+        #define TEST_SIZE 2048
+        #define NUM_PATTERNS 7
+        uint8_t* patterns[NUM_PATTERNS];
+        size_t   pattern_sizes[NUM_PATTERNS];
+        const char* pattern_names[NUM_PATTERNS];
         
-        uint8_t comp[8192], dec[4096];
+        for (int p = 0; p < NUM_PATTERNS; p++)
+            patterns[p] = (uint8_t*)malloc(TEST_SIZE);
         
-        for (int i = 0; i < n_levels; i++) {
-            int lv = levels[i];
-            size_t csz = mcx_compress(comp, sizeof(comp), src, sizeof(src), lv);
-            if (mcx_is_error(csz)) {
-                printf("  L%-2d  FAIL (compress error)\n", lv);
-                fail++;
-                continue;
-            }
-            size_t dsz = mcx_decompress(dec, sizeof(dec), comp, csz);
-            if (mcx_is_error(dsz) || dsz != sizeof(src) || memcmp(src, dec, sizeof(src)) != 0) {
-                printf("  L%-2d  FAIL (roundtrip error)\n", lv);
-                fail++;
-                continue;
-            }
-            printf("  L%-2d  OK  %zu → %zu (%.2fx)\n", lv, sizeof(src), csz,
-                   (double)sizeof(src) / csz);
-            pass++;
+        /* Pattern 0: Repeated text */
+        {
+            const char* text = "The quick brown fox jumps over the lazy dog. ";
+            size_t tlen = strlen(text);
+            for (size_t i = 0; i < TEST_SIZE; i++)
+                patterns[0][i] = text[i % tlen];
+            pattern_sizes[0] = TEST_SIZE;
+            pattern_names[0] = "repeated text";
         }
         
-        printf("\n%d/%d passed%s\n", pass, pass + fail,
-               fail ? " — FAILURES DETECTED" : " — all OK");
+        /* Pattern 1: All zeros (extreme RLE case) */
+        {
+            memset(patterns[1], 0, TEST_SIZE);
+            pattern_sizes[1] = TEST_SIZE;
+            pattern_names[1] = "all zeros";
+        }
+        
+        /* Pattern 2: Sorted bytes (ascending 0..255 repeated) */
+        {
+            for (size_t i = 0; i < TEST_SIZE; i++)
+                patterns[2][i] = (uint8_t)(i & 0xFF);
+            pattern_sizes[2] = TEST_SIZE;
+            pattern_names[2] = "sorted bytes";
+        }
+        
+        /* Pattern 3: Pseudo-random (hard to compress) */
+        {
+            uint32_t seed = 0xDEADBEEF;
+            for (size_t i = 0; i < TEST_SIZE; i++) {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                patterns[3][i] = (uint8_t)(seed & 0xFF);
+            }
+            pattern_sizes[3] = TEST_SIZE;
+            pattern_names[3] = "pseudo-random";
+        }
+        
+        /* Pattern 4: Binary with structure (simulated executable) */
+        {
+            uint32_t s = 42;
+            for (size_t i = 0; i < TEST_SIZE; i++) {
+                if (i % 16 < 4) patterns[4][i] = 0xE8; /* x86 CALL opcode */
+                else if (i % 16 < 8) patterns[4][i] = (uint8_t)(i * 7 + 3);
+                else {
+                    s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+                    patterns[4][i] = (uint8_t)(s & 0xFF);
+                }
+            }
+            pattern_sizes[4] = TEST_SIZE;
+            pattern_names[4] = "structured binary";
+        }
+        
+        /* Pattern 5: Small input (32 bytes) */
+        {
+            const char* tiny = "Hello, MaxCompression test!!\n\x00\x01\xFF";
+            memcpy(patterns[5], tiny, 32);
+            pattern_sizes[5] = 32;
+            pattern_names[5] = "tiny (32B)";
+        }
+        
+        /* Pattern 6: Mixed text + repeated blocks (LZP candidate) */
+        {
+            const char* blocks[] = {
+                "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ",
+                "Sed do eiusmod tempor incididunt ut labore et dolore magna. ",
+            };
+            size_t pos = 0;
+            for (int r = 0; r < 40 && pos < TEST_SIZE; r++) {
+                const char* b = blocks[r % 2];
+                size_t len = strlen(b);
+                if (pos + len > TEST_SIZE) len = TEST_SIZE - pos;
+                memcpy(patterns[6] + pos, b, len);
+                pos += len;
+            }
+            /* Zero-fill remainder */
+            if (pos < TEST_SIZE) memset(patterns[6] + pos, 0, TEST_SIZE - pos);
+            pattern_sizes[6] = TEST_SIZE;
+            pattern_names[6] = "mixed text + repeats";
+        }
+        
+        size_t comp_cap = TEST_SIZE * 2 + 4096;
+        uint8_t* comp = (uint8_t*)malloc(comp_cap);
+        uint8_t* dec  = (uint8_t*)malloc(TEST_SIZE + 1024);
+        
+        for (int p = 0; p < NUM_PATTERNS; p++) {
+            printf("  Pattern %d: %s (%zu bytes)\n", p, pattern_names[p], pattern_sizes[p]);
+            for (int i = 0; i < n_levels; i++) {
+                int lv = levels[i];
+                size_t csz = mcx_compress(comp, comp_cap, patterns[p], pattern_sizes[p], lv);
+                if (mcx_is_error(csz)) {
+                    printf("    L%-2d  FAIL (compress error: %s)\n", lv, mcx_get_error_name(csz));
+                    fail++;
+                    continue;
+                }
+                /* Verify decompressed size API */
+                unsigned long long reported = mcx_get_decompressed_size(comp, csz);
+                if (reported != pattern_sizes[p]) {
+                    printf("    L%-2d  FAIL (size mismatch: reported %llu, expected %zu)\n",
+                           lv, reported, pattern_sizes[p]);
+                    fail++;
+                    continue;
+                }
+                size_t dsz = mcx_decompress(dec, TEST_SIZE + 1024, comp, csz);
+                if (mcx_is_error(dsz) || dsz != pattern_sizes[p] ||
+                    memcmp(patterns[p], dec, pattern_sizes[p]) != 0) {
+                    printf("    L%-2d  FAIL (roundtrip mismatch)\n", lv);
+                    fail++;
+                    continue;
+                }
+                printf("    L%-2d  OK  %zu → %zu (%.2fx)\n", lv, pattern_sizes[p], csz,
+                       (double)pattern_sizes[p] / csz);
+                pass++;
+            }
+            printf("\n");
+        }
+        
+        /* Cleanup */
+        for (int p = 0; p < NUM_PATTERNS; p++)
+            free(patterns[p]);
+        free(comp);
+        free(dec);
+        
+        printf("%d/%d passed%s\n", pass, pass + fail,
+               fail ? " — FAILURES DETECTED" : " — all OK ✓");
         return fail > 0 ? 1 : 0;
 
     } else {

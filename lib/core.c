@@ -991,7 +991,8 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     }
 
     /* ── Multi-trial for L20+: try alternative strategies, keep smallest ── */
-    if (level >= 20 && level <= 22 && strategy != MCX_STRATEGY_STORE 
+    if (level >= 20 && level <= 22 && level != 21
+        && strategy != MCX_STRATEGY_STORE 
         && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST
         && strategy != MCX_STRATEGY_LZ24) {
         uint8_t* alt_buf = (uint8_t*)malloc(dst_cap);
@@ -1089,10 +1090,10 @@ skip_e8e9:
      *   [8B lzp_intermediate_size]
      *   [complete inner MCX frame (decompresses to lzp_intermediate_size bytes)]
      * Decompress: inner decompress → LZP decode → final output. */
-    if (level >= 12 && level != 21 &&
+    if (level >= 20 && level != 21 &&
         strategy != MCX_STRATEGY_STORE &&
         analysis.type != MCX_DTYPE_HIGH_ENTROPY &&
-        src_size >= 1024 && src_size <= (64 << 20)) {
+        src_size >= 4096 && src_size <= (64 << 20)) {
         size_t lzp_cap = src_size + 256;
         uint8_t* lzp_buf = (uint8_t*)malloc(lzp_cap);
         if (lzp_buf) {
