@@ -806,6 +806,42 @@ int main(int argc, char* argv[])
         free(dec);
         return 0;
 
+    } else if (strcmp(argv[1], "diff") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "Usage: mcx diff <file1.mcx> <file2.mcx>\n");
+            return 1;
+        }
+        size_t s1, s2;
+        uint8_t* f1 = read_file(argv[2], &s1);
+        uint8_t* f2 = read_file(argv[3], &s2);
+        if (!f1 || !f2) { free(f1); free(f2); return 1; }
+        mcx_frame_info i1, i2;
+        size_t r1 = mcx_get_frame_info(&i1, f1, s1);
+        size_t r2 = mcx_get_frame_info(&i2, f2, s2);
+        if (mcx_is_error(r1) || mcx_is_error(r2)) {
+            fprintf(stderr, "Error: one or both files are not valid MCX files\n");
+            free(f1); free(f2); return 1;
+        }
+        printf("%-25s %s\n%-25s %s\n\n", "File A:", argv[2], "File B:", argv[3]);
+        printf("%-20s %12s %12s %10s\n", "", "File A", "File B", "Diff");
+        printf("────────────────────────────────────────────────────────\n");
+        printf("%-20s %12zu %12zu %+9.1f%%\n", "Compressed", s1, s2,
+               100.0 * ((double)s2 / s1 - 1.0));
+        if (i1.original_size > 0 && i2.original_size > 0) {
+            printf("%-20s %12llu %12llu\n", "Original",
+                   i1.original_size, i2.original_size);
+            printf("%-20s %11.2fx %11.2fx\n", "Ratio",
+                   (double)i1.original_size / s1, (double)i2.original_size / s2);
+        }
+        printf("%-20s %12u %12u\n", "Level", i1.level, i2.level);
+        printf("%-20s %12s %12s\n", "Strategy",
+               strategy_name(i1.strategy), strategy_name(i2.strategy));
+        long long diff = (long long)s2 - (long long)s1;
+        printf("\nDelta: %+lld bytes (%s)\n", diff,
+               diff < 0 ? "B is smaller ✓" : diff > 0 ? "A is smaller ✓" : "identical size");
+        free(f1); free(f2);
+        return 0;
+
     } else if (strcmp(argv[1], "bench") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
