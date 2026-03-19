@@ -73,6 +73,13 @@ typedef struct {
     uint16_t dist_spec[6][16]; /* extra bits for slots with 1-6 context-coded bits */
     uint16_t dist_align[LZRC_ALIGN_SIZE];
     
+    /* Rep match length model (separate from new-match lengths) */
+    uint16_t rep_len_choice;
+    uint16_t rep_len_short[8];
+    uint16_t rep_len_choice2;
+    uint16_t rep_len_medium[8];
+    uint16_t rep_len_extra[256];
+
     /* Rep match models */
     uint16_t is_rep;         /* 1 = rep match, 0 = new match */
     uint16_t rep_idx[4];     /* Which rep distance (binary tree: 0 vs 1-3, 1 vs 2-3, 2 vs 3) */
@@ -90,6 +97,11 @@ static void lzrc_model_init(LZRCModel* m) {
     rc_prob_init(m->dist_tree, LZRC_DIST_TREE);
     rc_prob_init(&m->dist_spec[0][0], 6 * 16);
     rc_prob_init(m->dist_align, LZRC_ALIGN_SIZE);
+    rc_prob_init(&m->rep_len_choice, 1);
+    rc_prob_init(m->rep_len_short, 8);
+    rc_prob_init(&m->rep_len_choice2, 1);
+    rc_prob_init(m->rep_len_medium, 8);
+    rc_prob_init(m->rep_len_extra, 256);
     rc_prob_init(&m->is_rep, 1);
     rc_prob_init(m->rep_idx, 4);
 }
@@ -98,28 +110,40 @@ static void lzrc_model_init(LZRCModel* m) {
  * Length coding
  * ============================================================ */
 
-static void lzrc_enc_length(RCEncoder* e, LZRCModel* m, uint32_t len) {
+static void lzrc_enc_length_raw(RCEncoder* e,
+    uint16_t* choice, uint16_t* lshort, uint16_t* choice2,
+    uint16_t* lmed, uint16_t* lextra, uint32_t len) {
     len -= LZRC_MIN_MATCH;
     if (len < 8) {
-        rc_enc_bit(e, &m->len_choice, 0);
-        rc_enc_bit(e, &m->len_short[0], (len >> 2) & 1);
-        rc_enc_bit(e, &m->len_short[1 + ((len >> 2) & 1)], (len >> 1) & 1);
+        rc_enc_bit(e, choice, 0);
+        rc_enc_bit(e, &lshort[0], (len >> 2) & 1);
+        rc_enc_bit(e, &lshort[1 + ((len >> 2) & 1)], (len >> 1) & 1);
         int idx = 3 + ((len >> 1) & 3);
-        rc_enc_bit(e, &m->len_short[idx], len & 1);
+        rc_enc_bit(e, &lshort[idx], len & 1);
     } else if (len < 16) {
-        rc_enc_bit(e, &m->len_choice, 1);
-        rc_enc_bit(e, &m->len_choice2, 0);
+        rc_enc_bit(e, choice, 1);
+        rc_enc_bit(e, choice2, 0);
         uint32_t rem = len - 8;
-        rc_enc_bit(e, &m->len_medium[0], (rem >> 2) & 1);
-        rc_enc_bit(e, &m->len_medium[1 + ((rem >> 2) & 1)], (rem >> 1) & 1);
+        rc_enc_bit(e, &lmed[0], (rem >> 2) & 1);
+        rc_enc_bit(e, &lmed[1 + ((rem >> 2) & 1)], (rem >> 1) & 1);
         int idx = 3 + ((rem >> 1) & 3);
-        rc_enc_bit(e, &m->len_medium[idx], rem & 1);
+        rc_enc_bit(e, &lmed[idx], rem & 1);
     } else {
-        rc_enc_bit(e, &m->len_choice, 1);
-        rc_enc_bit(e, &m->len_choice2, 1);
+        rc_enc_bit(e, choice, 1);
+        rc_enc_bit(e, choice2, 1);
         uint32_t rem = (len - 16 > 255) ? 255 : len - 16;
-        rc_enc_byte(e, m->len_extra, (uint8_t)rem);
+        rc_enc_byte(e, lextra, (uint8_t)rem);
     }
+}
+
+static void lzrc_enc_length(RCEncoder* e, LZRCModel* m, uint32_t len) {
+    lzrc_enc_length_raw(e, &m->len_choice, m->len_short, &m->len_choice2,
+                        m->len_medium, m->len_extra, len);
+}
+
+static void lzrc_enc_rep_length(RCEncoder* e, LZRCModel* m, uint32_t len) {
+    lzrc_enc_length_raw(e, &m->rep_len_choice, m->rep_len_short, &m->rep_len_choice2,
+                        m->rep_len_medium, m->rep_len_extra, len);
 }
 
 /* Length-to-distance context: 0=len4, 1=len5-6, 2=len7-10, 3=len11+ */
@@ -165,20 +189,32 @@ static void rep_update(uint32_t rep[4], uint32_t dist, int rep_idx) {
     }
 }
 
-static uint32_t lzrc_dec_length(RCDecoder* d, LZRCModel* m) {
-    if (!rc_dec_bit(d, &m->len_choice)) {
-        int bit0 = rc_dec_bit(d, &m->len_short[0]);
-        int bit1 = rc_dec_bit(d, &m->len_short[1 + bit0]);
-        int bit2 = rc_dec_bit(d, &m->len_short[3 + (bit0 << 1 | bit1)]);
+static uint32_t lzrc_dec_length_raw(RCDecoder* d,
+    uint16_t* choice, uint16_t* lshort, uint16_t* choice2,
+    uint16_t* lmed, uint16_t* lextra) {
+    if (!rc_dec_bit(d, choice)) {
+        int bit0 = rc_dec_bit(d, &lshort[0]);
+        int bit1 = rc_dec_bit(d, &lshort[1 + bit0]);
+        int bit2 = rc_dec_bit(d, &lshort[3 + (bit0 << 1 | bit1)]);
         return LZRC_MIN_MATCH + (bit0 << 2 | bit1 << 1 | bit2);
     }
-    if (!rc_dec_bit(d, &m->len_choice2)) {
-        int bit0 = rc_dec_bit(d, &m->len_medium[0]);
-        int bit1 = rc_dec_bit(d, &m->len_medium[1 + bit0]);
-        int bit2 = rc_dec_bit(d, &m->len_medium[3 + (bit0 << 1 | bit1)]);
+    if (!rc_dec_bit(d, choice2)) {
+        int bit0 = rc_dec_bit(d, &lmed[0]);
+        int bit1 = rc_dec_bit(d, &lmed[1 + bit0]);
+        int bit2 = rc_dec_bit(d, &lmed[3 + (bit0 << 1 | bit1)]);
         return LZRC_MIN_MATCH + 8 + (bit0 << 2 | bit1 << 1 | bit2);
     }
-    return LZRC_MIN_MATCH + 16 + rc_dec_byte(d, m->len_extra);
+    return LZRC_MIN_MATCH + 16 + rc_dec_byte(d, lextra);
+}
+
+static uint32_t lzrc_dec_length(RCDecoder* d, LZRCModel* m) {
+    return lzrc_dec_length_raw(d, &m->len_choice, m->len_short, &m->len_choice2,
+                               m->len_medium, m->len_extra);
+}
+
+static uint32_t lzrc_dec_rep_length(RCDecoder* d, LZRCModel* m) {
+    return lzrc_dec_length_raw(d, &m->rep_len_choice, m->rep_len_short, &m->rep_len_choice2,
+                               m->rep_len_medium, m->rep_len_extra);
 }
 
 /* ============================================================
@@ -356,10 +392,11 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
             int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
             rc_enc_bit(&enc, &model->is_match[ctx], 1);
             rc_enc_bit(&enc, &model->is_rep, pending_rep >= 0 ? 1 : 0);
-            lzrc_enc_length(&enc, model, pending.length);
             if (pending_rep >= 0) {
+                lzrc_enc_rep_length(&enc, model, pending.length);
                 lzrc_enc_rep_idx(&enc, model, pending_rep);
             } else {
+                lzrc_enc_length(&enc, model, pending.length);
                 lzrc_enc_distance(&enc, model, pending.offset);
             }
             rep_update(rep_dist, pending.offset, pending_rep);
@@ -402,10 +439,11 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
         int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
         rc_enc_bit(&enc, &model->is_match[ctx], 1);
         rc_enc_bit(&enc, &model->is_rep, pending_rep >= 0 ? 1 : 0);
-        lzrc_enc_length(&enc, model, pending.length);
         if (pending_rep >= 0) {
+            lzrc_enc_rep_length(&enc, model, pending.length);
             lzrc_enc_rep_idx(&enc, model, pending_rep);
         } else {
+            lzrc_enc_length(&enc, model, pending.length);
             lzrc_enc_distance(&enc, model, pending.offset);
         }
     }
@@ -447,14 +485,16 @@ size_t mcx_lzrc_decompress(uint8_t* dst, size_t dst_cap,
         if (rc_dec_bit(&dec, &model->is_match[ctx])) {
             /* Match */
             int is_rep = rc_dec_bit(&dec, &model->is_rep);
-            uint32_t len = lzrc_dec_length(&dec, model);
+            uint32_t len;
             uint32_t dist;
             int rep_idx = -1;
             
             if (is_rep) {
+                len = lzrc_dec_rep_length(&dec, model);
                 rep_idx = lzrc_dec_rep_idx(&dec, model);
                 dist = rep_dist[rep_idx];
             } else {
+                len = lzrc_dec_length(&dec, model);
                 dist = lzrc_dec_distance(&dec, model);
             }
             rep_update(rep_dist, dist, rep_idx);
@@ -587,10 +627,11 @@ size_t mcx_lzrc_compress_fast(uint8_t* dst, size_t dst_cap,
             int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
             rc_enc_bit(&enc, &model->is_match[ctx], 1);
             rc_enc_bit(&enc, &model->is_rep, pending_rep >= 0 ? 1 : 0);
-            lzrc_enc_length(&enc, model, pending.length);
             if (pending_rep >= 0) {
+                lzrc_enc_rep_length(&enc, model, pending.length);
                 lzrc_enc_rep_idx(&enc, model, pending_rep);
             } else {
+                lzrc_enc_length(&enc, model, pending.length);
                 lzrc_enc_distance(&enc, model, pending.offset);
             }
             rep_update(rep_dist, pending.offset, pending_rep);
@@ -630,10 +671,11 @@ size_t mcx_lzrc_compress_fast(uint8_t* dst, size_t dst_cap,
         int ctx = after_match ? (LZRC_CTX_LIT + (prev >> 4)) : prev;
         rc_enc_bit(&enc, &model->is_match[ctx], 1);
         rc_enc_bit(&enc, &model->is_rep, pending_rep >= 0 ? 1 : 0);
-        lzrc_enc_length(&enc, model, pending.length);
         if (pending_rep >= 0) {
+            lzrc_enc_rep_length(&enc, model, pending.length);
             lzrc_enc_rep_idx(&enc, model, pending_rep);
         } else {
+            lzrc_enc_length(&enc, model, pending.length);
             lzrc_enc_distance(&enc, model, pending.offset);
         }
     }
