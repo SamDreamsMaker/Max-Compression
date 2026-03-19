@@ -1,7 +1,24 @@
+"""
+maxcomp — Python bindings for MaxCompression (MCX).
+
+High-ratio lossless data compression via ctypes. See README.md for examples.
+"""
+
 import ctypes
 import os
 import sys
 from typing import Optional
+
+__all__ = [
+    "compress",
+    "decompress",
+    "compress_bound",
+    "get_frame_info",
+    "version",
+    "MaxCompressionError",
+]
+
+__version__ = "2.1.1"
 
 # Platform-specific library extension
 if sys.platform.startswith('win32'):
