@@ -111,6 +111,15 @@ endif()
 add_test(NAME regression COMMAND test_regression)
 set_tests_properties(regression PROPERTIES TIMEOUT 60)
 
+# Streaming decompression test (decompress in small chunks, verify vs one-shot)
+add_executable(test_streaming_decompress test_streaming_decompress.c)
+target_link_libraries(test_streaming_decompress PRIVATE maxcomp_static)
+if(UNIX)
+    target_link_libraries(test_streaming_decompress PRIVATE m)
+endif()
+add_test(NAME streaming_decompress COMMAND test_streaming_decompress)
+set_tests_properties(streaming_decompress PROPERTIES TIMEOUT 120)
+
 # Multi-file compress/decompress roundtrip (CLI integration test)
 add_test(NAME multifile_roundtrip
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_multifile.sh ${CMAKE_BINARY_DIR}/bin/mcx)

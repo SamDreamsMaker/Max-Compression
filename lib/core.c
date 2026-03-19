@@ -2024,6 +2024,66 @@ size_t mcx_decompress_stream(mcx_dctx* dctx, mcx_out_buffer* output, mcx_in_buff
             /* Decoding huffman directly into internal out_buf max boundary */
             orig_block_size = mcx_huffman_decompress(dctx->out_buf, dctx->out_size, dctx->in_buf, dctx->in_pos);
             if (MCX_IS_ERROR(orig_block_size)) return orig_block_size;
+        } else if (dctx->strategy == MCX_STRATEGY_LZ_FAST || dctx->strategy == MCX_STRATEGY_LZ_HC) {
+            /* LZ blocks from streaming compress: first byte is block type magic */
+            if (dctx->in_pos < 1) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+            uint8_t block_type = dctx->in_buf[0];
+
+            if (block_type == 0x00) {
+                /* STORE fallback */
+                orig_block_size = dctx->in_pos - 1;
+                memcpy(dctx->out_buf, dctx->in_buf + 1, orig_block_size);
+            } else if (block_type == 0xAA) {
+                /* LZ77 + FSE */
+                size_t lz_cap = mcx_lz_compress_bound(dctx->out_size);
+                uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
+                if (!lz_buf) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+
+                size_t lz_size = mcx_fse_decompress(lz_buf, lz_cap,
+                                                      dctx->in_buf + 1, dctx->in_pos - 1);
+                if (lz_size == 0) { free(lz_buf); return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); }
+
+                orig_block_size = mcx_lz_decompress(dctx->out_buf, dctx->out_size,
+                                                     lz_buf, lz_size, dctx->out_size);
+                free(lz_buf);
+                if (orig_block_size == 0) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+            } else if (block_type == 0xA8) {
+                /* LZ77 + rANS */
+                size_t lz_cap = mcx_lz_compress_bound(dctx->out_size);
+                uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
+                if (!lz_buf) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+
+                size_t lz_size = mcx_rans_decompress(lz_buf, lz_cap,
+                                                      dctx->in_buf + 1, dctx->in_pos - 1);
+                if (MCX_IS_ERROR(lz_size)) { free(lz_buf); return lz_size; }
+
+                orig_block_size = mcx_lz_decompress(dctx->out_buf, dctx->out_size,
+                                                     lz_buf, lz_size, dctx->out_size);
+                free(lz_buf);
+                if (orig_block_size == 0) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+            } else if (block_type == 0xAB) {
+                /* LZ77 raw (no entropy coding) */
+                orig_block_size = mcx_lz_decompress(dctx->out_buf, dctx->out_size,
+                                                     dctx->in_buf + 1, dctx->in_pos - 1,
+                                                     dctx->out_size);
+                if (orig_block_size == 0) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+            } else if (block_type == 0xAE) {
+                /* LZ77 + Adaptive AC */
+                size_t lz_cap = mcx_lz_compress_bound(dctx->out_size);
+                uint8_t* lz_buf = (uint8_t*)malloc(lz_cap);
+                if (!lz_buf) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+
+                size_t lz_size = mcx_adaptive_ac_decompress(lz_buf, lz_cap,
+                                                             dctx->in_buf + 1, dctx->in_pos - 1);
+                if (lz_size == 0) { free(lz_buf); return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); }
+
+                orig_block_size = mcx_lz_decompress(dctx->out_buf, dctx->out_size,
+                                                     lz_buf, lz_size, dctx->out_size);
+                free(lz_buf);
+                if (orig_block_size == 0) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+            } else {
+                return MCX_ERROR(MCX_ERR_UNKNOWN_BLOCK);
+            }
         } else if (dctx->strategy == MCX_STRATEGY_DEFAULT || dctx->strategy == MCX_STRATEGY_BEST ||
                    dctx->strategy == MCX_STRATEGY_BABEL || dctx->strategy == MCX_STRATEGY_STRIDE) {
             if (dctx->in_pos < 1) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
