@@ -672,4 +672,32 @@ else
     echo "WARN: --profile phase breakdown not visible (may need BWT-level data)"
 fi
 
+# Test info --entropy --json
+ENT_JSON=$("$MCX" info --entropy --json "$TMPDIR/entropy_test.mcx" 2>/dev/null)
+if ! echo "$ENT_JSON" | grep -q '"entropy_bpb"'; then
+    echo "FAIL: info --entropy --json should contain entropy_bpb"
+    echo "$ENT_JSON"
+    exit 1
+fi
+if ! echo "$ENT_JSON" | grep -q '"entropy_pct"'; then
+    echo "FAIL: info --entropy --json should contain entropy_pct"
+    echo "$ENT_JSON"
+    exit 1
+fi
+echo "OK: info --entropy --json outputs entropy fields"
+
+# Test --dry-run --adaptive-level
+DRY_ADAPT=$("$MCX" compress --dry-run --adaptive-level "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$DRY_ADAPT" | grep -q "Adaptive:"; then
+    echo "FAIL: --dry-run --adaptive-level should show Adaptive line"
+    echo "$DRY_ADAPT"
+    exit 1
+fi
+if ! echo "$DRY_ADAPT" | grep -q "auto-selected"; then
+    echo "FAIL: --dry-run --adaptive-level should show auto-selected"
+    echo "$DRY_ADAPT"
+    exit 1
+fi
+echo "OK: --dry-run --adaptive-level shows level selection"
+
 echo "=== All bench flags tests passed ==="
