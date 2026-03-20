@@ -2974,6 +2974,7 @@ int main(int argc, char* argv[])
         const char* bench_file = NULL;
         const char* bench_exclude = NULL;
         const char* bench_output_file = NULL;
+        const char* bench_compare_self = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
                 bench_level = atoi(argv[++i]);
@@ -3060,6 +3061,8 @@ int main(int argc, char* argv[])
                 bench_cold = 1;
             } else if ((strcmp(argv[i], "--output") == 0 || strcmp(argv[i], "-o") == 0) && i + 1 < argc) {
                 bench_output_file = argv[++i];
+            } else if (strcmp(argv[i], "--compare-self") == 0 && i + 1 < argc) {
+                bench_compare_self = argv[++i];
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -3168,6 +3171,35 @@ int main(int argc, char* argv[])
             int r = cmd_bench_histogram(bench_file, bench_level);
             if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return r;
+        }
+        if (bench_compare_self) {
+            /* --compare-self REF: compress at specified level, compare size with reference */
+            int level = bench_level > 0 ? bench_level : 12;
+            size_t src_size;
+            uint8_t* src = read_file(bench_file, &src_size);
+            if (!src) { fprintf(stderr, "Error: cannot read input '%s'\n", bench_file); return 1; }
+            size_t dst_cap = mcx_compress_bound(src_size);
+            uint8_t* dst = (uint8_t*)malloc(dst_cap);
+            if (!dst) { free(src); return 1; }
+            size_t comp_size = mcx_compress(dst, dst_cap, src, src_size, level);
+            free(src); free(dst);
+            if (mcx_is_error(comp_size)) {
+                fprintf(stderr, "Error: compression failed\n");
+                return 1;
+            }
+            /* Get reference file size */
+            size_t ref_size;
+            uint8_t* ref = read_file(bench_compare_self, &ref_size);
+            if (!ref) { fprintf(stderr, "Error: cannot read reference '%s'\n", bench_compare_self); return 1; }
+            free(ref);
+            int64_t delta = (int64_t)comp_size - (int64_t)ref_size;
+            double pct = (ref_size > 0) ? (double)delta * 100.0 / ref_size : 0;
+            printf("Compare-self L%d: current=%zu ref=%zu delta=%+lld (%+.2f%%)", level, comp_size, ref_size, (long long)delta, pct);
+            if (delta == 0) printf(" ✓ MATCH\n");
+            else if (delta < 0) printf(" ✓ IMPROVED\n");
+            else printf(" ✗ REGRESSION\n");
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            return (delta > 0) ? 1 : 0;
         }
         if (bench_repeat <= 1) {
             int r = cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header, bench_cold);
