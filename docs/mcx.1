@@ -1,10 +1,15 @@
-.TH MCX 1 "March 2026" "MaxCompression 2.1.1" "User Commands"
+.TH MCX 1 "March 2026" "MaxCompression 2.2.0" "User Commands"
 .SH NAME
 mcx \- high\-ratio lossless data compression tool
 .SH SYNOPSIS
 .B mcx compress
 [\fB\-l\fR \fILEVEL\fR]
 [\fB\-\-fast\fR|\fB\-\-default\fR|\fB\-\-best\fR]
+[\fB\-\-strategy\fR \fINAME\fR]
+[\fB\-\-block\-size\fR \fIBYTES\fR]
+[\fB\-\-verify\fR]
+[\fB\-\-dry\-run\fR]
+[\fB\-\-estimate\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -13,6 +18,7 @@ mcx \- high\-ratio lossless data compression tool
 \fIINPUT\fR
 .br
 .B mcx decompress
+[\fB\-\-verify\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -20,7 +26,18 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-o\fR \fIOUTPUT\fR]
 \fIINPUT\fR
 .br
+.B mcx upgrade
+[\fB\-l\fR \fILEVEL\fR]
+[\fB\-\-in\-place\fR]
+[\fB\-o\fR \fIOUTPUT\fR]
+\fIINPUT.mcx\fR
+.br
+.B mcx pipe
+[\fB\-l\fR \fILEVEL\fR]
+[\fB\-d\fR]
+.br
 .B mcx info
+[\fB\-\-json\fR]
 \fIINPUT\fR
 .br
 .B mcx cat
@@ -33,20 +50,29 @@ mcx \- high\-ratio lossless data compression tool
 \fIFILE1\fR \fIFILE2\fR
 .br
 .B mcx stat
+[\fB\-\-json\fR]
 \fIINPUT\fR
 .br
 .B mcx hash
 \fIFILE\fR ...
 .br
+.B mcx checksum
+\fIFILE.mcx\fR ...
+.br
 .B mcx ls
+[\fB\-\-json\fR]
 \fIFILE\fR ...
 .br
 .B mcx bench
+[\fB\-l\fR \fILEVEL\fR]
+[\fB\-\-compare\fR]
+[\fB\-\-csv\fR]
 \fIINPUT\fR
 .br
 .B mcx test
 .br
 .B mcx version
+[\fB\-\-build\fR]
 .SH DESCRIPTION
 .B mcx
 compresses and decompresses files using the MaxCompression (MCX) format.
@@ -60,43 +86,68 @@ Smart detection at level 20 automatically selects the best strategy.
 .TP
 .B compress
 Compress a file. Output defaults to \fIINPUT\fR.mcx.
+Use \fB\-\-strategy\fR to force a specific compression strategy,
+\fB\-\-block\-size\fR to override default BWT block size,
+\fB\-\-verify\fR to roundtrip-verify after compressing,
+\fB\-\-dry\-run\fR to predict strategy/level without compressing,
+or \fB\-\-estimate\fR for a fast compressed size estimate.
 .TP
 .B decompress
 Decompress an MCX file. Output defaults to \fIINPUT\fR with .mcx removed.
+Use \fB\-\-verify\fR to re\-compress and verify the roundtrip.
+.TP
+.B upgrade
+Re\-compress an MCX file at a different level (decompress + recompress
+in one step). Uses \fB\-\-in\-place\fR to overwrite the input file directly.
+.TP
+.B pipe
+Streaming mode: compress stdin to stdout (default) or decompress with
+\fB\-d\fR. Works like \fBgzip\fR without arguments.
 .TP
 .B info
 Display frame metadata (size, level, strategy, block count, per\-block
-genome configuration) without decompressing.
+genome configuration) without decompressing. Use \fB\-\-json\fR for
+machine\-readable output.
 .TP
 .B cat
 Decompress to stdout (equivalent to \fBdecompress \-c\fR).
 .TP
 .B stat
 Display file statistics without compressing: entropy, byte distribution,
-run\-length analysis, and content type detection.
+run\-length analysis, and content type detection. Use \fB\-\-json\fR
+for machine\-readable output.
 .TP
 .B hash
 Show CRC32 and FNV\-1a 64\-bit hashes of decompressed content from MCX
 files, or of raw content for non\-MCX files.
 .TP
+.B checksum
+Show CRC32 of the compressed MCX file itself for integrity checking.
+.TP
 .B verify
 Decompress and verify integrity. Optionally compare against an original file.
 .TP
 .B diff
-Compare two compressed MCX files (sizes, ratios, strategies).
+Compare two compressed MCX files (sizes, ratios, strategies). Shows
+byte\-level hex dump when files differ.
 .TP
 .B ls
 List compressed MCX files in a table (compressed size, original size,
-ratio, level, strategy).
+ratio, level, strategy). Use \fB\-\-json\fR for machine\-readable output.
+Aliases: \fBlist\fR.
 .TP
 .B bench
 Benchmark compression on a file across all major levels.
+Use \fB\-l\fR for a specific level, \fB\-\-compare\fR to include
+gzip/bzip2/xz results, and \fB\-\-csv\fR for CSV output.
+Aliases: \fBcompare\fR.
 .TP
 .B test
-Run built\-in self\-tests (roundtrip at all levels).
+Run built\-in self\-tests (7 patterns \[mu] 5 levels = 35 roundtrip tests).
 .TP
 .B version
-Print detailed build information (compiler, platform, features).
+Print version string. Use \fB\-\-build\fR for detailed build information
+(compiler, flags, OpenMP status, SIMD support).
 .SH OPTIONS
 .TP
 .BR \-l ", " \-\-level =\fILEVEL\fR
@@ -164,6 +215,38 @@ Use N threads for compression (default: auto\-detect).
 .BR \-q ", " \-\-quiet
 Suppress all non\-error output. Useful for scripts and pipelines.
 .TP
+.BR \-v ", " \-\-verbose
+Show extra information (peak memory usage during compress/decompress).
+.TP
+.BR \-\-verify
+For \fBcompress\fR: decompress and compare after compressing.
+For \fBdecompress\fR: re\-compress and re\-decompress to verify roundtrip.
+.TP
+.BR \-\-strategy =\fINAME\fR
+Force a specific compression strategy (lz, bwt, lzrc, stride) instead of auto\-detect.
+.TP
+.BR \-\-block\-size =\fIBYTES\fR
+Override default block size for BWT levels. Accepts suffixes: K, M (e.g. 4M).
+.TP
+.BR \-\-dry\-run
+Analyze and print predicted strategy/level without actually compressing.
+.TP
+.BR \-\-estimate
+Report estimated compressed size without full compression (faster than
+\fB\-\-dry\-run\fR).
+.TP
+.BR \-\-in\-place ", " \-i
+For \fBupgrade\fR: overwrite the input file directly (cannot combine with \fB\-o\fR).
+.TP
+.BR \-\-compare
+For \fBbench\fR: also run gzip, bzip2, and xz for comparison.
+.TP
+.BR \-\-csv
+For \fBbench\fR: output results in CSV format for automated collection.
+.TP
+.BR \-\-json
+For \fBinfo\fR, \fBstat\fR, \fBls\fR: machine\-readable JSON output.
+.TP
 .BR \-V ", " \-\-version
 Print version string and exit.
 .TP
@@ -209,6 +292,21 @@ Multi-file compress:
 .TP
 Decompress with alias:
 .B mcx x data.mcx
+.TP
+Upgrade to higher level:
+.B mcx upgrade \-l 12 \-\-in\-place data.mcx
+.TP
+Pipe mode (like gzip):
+.B cat data.bin | mcx pipe | mcx pipe \-d > data_roundtrip.bin
+.TP
+Decompress with verification:
+.B mcx decompress \-\-verify data.mcx
+.TP
+Benchmark with CSV:
+.B mcx bench \-\-csv \-\-compare data.bin > results.csv
+.TP
+Estimate compressed size:
+.B mcx compress \-\-estimate data.bin
 .SH COMPRESSION RATIOS
 Silesia benchmark corpus (202 MB), 12 files:
 .PP
