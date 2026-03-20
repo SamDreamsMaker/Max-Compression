@@ -1,0 +1,2 @@
+experiment	status	bpb	ratio	details	timestamp
+baseline_v2.2.0	OK	0.7533	10.619	alice29=43154(3.524x 2.2699bpb) ooffice=2405901(2.557x 3.1285bpb) nci=1304238(25.726x 0.3110bpb) 	2026-03-20T10:54:31+01:00
