@@ -96,6 +96,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-warmup\-iterations\fR \fIN\fR]
 [\fB\-\-cold\fR]
 [\fB\-\-output\fR \fIFILE\fR]
+[\fB\-\-compare\-self\fR \fIREF\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -332,6 +333,13 @@ if cache flushing is not available.
 For \fBbench\fR: write benchmark results to \fIFILE\fR in append mode.
 Useful for collecting results over time across multiple runs or builds.
 Each invocation appends to the file without overwriting existing content.
+.TP
+.BR \-\-compare\-self =\fIREF\fR
+For \fBbench\fR: compress input at the specified level (default L12) and
+compare the compressed size against a reference \fI.mcx\fR file. Reports
+MATCH (identical size), IMPROVED (smaller), or REGRESSION (larger) with
+byte delta and percentage. Returns exit code 1 on regression, making it
+suitable for CI pipelines to detect compression ratio regressions.
 .TP
 .BR \-\-blocks
 For \fBinfo\fR: show per\-block details (offset, compressed size,
