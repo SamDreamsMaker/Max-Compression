@@ -359,10 +359,14 @@ static uint16_t sse_map(sse_t *s, int ctx, uint16_t prob) {
 
 static void sse_update(sse_t *s, int ctx, uint16_t prob, int bit) {
     int b = prob * (SSE_BUCKETS - 1) / PROB_MAX;
-    int c = ctx % SSE_CTXS;
+    int c = ctx & (SSE_CTXS - 1);
     uint16_t p = s->t[c][b];
-    if (bit == 0) s->t[c][b] = p + ((PROB_MAX - p) >> 5);
-    else          s->t[c][b] = p - (p >> 5);
+    /* Count-based rate: fast adaptation for new contexts */
+    int count = s->n[c][b];
+    int rate = (count < 4) ? 3 : (count < 16) ? 4 : (count < 64) ? 5 : 6;
+    if (count < 255) s->n[c][b] = count + 1;
+    if (bit == 0) s->t[c][b] = p + ((PROB_MAX - p) >> rate);
+    else          s->t[c][b] = p - (p >> rate);
 }
 
 static inline uint8_t char_class(uint8_t c) {
