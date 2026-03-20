@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 16)
+- **Multi-rANS trial early exit** — at L12, skip context-variant trials when lo_tables already beats hi_tables by >1%. Reduces entropy encode time on blocks where simpler tables win.
+- **`mcx bench --top N`** — only show top N results by ratio (useful with `--all-levels`).
+- **`mcx compress --atomic`** — write compressed output to a temp file, rename on success (crash-safe writes).
+- **L1 vs L3 Silesia profiling** — L3 wins all 12 files with avg +5.2% ratio at -13% speed. Lazy matching is the correct default for L2-L3.
+- **Integration tests** — coverage for `--min-ratio` (high threshold skips output) and `--atomic` (roundtrip verified).
+- **Man page + completions update** — `--top` and `--atomic` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 15)
 - **Nice-match early exit for HC chains** — L4-L9 now stop chain walking when a sufficiently long match is found (L4=16, L5-6=32, L7-8=64, L9=128). No ratio impact, faster compression on repetitive data.
 - **`mcx bench --sort ratio|speed|level`** — sort benchmark output by compression ratio, speed, or level (default: level).
