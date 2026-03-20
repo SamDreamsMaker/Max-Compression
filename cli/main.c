@@ -105,6 +105,7 @@ static void print_usage(void)
         "  -n, --dry-run   Analyze file without compressing\n"
         "      --estimate  Estimate compressed size via sample (faster)\n"
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
+        "      --level-scan Try L1-L12, pick best ratio automatically\n"
         "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
@@ -223,6 +224,7 @@ static int g_verify = 0;    /* Verify after compress (decompress+compare) */
 static int g_verbose = 0;   /* Show extra info (peak memory, timings) */
 static int g_dryrun = 0;    /* Dry-run: analyze only, don't compress */
 static int g_estimate = 0;  /* Estimate compressed size via sample compress */
+static int g_level_scan = 0; /* Try L1-L12, pick best ratio automatically */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -481,16 +483,72 @@ static int cmd_compress(const char* input, const char* output, int level)
             return 1;
         }
 
-        if (!g_quiet) {
-            if (src_size > 1024 * 1024)
-                printf("Compressing '%s' (%.1f MB) at level %d...\n", input, (double)src_size / (1024*1024), level);
-            else
-                printf("Compressing '%s' (%zu bytes) at level %d...\n", input, src_size, level);
-            fflush(stdout);
-        }
+        size_t comp_size;
+        
+        if (g_level_scan) {
+            /* --level-scan: try multiple levels, pick best ratio */
+            int scan_levels[] = {1, 3, 6, 9, 12};
+            int n_scan = sizeof(scan_levels) / sizeof(scan_levels[0]);
+            size_t best_size = SIZE_MAX;
+            int best_level = scan_levels[0];
+            
+            if (!g_quiet) {
+                printf("Scanning levels for '%s' (%zu bytes)...\n", input, src_size);
+                fflush(stdout);
+            }
+            
+            uint8_t* scan_buf = (uint8_t*)malloc(dst_cap);
+            if (!scan_buf) {
+                fprintf(stderr, "Error: out of memory for level scan\n");
+                free(src_buf); free(dst_buf);
+                fclose(fin); fclose(fout);
+                return 1;
+            }
+            
+            for (int si = 0; si < n_scan; si++) {
+                int lv = scan_levels[si];
+                size_t sz = mcx_compress(scan_buf, dst_cap, src_buf, src_size, lv);
+                if (!mcx_is_error(sz)) {
+                    if (!g_quiet) {
+                        printf("  L%-2d: %zu bytes (%.2fx)\n", lv, sz, (double)src_size / sz);
+                        fflush(stdout);
+                    }
+                    if (sz < best_size) {
+                        best_size = sz;
+                        best_level = lv;
+                        /* Copy best result to dst_buf */
+                        memcpy(dst_buf, scan_buf, sz);
+                    }
+                }
+            }
+            free(scan_buf);
+            
+            if (best_size == SIZE_MAX) {
+                fprintf(stderr, "Error: all levels failed\n");
+                free(src_buf); free(dst_buf);
+                fclose(fin); fclose(fout);
+                return 1;
+            }
+            
+            if (!g_quiet) {
+                printf("Best: L%d (%.2fx, %zu bytes)\n", best_level,
+                       (double)src_size / best_size, best_size);
+            }
+            comp_size = best_size;
+            free(src_buf);
+        } else {
+            /* Normal single-level compression */
+            if (!g_quiet) {
+                if (src_size > 1024 * 1024)
+                    printf("Compressing '%s' (%.1f MB) at level %d...\n", input, (double)src_size / (1024*1024), level);
+                else
+                    printf("Compressing '%s' (%zu bytes) at level %d...\n", input, src_size, level);
+                fflush(stdout);
+            }
 
-        size_t comp_size = mcx_compress(dst_buf, dst_cap, src_buf, src_size, level);
-        free(src_buf);
+            comp_size = mcx_compress(dst_buf, dst_cap, src_buf, src_size, level);
+            free(src_buf);
+        }
 
         if (mcx_is_error(comp_size)) {
             fprintf(stderr, "Error: compression failed: %s\n", mcx_get_error_name(comp_size));
@@ -1721,6 +1779,8 @@ int main(int argc, char* argv[])
             } else if (strcmp(argv[i], "--no-trials") == 0) {
                 extern int mcx_no_trials;
                 mcx_no_trials = 1;
+            } else if (strcmp(argv[i], "--level-scan") == 0) {
+                g_level_scan = 1;
             } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
                 g_verbose = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
