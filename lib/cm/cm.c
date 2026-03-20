@@ -563,8 +563,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[28] = match_predict(&cm->match, pos, bp);
     
     for (int i = 0; i < N_MODELS; i++) {
-        if (preds[i] == PROB_HALF) str[i] = 0.0f;
-        else str[i] = stretch((float)preds[i] / PROB_MAX);
+        str[i] = stretch_tab[preds[i]]; /* direct lookup, no float division */
     }
     
     float m1 = mixer_mix(&cm->mx1[(cm->prev[0] << 3) | bp], str);
