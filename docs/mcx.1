@@ -71,6 +71,9 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-compare\fR]
 [\fB\-\-csv\fR]
 [\fB\-\-warmup\fR]
+[\fB\-\-json\fR]
+[\fB\-\-decode\-only\fR]
+[\fB\-\-iterations\fR \fIN\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -144,8 +147,11 @@ Aliases: \fBlist\fR.
 .B bench
 Benchmark compression on a file across all major levels.
 Use \fB\-l\fR for a specific level, \fB\-\-compare\fR to include
-gzip/bzip2/xz results, \fB\-\-csv\fR for CSV output, and
-\fB\-\-warmup\fR to run one warmup iteration before timing.
+gzip/bzip2/xz results, \fB\-\-csv\fR for CSV output,
+\fB\-\-warmup\fR to run one warmup iteration before timing,
+\fB\-\-json\fR for machine\-readable JSON output,
+\fB\-\-decode\-only\fR to benchmark decompression only, and
+\fB\-\-iterations\fR N to run N iterations and average.
 Aliases: \fBcompare\fR.
 .TP
 .B test
@@ -268,7 +274,16 @@ For \fBinfo\fR: show per\-block details (offset, compressed size,
 original size, strategy, flags) in tabular format.
 .TP
 .BR \-\-json
-For \fBinfo\fR, \fBstat\fR, \fBls\fR: machine\-readable JSON output.
+For \fBinfo\fR, \fBstat\fR, \fBls\fR, \fBbench\fR: machine\-readable JSON output.
+.TP
+.BR \-\-decode\-only
+For \fBbench\fR: pre\-compress once (not timed), then benchmark
+decompression only. Runs multiple iterations (default 3, or set with
+\fB\-\-iterations\fR) and averages the result.
+.TP
+.BR \-\-iterations =\fIN\fR
+For \fBbench\fR: run N compress/decompress iterations and average
+the timing. Default: 1 (or 3 when \fB\-\-decode\-only\fR is used).
 .TP
 .BR \-V ", " \-\-version
 Print version string and exit.
