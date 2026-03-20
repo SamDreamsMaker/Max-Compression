@@ -328,6 +328,15 @@ For \fBbench\fR: sort output by the given mode. Valid values:
 \fBratio\fR (best compression first), \fBspeed\fR (fastest first),
 \fBlevel\fR (default, ascending level number).
 .TP
+.BR \-\-top =\fIN\fR
+For \fBbench\fR: only show the top N results by compression ratio.
+Useful with \fB\-\-all\-levels\fR to quickly see the best levels.
+.TP
+.BR \-\-atomic
+For \fBcompress\fR: write compressed output to a temporary file first,
+then rename to the final path on success. Provides crash-safe writes —
+if compression fails or is interrupted, no partial output remains.
+.TP
 .BR \-\-split =\fISIZE\fR
 For \fBcompress\fR: split compressed output into chunks of the given
 size (e.g. \fB\-\-split 10M\fR). Output files are named with a numeric
