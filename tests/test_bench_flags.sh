@@ -459,4 +459,44 @@ if [ "$LINE_COUNT" -lt 2 ]; then
 fi
 echo "OK: bench --output FILE append mode works ($LINE_COUNT lines)"
 
+# Test --output with --format json
+JSON_OUTFILE="$TMPDIR/bench_json_out.txt"
+rm -f "$JSON_OUTFILE"
+"$MCX" bench -l 1 --format json --output "$JSON_OUTFILE" "$TMPDIR/input.txt" 2>/dev/null
+if [ ! -f "$JSON_OUTFILE" ]; then
+    echo "FAIL: --output with --format json should create output file"
+    exit 1
+fi
+if ! grep -q '"results"' "$JSON_OUTFILE"; then
+    echo "FAIL: --output with --format json should contain JSON results"
+    cat "$JSON_OUTFILE"
+    exit 1
+fi
+echo "OK: bench --output with --format json works"
+
+# Test --output with --format csv
+CSV_OUTFILE="$TMPDIR/bench_csv_out.txt"
+rm -f "$CSV_OUTFILE"
+"$MCX" bench -l 1 --format csv --output "$CSV_OUTFILE" "$TMPDIR/input.txt" 2>/dev/null
+if [ ! -f "$CSV_OUTFILE" ]; then
+    echo "FAIL: --output with --format csv should create output file"
+    exit 1
+fi
+if ! grep -q "," "$CSV_OUTFILE"; then
+    echo "FAIL: --output with --format csv should contain CSV data"
+    cat "$CSV_OUTFILE"
+    exit 1
+fi
+echo "OK: bench --output with --format csv works"
+
+# Test --compare-self
+"$MCX" compress -l 1 "$TMPDIR/input.txt" -o "$TMPDIR/ref.mcx" -f -q 2>/dev/null
+CS_OUT=$("$MCX" bench --compare-self "$TMPDIR/ref.mcx" -l 1 "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$CS_OUT" | grep -q "MATCH"; then
+    echo "FAIL: --compare-self should report MATCH for same build"
+    echo "$CS_OUT"
+    exit 1
+fi
+echo "OK: bench --compare-self reports MATCH"
+
 echo "=== All bench flags tests passed ==="
