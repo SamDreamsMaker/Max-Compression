@@ -12,6 +12,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-estimate\fR]
 [\fB\-\-level\-scan\fR]
 [\fB\-\-no\-trials\fR]
+[\fB\-\-filter\fR \fINAME\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -251,6 +252,11 @@ Report estimated compressed size without full compression (faster than
 Try levels L1\-L12 and automatically pick the one with the best
 compression ratio. Slower than a single level but finds the optimal
 speed/ratio tradeoff.
+.TP
+.BR \-\-filter =\fINAME\fR
+Force a specific preprocessing filter instead of auto\-detect.
+Valid values: \fBdelta\fR (sorted integer sequences), \fBnibble\fR
+(structured binary data), \fBnone\fR (disable preprocessing).
 .TP
 .BR \-\-no\-trials
 Skip multi\-strategy trial at L20+ (use first matching strategy).
