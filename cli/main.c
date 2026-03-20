@@ -61,7 +61,7 @@ static void print_usage(void)
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
         "  mcx bench      [-l LEVEL] <input>       # benchmark all (or specific) levels\n"
         "  mcx test                                # run self-tests\n"
-        "  mcx version                             # detailed build info\n"
+        "  mcx version [--build]                   # detailed build info\n"
         "  mcx --version\n"
         "  mcx --help\n"
         "\n"
@@ -1293,6 +1293,7 @@ int main(int argc, char* argv[])
 
     /* version subcommand — detailed build info */
     if (strcmp(argv[1], "version") == 0) {
+        int build_flag = (argc > 2 && (strcmp(argv[2], "--build") == 0 || strcmp(argv[2], "-b") == 0));
         printf("MaxCompression v%s\n", mcx_version_string());
         printf("  Library:    libmaxcomp %s\n", mcx_version_string());
 #ifdef __GNUC__
@@ -1306,7 +1307,7 @@ int main(int argc, char* argv[])
 #endif
         printf("  Build:      %s %s\n", __DATE__, __TIME__);
 #ifdef _OPENMP
-        printf("  OpenMP:     yes\n");
+        printf("  OpenMP:     yes (v%d)\n", _OPENMP);
 #else
         printf("  OpenMP:     no\n");
 #endif
@@ -1335,6 +1336,53 @@ int main(int argc, char* argv[])
 #endif
         );
         printf("  Levels:     1-26 (BWT up to L20, LZRC L24/L26)\n");
+        if (build_flag) {
+            /* Extended build info with --build flag */
+            printf("\n  Build details:\n");
+#ifdef __OPTIMIZE__
+            printf("    Optimized:  yes\n");
+#else
+            printf("    Optimized:  no\n");
+#endif
+#ifdef NDEBUG
+            printf("    Debug:      no (NDEBUG defined)\n");
+#else
+            printf("    Debug:      yes\n");
+#endif
+            /* SIMD support detected at compile time */
+            printf("    SIMD:      ");
+            int has_simd = 0;
+#ifdef __SSE2__
+            printf(" SSE2"); has_simd = 1;
+#endif
+#ifdef __SSE4_1__
+            printf(" SSE4.1"); has_simd = 1;
+#endif
+#ifdef __SSE4_2__
+            printf(" SSE4.2"); has_simd = 1;
+#endif
+#ifdef __AVX__
+            printf(" AVX"); has_simd = 1;
+#endif
+#ifdef __AVX2__
+            printf(" AVX2"); has_simd = 1;
+#endif
+#ifdef __AVX512F__
+            printf(" AVX-512"); has_simd = 1;
+#endif
+#ifdef __ARM_NEON
+            printf(" NEON"); has_simd = 1;
+#endif
+            if (!has_simd) printf(" none");
+            printf("\n");
+            printf("    C std:      C%ld\n", __STDC_VERSION__);
+            printf("    Word size:  %zu-bit\n", sizeof(void*) * 8);
+#ifdef MCX_USE_DIVSUFSORT
+            printf("    BWT sort:   libdivsufsort (fast)\n");
+#else
+            printf("    BWT sort:   built-in\n");
+#endif
+        }
         return 0;
     }
 
