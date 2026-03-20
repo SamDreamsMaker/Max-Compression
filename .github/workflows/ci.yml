@@ -146,6 +146,73 @@ jobs:
           path: coverage.info
           retention-days: 30
 
+  pkg-config-test:
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and install
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+          sudo cmake --install build --prefix /usr/local
+
+      - name: Test pkg-config discovery
+        run: |
+          pkg-config --exists maxcomp
+          echo "CFLAGS: $(pkg-config --cflags maxcomp)"
+          echo "LIBS:   $(pkg-config --libs maxcomp)"
+
+      - name: Build minimal program via pkg-config
+        run: |
+          cat > /tmp/test_pkgconfig.c << 'EOF'
+          #include <maxcomp/maxcomp.h>
+          #include <stdio.h>
+          #include <string.h>
+          int main(void) {
+              const char* data = "Hello MaxCompression pkg-config test!";
+              size_t src_size = strlen(data);
+              size_t cap = mcx_compress_bound(src_size);
+              unsigned char comp[1024], decomp[1024];
+              size_t comp_size = mcx_compress(comp, cap, data, src_size, 3);
+              if (mcx_is_error(comp_size)) { fprintf(stderr, "compress failed\n"); return 1; }
+              size_t dec_size = mcx_decompress(decomp, sizeof(decomp), comp, comp_size);
+              if (mcx_is_error(dec_size)) { fprintf(stderr, "decompress failed\n"); return 1; }
+              if (dec_size != src_size || memcmp(data, decomp, src_size) != 0) {
+                  fprintf(stderr, "roundtrip mismatch\n"); return 1;
+              }
+              printf("pkg-config integration OK: %s v%s\n", "maxcomp", mcx_version_string());
+              return 0;
+          }
+          EOF
+          gcc /tmp/test_pkgconfig.c -o /tmp/test_pkgconfig \
+              $(pkg-config --cflags --libs maxcomp) -lm
+          /tmp/test_pkgconfig
+
+      - name: Test find_package (CMake)
+        run: |
+          mkdir -p /tmp/cmake_test
+          cat > /tmp/cmake_test/CMakeLists.txt << 'EOF'
+          cmake_minimum_required(VERSION 3.15)
+          project(test_find_package C)
+          find_package(MaxCompression REQUIRED)
+          add_executable(test_cmake test_cmake.c)
+          target_link_libraries(test_cmake PRIVATE MaxCompression::maxcomp)
+          EOF
+          cat > /tmp/cmake_test/test_cmake.c << 'EOF'
+          #include <maxcomp/maxcomp.h>
+          #include <stdio.h>
+          int main(void) {
+              printf("find_package OK: v%s\n", mcx_version_string());
+              return 0;
+          }
+          EOF
+          cd /tmp/cmake_test
+          cmake -S . -B build
+          cmake --build build
+          ./build/test_cmake
+
   python-bindings:
     runs-on: ubuntu-latest
     needs: build-linux
