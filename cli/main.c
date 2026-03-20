@@ -64,7 +64,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] <input>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1433,6 +1433,15 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         printf("  \"file\": "); json_print_string(input); printf(",\n");
         printf("  \"original_bytes\": %zu,\n", src_size);
         printf("  \"results\": [\n");
+    } else if (csv == 2) {
+        /* Markdown header */
+        printf("Benchmarking `%s` (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
+        if (ratio_only)
+            printf("| Level | Compressed | Ratio | Saving |\n|-------|-----------|-------|--------|\n");
+        else if (show_memory)
+            printf("| Level | Compressed | Ratio | Saving | Comp MB/s | Dec MB/s | Peak RSS |\n|-------|-----------|-------|--------|-----------|----------|----------|\n");
+        else
+            printf("| Level | Compressed | Ratio | Saving | Comp MB/s | Dec MB/s |\n|-------|-----------|-------|--------|-----------|----------|\n");
     } else if (csv) {
         /* CSV header */
         if (show_memory)
@@ -1476,6 +1485,9 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
                     printf(", \"compressed_bytes\": %zu, \"ratio\": %.4f, \"saving_pct\": %.2f, \"time_s\": %.2f}",
                            csize, ratio, saving, elapsed);
                     first_ext = 0;
+                } else if (csv == 2) {
+                    printf("| %s | %zu | %.2fx | %.1f%% | - | - |\n",
+                           externals[i].name, csize, ratio, saving);
                 } else if (csv) {
                     printf("%s,%zu,%s,0,%zu,%.4f,%.2f,0,0\n",
                            input, src_size, externals[i].name, csize, ratio, saving);
@@ -1689,6 +1701,22 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
                        r->dec_p5, r->dec_p50, r->dec_p95);
             }
             printf("}");
+        } else if (csv == 2) {
+            /* Markdown table row */
+            char membuf[32];
+            if (ratio_only) {
+                printf("| L%d | %zu | %.2fx | %.1f%% |\n",
+                       r->level, r->comp_size, r->ratio, r->saving);
+            } else if (show_memory) {
+                printf("| L%d | %zu | %.2fx | %.1f%% | %.1f | %.1f | %s |\n",
+                       r->level, r->comp_size, r->ratio, r->saving,
+                       r->comp_speed, r->dec_speed,
+                       fmt_mem(r->peak_rss, membuf, sizeof(membuf)));
+            } else {
+                printf("| L%d | %zu | %.2fx | %.1f%% | %.1f | %.1f |\n",
+                       r->level, r->comp_size, r->ratio, r->saving,
+                       r->comp_speed, r->dec_speed);
+            }
         } else if (csv) {
             if (show_memory) {
                 printf("%s,%zu,mcx,%d,%zu,%.4f,%.2f,%.1f,%.1f,%ld",
@@ -2733,6 +2761,16 @@ int main(int argc, char* argv[])
                 bench_percentile = 1;
             } else if (strcmp(argv[i], "--histogram") == 0) {
                 bench_histogram = 1;
+            } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
+                const char* fmt = argv[++i];
+                if (strcmp(fmt, "csv") == 0) { bench_csv = 1; bench_json = 0; }
+                else if (strcmp(fmt, "json") == 0) { bench_json = 1; bench_csv = 0; }
+                else if (strcmp(fmt, "table") == 0) { bench_csv = 0; bench_json = 0; }
+                else if (strcmp(fmt, "markdown") == 0 || strcmp(fmt, "md") == 0) { bench_csv = 2; /* 2 = markdown */ bench_json = 0; }
+                else {
+                    fprintf(stderr, "Error: --format must be table, csv, json, or markdown\n");
+                    return 1;
+                }
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
