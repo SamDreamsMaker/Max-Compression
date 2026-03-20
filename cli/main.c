@@ -64,7 +64,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] [--no-header] <input|dir>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] [--no-header] [--repeat N] <input|dir>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -2807,6 +2807,7 @@ int main(int argc, char* argv[])
         int bench_brief = 0;
         int bench_aggregate = 0;
         int bench_no_header = 0;
+        int bench_repeat = 1;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         const char* bench_exclude = NULL;
@@ -2886,6 +2887,9 @@ int main(int argc, char* argv[])
                 bench_aggregate = 1;
             } else if (strcmp(argv[i], "--no-header") == 0) {
                 bench_no_header = 1;
+            } else if (strcmp(argv[i], "--repeat") == 0 && i + 1 < argc) {
+                bench_repeat = atoi(argv[++i]);
+                if (bench_repeat < 1) bench_repeat = 1;
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -2980,7 +2984,36 @@ int main(int argc, char* argv[])
         }
         if (bench_histogram)
             return cmd_bench_histogram(bench_file, bench_level);
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header);
+        if (bench_repeat <= 1) {
+            return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header);
+        } else {
+            /* --repeat N: run entire benchmark N times, show per-run timing */
+            int ret = 0;
+            double* run_times = (double*)calloc(bench_repeat, sizeof(double));
+            for (int r = 0; r < bench_repeat; r++) {
+                if (!bench_csv && !bench_json)
+                    printf("=== Run %d/%d ===\n", r + 1, bench_repeat);
+                double t0 = get_time_sec();
+                ret |= cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header);
+                run_times[r] = get_time_sec() - t0;
+                if (r + 1 < bench_repeat && !bench_csv && !bench_json)
+                    printf("\n");
+            }
+            /* Print summary across runs */
+            if (!bench_csv && !bench_json) {
+                double tmin = run_times[0], tmax = run_times[0], tavg = 0;
+                for (int r = 0; r < bench_repeat; r++) {
+                    if (run_times[r] < tmin) tmin = run_times[r];
+                    if (run_times[r] > tmax) tmax = run_times[r];
+                    tavg += run_times[r];
+                }
+                tavg /= bench_repeat;
+                printf("\n--- Repeat summary (%d runs) ---\n", bench_repeat);
+                printf("  Min: %.3fs  Max: %.3fs  Avg: %.3fs\n", tmin, tmax, tavg);
+            }
+            free(run_times);
+            return ret;
+        }
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
