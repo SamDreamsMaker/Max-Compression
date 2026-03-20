@@ -75,6 +75,15 @@ static double get_time_sec(void) {
 #endif
 }
 
+/* Flush filesystem caches (Linux only, requires root) */
+static void drop_caches(void) {
+#ifdef __linux__
+    sync();
+    FILE* f = fopen("/proc/sys/vm/drop_caches", "w");
+    if (f) { fprintf(f, "3\n"); fclose(f); }
+#endif
+}
+
 /* ─── Helpers ────────────────────────────────────────────────────────── */
 
 static void print_usage(void)
@@ -93,7 +102,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--warmup-iterations N] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] [--no-header] [--repeat N] <input|dir>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--warmup-iterations N] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] [--no-header] [--repeat N] [--cold] <input|dir>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1578,7 +1587,7 @@ static double percentile_val(const double* sorted, int n, double p) {
     return sorted[lo] * (1.0 - frac) + sorted[hi] * frac;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n, int worst_n, int use_median, int show_percentile, int brief, int no_header)
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n, int worst_n, int use_median, int show_percentile, int brief, int no_header, int cold)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -1742,6 +1751,7 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
             /* Per-iteration timing for median/percentile */
             double* ctimes = (double*)malloc(comp_iters * sizeof(double));
             for (int ci = 0; ci < comp_iters; ci++) {
+                if (cold) drop_caches();
                 double t0 = bench_time();
                 comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
                 double t1 = bench_time();
@@ -1761,8 +1771,10 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
             free(ctimes);
         } else {
             double t0 = bench_time();
-            for (int ci = 0; ci < comp_iters; ci++)
+            for (int ci = 0; ci < comp_iters; ci++) {
+                if (cold) drop_caches();
                 comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
+            }
             double t1 = bench_time();
             comp_time = (t1 - t0) / comp_iters;
         }
@@ -1785,6 +1797,7 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
                 /* Per-iteration timing for median/percentile */
                 double* dtimes = (double*)malloc(dec_iter_count * sizeof(double));
                 for (int di = 0; di < dec_iter_count; di++) {
+                    if (cold) drop_caches();
                     double t0 = bench_time();
                     dec_size = mcx_decompress(dec, src_size + 64, comp, comp_size);
                     double t1 = bench_time();
@@ -1805,6 +1818,7 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
             } else {
                 double t0 = bench_time();
                 for (int di = 0; di < dec_iter_count; di++) {
+                    if (cold) drop_caches();
                     dec_size = mcx_decompress(dec, src_size + 64, comp, comp_size);
                 }
                 double t1 = bench_time();
@@ -2935,6 +2949,7 @@ int main(int argc, char* argv[])
         int bench_aggregate = 0;
         int bench_no_header = 0;
         int bench_repeat = 1;
+        int bench_cold = 0;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         const char* bench_exclude = NULL;
@@ -3020,6 +3035,8 @@ int main(int argc, char* argv[])
             } else if (strcmp(argv[i], "--repeat") == 0 && i + 1 < argc) {
                 bench_repeat = atoi(argv[++i]);
                 if (bench_repeat < 1) bench_repeat = 1;
+            } else if (strcmp(argv[i], "--cold") == 0) {
+                bench_cold = 1;
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -3061,7 +3078,7 @@ int main(int argc, char* argv[])
                 if (bench_histogram)
                     ret |= cmd_bench_histogram(fl.paths[f], bench_level);
                 else
-                    ret |= cmd_bench(fl.paths[f], bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header);
+                    ret |= cmd_bench(fl.paths[f], bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header, bench_cold);
                 if (f + 1 < fl.count && !bench_csv && !bench_json)
                     printf("\n");
                 /* Accumulate totals for --aggregate */
@@ -3115,7 +3132,7 @@ int main(int argc, char* argv[])
         if (bench_histogram)
             return cmd_bench_histogram(bench_file, bench_level);
         if (bench_repeat <= 1) {
-            return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header);
+            return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header, bench_cold);
         } else {
             /* --repeat N: run entire benchmark N times, show per-run timing */
             int ret = 0;
@@ -3124,7 +3141,7 @@ int main(int argc, char* argv[])
                 if (!bench_csv && !bench_json)
                     printf("=== Run %d/%d ===\n", r + 1, bench_repeat);
                 double t0 = get_time_sec();
-                ret |= cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header);
+                ret |= cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header, bench_cold);
                 run_times[r] = get_time_sec() - t0;
                 if (r + 1 < bench_repeat && !bench_csv && !bench_json)
                     printf("\n");
