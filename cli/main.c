@@ -235,6 +235,7 @@ static size_t g_split_size = 0; /* Split output into chunks of this size (0=disa
 static int g_preserve_mtime = 0; /* Preserve source file mtime on output */
 static double g_min_ratio = 0.0; /* Minimum ratio threshold (0=disabled) */
 static int g_atomic = 0;        /* Atomic write: use temp file + rename */
+static int g_keep_broken = 0;   /* Keep partial output on error (for debugging) */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -309,6 +310,13 @@ static void collect_files_recursive(const char* dir_path, file_list_t* fl,
         }
     }
     closedir(dir);
+}
+
+/* Remove partial output on error (unless --keep-broken) */
+static void cleanup_partial(const char* path) {
+    if (!g_keep_broken && path && path[0]) {
+        remove(path);
+    }
 }
 
 static int cmd_compress(const char* input, const char* output, int level)
@@ -494,6 +502,7 @@ static int cmd_compress(const char* input, const char* output, int level)
             if (src_buf) free(src_buf);
             if (dst_buf) free(dst_buf);
             fclose(fin); fclose(fout);
+            cleanup_partial(write_path);
             return 1;
         }
 
@@ -502,6 +511,7 @@ static int cmd_compress(const char* input, const char* output, int level)
             fprintf(stderr, "Error: could not read full file\n");
             free(src_buf); free(dst_buf);
             fclose(fin); fclose(fout);
+            cleanup_partial(write_path);
             return 1;
         }
 
@@ -576,6 +586,7 @@ static int cmd_compress(const char* input, const char* output, int level)
             fprintf(stderr, "Error: compression failed: %s\n", mcx_get_error_name(comp_size));
             free(dst_buf);
             fclose(fin); fclose(fout);
+            cleanup_partial(write_path);
             return 1;
         }
 
@@ -694,6 +705,7 @@ static int cmd_compress(const char* input, const char* output, int level)
                 fprintf(stderr, "Error: Stream compression failed: %s\n", mcx_get_error_name(result));
                 free(in_buf); free(out_buf); mcx_free_cctx(cctx);
                 fclose(fin); fclose(fout);
+                cleanup_partial(write_path);
                 return 1;
             }
 
@@ -2118,6 +2130,8 @@ int main(int argc, char* argv[])
                 g_preserve_mtime = 1;
             } else if (strcmp(argv[i], "--atomic") == 0) {
                 g_atomic = 1;
+            } else if (strcmp(argv[i], "--keep-broken") == 0) {
+                g_keep_broken = 1;
             } else if (strcmp(argv[i], "--min-ratio") == 0 && i + 1 < argc) {
                 g_min_ratio = atof(argv[++i]);
                 if (g_min_ratio <= 0.0) {
