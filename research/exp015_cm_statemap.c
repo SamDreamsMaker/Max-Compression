@@ -388,7 +388,7 @@ typedef struct {
     match_t match;
     sse_t sse;
     sse_t apm;  /* second-stage APM with different context */
-    mixer_t mx1[2048], mx2[64], mx3[8], mx4[1024];
+    mixer_t mx1[2048], mx2[64], mx3[8], mx4[1024], mx5[256];
     float lr;
     uint8_t prev[8];
     uint32_t word_hash;
@@ -435,6 +435,7 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     for (int i = 0; i < 64; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
     for (int i = 0; i < 1024; i++) mixer_init(&cm->mx4[i], N_MODELS);
+    for (int i = 0; i < 256; i++) mixer_init(&cm->mx5[i], N_MODELS);
     cm->lr = 0.012f;
     cm->partial = 1;
     cm->ictx_size = 1 << 22;
@@ -543,7 +544,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     float m3 = mixer_mix(&cm->mx3[bp], str);
     int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
     float m4 = mixer_mix(&cm->mx4[mx4_ctx], str);
-    float mixed = (m1 + m2 + m3 + m4) * 0.25f;
+    int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 8)) & 255;
+    float m5 = mixer_mix(&cm->mx5[mx5_ctx], str);
+    float mixed = (m1 + m2 + m3 + m4 + m5) * 0.2f;
     
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
@@ -595,6 +598,8 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     {
         int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
         mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr);
+        int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 8)) & 255;
+        mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr);
     }
     cm->total_bits++;
     sse_update(&cm->sse, ((cm->prev[0] >> 4) << 5 | (cm->partial & 0xF) << 1 | (bp >> 2)) & (SSE_CTXS-1), mp, bit);
@@ -648,7 +653,9 @@ static size_t cm_compress(uint8_t *dst, size_t cap,
             float em3 = mixer_mix(&cm.mx3[bp], str);
             int emx4 = (((cm.prev[0] >> 4) << 5) | ((cm.prev[1] >> 4) << 1) | bp/4) & 1023;
             float em4 = mixer_mix(&cm.mx4[emx4], str);
-            float mixed = (em1 + em2 + em3 + em4) * 0.25f;
+            int emx5 = (cm.word_hash ^ (cm.word_hash >> 8)) & 255;
+            float em5 = mixer_mix(&cm.mx5[emx5], str);
+            float mixed = (em1 + em2 + em3 + em4 + em5) * 0.2f;
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
@@ -688,7 +695,9 @@ static size_t cm_decompress(uint8_t *dst, size_t cap,
             float dm3 = mixer_mix(&cm.mx3[bp], str);
             int dmx4 = (((cm.prev[0] >> 4) << 5) | ((cm.prev[1] >> 4) << 1) | bp/4) & 1023;
             float dm4 = mixer_mix(&cm.mx4[dmx4], str);
-            float mixed = (dm1 + dm2 + dm3 + dm4) * 0.25f;
+            int dmx5 = (cm.word_hash ^ (cm.word_hash >> 8)) & 255;
+            float dm5 = mixer_mix(&cm.mx5[dmx5], str);
+            float mixed = (dm1 + dm2 + dm3 + dm4 + dm5) * 0.2f;
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
