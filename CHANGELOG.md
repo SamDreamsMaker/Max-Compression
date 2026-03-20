@@ -4,6 +4,16 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 12)
+- **`mcx compress --preserve-mtime`** — set output file mtime to match input file's modification time.
+- **`mcx bench --memory`** — report peak RSS memory usage alongside speed and ratio during benchmarks.
+- **`--split` integration test** — compress with split, concatenate chunks, decompress, verify roundtrip correctness.
+- **L1 decompress profiling** — 147 MB/s on enwik8, memory-bandwidth limited; wild-copy16 + match copy already optimal.
+- **Man page + completions update** — all Batch 12 flags documented.
+
+### Tested (Batch 12)
+- **Linked-list MTF** — tested replacing array+memmove with linked list for large positions (pos>16). Only -4% difference on 1MB BWT-like data, within noise. 256-byte table fits in L1 cache, memmove is already optimal. Not adopted.
+
 ### Added (Batch 11)
 - **CM-rANS early exit** — skip CM-rANS trial when single rANS is already smaller than multi-table (reduces entropy encode time at L12+).
 - **`mcx bench --size`** — benchmark on a truncated prefix of input (e.g. `--size 64K` for quick tests).
