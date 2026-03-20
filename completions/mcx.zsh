@@ -126,6 +126,7 @@ _mcx() {
         '--median[Report median instead of mean]'
         '--percentile[Report p5/p50/p95 speed distribution]'
         '--histogram[Show compressed size distribution across block sizes]'
+        '--format[Output format]:format:(table csv json markdown)'
         '-t[Thread count]:threads:'
         '-T[Thread count]:threads:'
         '*:input:_files'

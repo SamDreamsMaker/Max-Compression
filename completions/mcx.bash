@@ -29,7 +29,7 @@ _mcx() {
             return 0
             ;;
         bench|compare)
-            COMPREPLY=( $(compgen -W "-l --level --compare --csv --warmup --json --decode-only --iterations --size --memory --all-levels --ratio-only --sort --top --median --percentile --histogram -t -T --threads" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "-l --level --compare --csv --warmup --json --decode-only --iterations --size --memory --all-levels --ratio-only --sort --top --median --percentile --histogram --format -t -T --threads" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         diff)
@@ -50,6 +50,10 @@ _mcx() {
             ;;
         --sort)
             COMPREPLY=( $(compgen -W "ratio speed level" -- "${cur}") )
+            return 0
+            ;;
+        --format)
+            COMPREPLY=( $(compgen -W "table csv json markdown" -- "${cur}") )
             return 0
             ;;
         -o|--output)
