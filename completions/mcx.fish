@@ -61,3 +61,4 @@ complete -c mcx -n "__fish_seen_subcommand_from decompress extract" -s t -l thre
 complete -c mcx -n "__fish_seen_subcommand_from decompress extract" -s T -x -d "Thread count"
 complete -c mcx -n "__fish_seen_subcommand_from bench" -s t -l threads -x -d "Thread count"
 complete -c mcx -n "__fish_seen_subcommand_from bench" -s T -x -d "Thread count"
+complete -c mcx -n '__fish_use_subcommand' -a compare    -d 'Alias for bench'

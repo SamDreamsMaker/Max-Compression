@@ -5,7 +5,7 @@ _mcx() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="compress decompress extract info cat ls diff stat hash bench test verify version"
+    commands="compress decompress extract info cat ls diff stat hash bench compare test verify version"
 
     case "${prev}" in
         mcx)
@@ -20,7 +20,7 @@ _mcx() {
             COMPREPLY=( $(compgen -W "-o -q -v -f -r -c --output --quiet --verbose --force --recursive --stdout --delete --keep" -- "${cur}") $(compgen -f -X '!*.mcx' -- "${cur}") )
             return 0
             ;;
-        bench)
+        bench|compare)
             COMPREPLY=( $(compgen -W "-l --level" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;

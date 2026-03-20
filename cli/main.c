@@ -62,7 +62,8 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] <input>       # benchmark all (or specific) levels\n"
+        "  mcx bench      [-l LEVEL] [--compare] <input>  # benchmark all (or specific) levels\n"
+        "  mcx compare    <input>                   # alias for bench\n"
         "  mcx test                                # run self-tests\n"
         "  mcx version [--build]                   # detailed build info\n"
         "  mcx --version\n"
@@ -70,6 +71,7 @@ static void print_usage(void)
         "\n"
         "Aliases:\n"
         "  decompress → extract, x, d\n"
+        "  bench → compare\n"
         "\n"
         "Levels (default: %d):\n"
         "  L1-L3   Fast LZ77 (speed priority)\n"
@@ -1972,7 +1974,7 @@ int main(int argc, char* argv[])
     } else if (strcmp(argv[1], "checksum") == 0) {
         return cmd_checksum(argc, argv);
 
-    } else if (strcmp(argv[1], "bench") == 0) {
+    } else if (strcmp(argv[1], "bench") == 0 || strcmp(argv[1], "compare") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] <file>\n");
             return 1;
