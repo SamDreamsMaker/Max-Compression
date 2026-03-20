@@ -103,6 +103,7 @@ static void print_usage(void)
         "  -t, -T, --threads N  Use N threads (default: all cores)\n"
         "      --block-size SIZE  Override block size (e.g. 1M, 4M, 32M)\n"
         "  -n, --dry-run   Analyze file without compressing\n"
+        "      --estimate  Estimate compressed size via sample (faster)\n"
         "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
@@ -220,6 +221,7 @@ static int g_recursive = 0; /* Recurse into directories */
 static int g_verify = 0;    /* Verify after compress (decompress+compare) */
 static int g_verbose = 0;   /* Show extra info (peak memory, timings) */
 static int g_dryrun = 0;    /* Dry-run: analyze only, don't compress */
+static int g_estimate = 0;  /* Estimate compressed size via sample compress */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -373,6 +375,55 @@ static int cmd_compress(const char* input, const char* output, int level)
             printf("  Est. ratio:   ~%.1fx (based on entropy)\n", 8.0 / a.entropy);
             printf("\n  (No output file written)\n");
 
+            free(sample_buf);
+        } else {
+            fclose(fin);
+            fprintf(stderr, "Error: out of memory\n");
+        }
+        return 0;
+    }
+
+    /* ── Estimate mode: compress a sample to predict full file ratio ── */
+    if (g_estimate) {
+        /* Use up to 128KB sample, compress it, extrapolate */
+        size_t sample_max = 131072;
+        size_t sample = src_size < sample_max ? src_size : sample_max;
+        uint8_t* sample_buf = (uint8_t*)malloc(sample);
+        if (sample_buf) {
+            size_t nr = fread(sample_buf, 1, sample, fin);
+            fclose(fin);
+
+            double t0 = get_time_sec();
+            size_t comp_cap = mcx_compress_bound(nr);
+            uint8_t* comp_buf = (uint8_t*)malloc(comp_cap);
+            if (comp_buf) {
+                size_t csz = mcx_compress(comp_buf, comp_cap, sample_buf, nr, level);
+                double dt = get_time_sec() - t0;
+
+                if (!mcx_is_error(csz)) {
+                    double ratio = (double)nr / csz;
+                    size_t est_compressed = (size_t)((double)src_size / ratio);
+                    /* For small files where sample == full file, estimate is exact */
+                    if (nr == src_size) est_compressed = csz;
+
+                    printf("Estimate for '%s' (%zu bytes) at level %d\n\n", input, src_size, level);
+                    printf("  Sample:       %zu bytes compressed → %zu bytes (%.2fx)\n", nr, csz, ratio);
+                    printf("  Est. output:  ~%zu bytes (~%.2fx ratio)\n", est_compressed, ratio);
+                    printf("  Est. savings: ~%zu bytes (~%.1f%%)\n",
+                           src_size > est_compressed ? src_size - est_compressed : 0,
+                           src_size > est_compressed ? 100.0 * (src_size - est_compressed) / src_size : 0.0);
+                    printf("  Sample speed: %.1f MB/s (%.3fs for %zu bytes)\n",
+                           nr / dt / 1048576.0, dt, nr);
+                    if (src_size > nr) {
+                        double est_time = dt * ((double)src_size / nr);
+                        printf("  Est. time:    ~%.1fs for full file\n", est_time);
+                    }
+                    printf("\n  (No output file written)\n");
+                } else {
+                    fprintf(stderr, "Error: sample compression failed: %s\n", mcx_get_error_name(csz));
+                }
+                free(comp_buf);
+            }
             free(sample_buf);
         } else {
             fclose(fin);
@@ -1595,6 +1646,8 @@ int main(int argc, char* argv[])
                 g_verify = 1;
             } else if (strcmp(argv[i], "--dry-run") == 0 || strcmp(argv[i], "-n") == 0) {
                 g_dryrun = 1;
+            } else if (strcmp(argv[i], "--estimate") == 0) {
+                g_estimate = 1;
             } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
                 g_verbose = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
