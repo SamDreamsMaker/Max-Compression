@@ -10,6 +10,8 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-verify\fR]
 [\fB\-\-dry\-run\fR]
 [\fB\-\-estimate\fR]
+[\fB\-\-level\-scan\fR]
+[\fB\-\-no\-trials\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -38,6 +40,7 @@ mcx \- high\-ratio lossless data compression tool
 .br
 .B mcx info
 [\fB\-\-json\fR]
+[\fB\-\-blocks\fR]
 \fIINPUT\fR
 .br
 .B mcx cat
@@ -67,6 +70,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-l\fR \fILEVEL\fR]
 [\fB\-\-compare\fR]
 [\fB\-\-csv\fR]
+[\fB\-\-warmup\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -107,7 +111,8 @@ Streaming mode: compress stdin to stdout (default) or decompress with
 .B info
 Display frame metadata (size, level, strategy, block count, per\-block
 genome configuration) without decompressing. Use \fB\-\-json\fR for
-machine\-readable output.
+machine\-readable output. Use \fB\-\-blocks\fR for per\-block details
+(offset, size, strategy, flags) in tabular format.
 .TP
 .B cat
 Decompress to stdout (equivalent to \fBdecompress \-c\fR).
@@ -139,7 +144,8 @@ Aliases: \fBlist\fR.
 .B bench
 Benchmark compression on a file across all major levels.
 Use \fB\-l\fR for a specific level, \fB\-\-compare\fR to include
-gzip/bzip2/xz results, and \fB\-\-csv\fR for CSV output.
+gzip/bzip2/xz results, \fB\-\-csv\fR for CSV output, and
+\fB\-\-warmup\fR to run one warmup iteration before timing.
 Aliases: \fBcompare\fR.
 .TP
 .B test
@@ -235,6 +241,15 @@ Analyze and print predicted strategy/level without actually compressing.
 Report estimated compressed size without full compression (faster than
 \fB\-\-dry\-run\fR).
 .TP
+.BR \-\-level\-scan
+Try levels L1\-L12 and automatically pick the one with the best
+compression ratio. Slower than a single level but finds the optimal
+speed/ratio tradeoff.
+.TP
+.BR \-\-no\-trials
+Skip multi\-strategy trial at L20+ (use first matching strategy).
+Faster but may miss the optimal strategy for mixed\-content files.
+.TP
 .BR \-\-in\-place ", " \-i
 For \fBupgrade\fR: overwrite the input file directly (cannot combine with \fB\-o\fR).
 .TP
@@ -243,6 +258,14 @@ For \fBbench\fR: also run gzip, bzip2, and xz for comparison.
 .TP
 .BR \-\-csv
 For \fBbench\fR: output results in CSV format for automated collection.
+.TP
+.BR \-\-warmup
+For \fBbench\fR: run one warmup iteration before timing to reduce
+cold\-cache variance in benchmark results.
+.TP
+.BR \-\-blocks
+For \fBinfo\fR: show per\-block details (offset, compressed size,
+original size, strategy, flags) in tabular format.
 .TP
 .BR \-\-json
 For \fBinfo\fR, \fBstat\fR, \fBls\fR: machine\-readable JSON output.
