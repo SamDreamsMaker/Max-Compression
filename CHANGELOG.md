@@ -4,6 +4,13 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 38)
+- **`mcx bench --suite NAME`** — predefined benchmark suites: `quick` (L1/L6/L12), `standard` (default 8 levels), `full` (L1-L26). Simplifies common benchmark workflows.
+- **WASM CI workflow** — `.github/workflows/wasm.yml` builds MCX with Emscripten and verifies compress/decompress roundtrip in Node.js (4 test cases).
+- **Memory allocation profiling** — measured malloc/free calls: compress L12 alice29=87 allocs, dickens=95, mozilla=84 (including ~10 from OpenMP/ld); decompress=13 allocs; L1=17 allocs. Extremely low — arena allocator unnecessary.
+- **Block header review** — frame header already packed at 20 bytes (magic+version+flags+level+strategy+origsize+checksum); per-block is 1 byte. No waste to optimize.
+- **`--stdin-name` skip** — frame header has no space for variable-length filename; all 8 flag bits used, deferred to v3.0 format extension.
+
 ### Added (Batch 37)
 - **`mcx info --entropy --json`** — outputs `{entropy_bpb, entropy_pct}` JSON object for programmatic entropy analysis of compressed files.
 - **`mcx compress --dry-run --adaptive-level`** — shows auto-selected level from entropy analysis and updates strategy display. Combines instant entropy-based level selection with dry-run preview.
