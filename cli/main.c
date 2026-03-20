@@ -723,23 +723,115 @@ static const char* entropy_coder_name(uint8_t ec) {
     }
 }
 
-static int cmd_info(const char* input)
+/* JSON string escaper (backslash, quotes) */
+static void json_print_string(const char* s)
+{
+    putchar('"');
+    for (; *s; s++) {
+        switch (*s) {
+            case '"':  printf("\\\""); break;
+            case '\\': printf("\\\\"); break;
+            case '\n': printf("\\n");  break;
+            case '\t': printf("\\t");  break;
+            default:   putchar(*s);    break;
+        }
+    }
+    putchar('"');
+}
+
+static int cmd_info(const char* input, int json)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
     if (src == NULL) return 1;
 
-    printf("File:             %s\n", input);
-    printf("Compressed size:  %zu bytes (%.1f KB)\n", src_size, src_size / 1024.0);
-
     mcx_frame_info info;
     size_t r = mcx_get_frame_info(&info, src, src_size);
     if (mcx_is_error(r)) {
-        printf("Error: Not a valid MCX file\n");
+        if (json)
+            printf("{\"error\":\"Not a valid MCX file\"}\n");
+        else
+            printf("Error: Not a valid MCX file\n");
         free(src);
         return 1;
     }
 
+    if (json) {
+        /* JSON output */
+        printf("{\n");
+        printf("  \"file\": "); json_print_string(input); printf(",\n");
+        printf("  \"compressed_size\": %zu,\n", src_size);
+        printf("  \"format_version\": %u,\n", info.version);
+        printf("  \"level\": %u,\n", info.level);
+        printf("  \"strategy\": \"%s\",\n", strategy_name(info.strategy));
+        printf("  \"original_size\": %llu,\n", (unsigned long long)info.original_size);
+        if (info.original_size > 0) {
+            printf("  \"ratio\": %.4f,\n", (double)info.original_size / src_size);
+            printf("  \"savings_pct\": %.2f,\n", 100.0 * (1.0 - (double)src_size / info.original_size));
+        }
+        printf("  \"flags\": {\n");
+        printf("    \"e8e9\": %s,\n", (info.flags & MCX_FLAG_E8E9) ? "true" : "false");
+        printf("    \"int_delta\": %s,\n", (info.flags & MCX_FLAG_INT_DELTA) ? "true" : "false");
+        printf("    \"streaming\": %s,\n", (info.flags & MCX_FLAG_STREAMING) ? "true" : "false");
+        printf("    \"adaptive_blocks\": %s\n", (info.flags & MCX_FLAG_ADAPTIVE_BLOCKS) ? "true" : "false");
+        printf("  },\n");
+
+        /* Parse blocks */
+        uint8_t strat = info.strategy;
+        int has_blocks = 0;
+        if (strat != MCX_STRATEGY_STORE && strat != MCX_STRATEGY_FAST) {
+            size_t offset = MCX_FRAME_HEADER_SIZE;
+            if (offset + 4 <= src_size) {
+                uint32_t num_blocks;
+                memcpy(&num_blocks, src + offset, 4);
+                offset += 4;
+                printf("  \"num_blocks\": %u,\n", num_blocks);
+
+                if (num_blocks > 0 && num_blocks <= 10000 &&
+                    offset + (size_t)num_blocks * 4 <= src_size) {
+                    uint32_t* bsizes = (uint32_t*)malloc(num_blocks * sizeof(uint32_t));
+                    if (bsizes) {
+                        for (uint32_t b = 0; b < num_blocks; b++)
+                            memcpy(&bsizes[b], src + offset + b * 4, 4);
+                        offset += (size_t)num_blocks * 4;
+                        if (info.flags & MCX_FLAG_ADAPTIVE_BLOCKS)
+                            offset += (size_t)num_blocks * 4;
+
+                        printf("  \"blocks\": [\n");
+                        for (uint32_t b = 0; b < num_blocks; b++) {
+                            if (offset < src_size) {
+                                mcx_genome g = mcx_decode_genome(src[offset]);
+                                printf("    {\"id\": %u, \"compressed_size\": %u, "
+                                       "\"bwt\": %s, \"mtf\": %s, \"delta\": %s, "
+                                       "\"entropy\": \"%s\", \"cm_learning\": %u}%s\n",
+                                       b, bsizes[b],
+                                       g.use_bwt ? "true" : "false",
+                                       g.use_mtf_rle ? "true" : "false",
+                                       g.use_delta ? "true" : "false",
+                                       entropy_coder_name(g.entropy_coder),
+                                       g.cm_learning,
+                                       (b + 1 < num_blocks) ? "," : "");
+                            }
+                            offset += bsizes[b];
+                        }
+                        printf("  ]\n");
+                        has_blocks = 1;
+                        free(bsizes);
+                    }
+                }
+            }
+        }
+        if (!has_blocks)
+            printf("  \"num_blocks\": 0\n");
+        printf("}\n");
+
+        free(src);
+        return 0;
+    }
+
+    /* Human-readable output (original) */
+    printf("File:             %s\n", input);
+    printf("Compressed size:  %zu bytes (%.1f KB)\n", src_size, src_size / 1024.0);
     printf("Format:           MCX v%u\n", info.version);
     printf("Level:            %u\n", info.level);
     printf("Strategy:         %s\n", strategy_name(info.strategy));
@@ -1007,7 +1099,7 @@ static int cmd_hash(int argc, char** argv)
 
 /* ─── Stat command ───────────────────────────────────────────────────── */
 
-static int cmd_stat(const char* input)
+static int cmd_stat(const char* input, int json)
 {
     size_t size;
     uint8_t* data = read_file(input, &size);
@@ -1076,6 +1168,31 @@ static int cmd_stat(const char* input)
     /* Theoretical minimum size */
     double min_bits = entropy * size;
     size_t min_bytes = (size_t)(min_bits / 8.0 + 0.5);
+
+    if (json) {
+        printf("{\n");
+        printf("  \"file\": "); json_print_string(input); printf(",\n");
+        printf("  \"size\": %zu,\n", size);
+        printf("  \"type\": \"%s\",\n",
+               text_pct > 90 ? "text" : text_pct > 50 ? "mixed" : "binary");
+        printf("  \"printable_pct\": %.1f,\n", text_pct);
+        printf("  \"unique_bytes\": %d,\n", unique);
+        printf("  \"entropy\": %.4f,\n", entropy);
+        printf("  \"shannon_min_bytes\": %zu,\n", min_bytes);
+        printf("  \"runs_ge4\": %zu,\n", runs);
+        printf("  \"longest_run\": %zu,\n", max_run);
+        printf("  \"top_bytes\": [\n");
+        for (int t = 0; t < top_count; t++) {
+            int s = top[t];
+            double pct = 100.0 * freq[s] / size;
+            printf("    {\"byte\": %d, \"count\": %u, \"pct\": %.2f}%s\n",
+                   s, freq[s], pct, (t + 1 < top_count) ? "," : "");
+        }
+        printf("  ]\n");
+        printf("}\n");
+        free(data);
+        return 0;
+    }
 
     printf("File:           %s\n", input);
     printf("Size:           %zu bytes (%.1f KB)\n", size, size / 1024.0);
@@ -1329,11 +1446,17 @@ int main(int argc, char* argv[])
         return errors > 0 ? 1 : 0;
 
     } else if (strcmp(argv[1], "info") == 0) {
-        if (argc < 3) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
+        int json_flag = 0;
+        const char* info_input = NULL;
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--json") == 0) json_flag = 1;
+            else info_input = argv[i];
+        }
+        if (!info_input) {
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s [--json] <file>\n", argv[1]);
             return 1;
         }
-        return cmd_info(argv[2]);
+        return cmd_info(info_input, json_flag);
 
     } else if (strcmp(argv[1], "ls") == 0 || strcmp(argv[1], "list") == 0) {
         return cmd_ls(argc, argv);
@@ -1527,11 +1650,17 @@ int main(int argc, char* argv[])
         return 0;
 
     } else if (strcmp(argv[1], "stat") == 0) {
-        if (argc < 3) {
-            fprintf(stderr, "Usage: mcx stat <file>\n");
+        int json_flag = 0;
+        const char* stat_input = NULL;
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--json") == 0) json_flag = 1;
+            else stat_input = argv[i];
+        }
+        if (!stat_input) {
+            fprintf(stderr, "Usage: mcx stat [--json] <file>\n");
             return 1;
         }
-        return cmd_stat(argv[2]);
+        return cmd_stat(stat_input, json_flag);
 
     } else if (strcmp(argv[1], "hash") == 0) {
         return cmd_hash(argc, argv);
