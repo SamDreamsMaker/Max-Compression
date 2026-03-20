@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 21)
+- **L2 vs L3 Silesia profiling** — L3 wins all 12 files avg +0.43% ratio (max +2.13% on xml), ~4% slower compress. Lazy depth 2 is worthwhile.
+- **`mcx bench --brief`** — compact one-line-per-level output (e.g. `L6: 2.38x 6.4/87.2 MB/s`) for scripting and quick comparisons.
+- **`mcx compress --level-range L1-L6`** — try a range of levels and pick best ratio (more control than `--level-scan`). Supports any contiguous range like `L1-L12` or `L6-L9`.
+- **L1 vs L6 decompress Silesia profiling** — L6 decompresses 5-29% faster (avg +12%) due to longer matches and fewer tokens.
+- **Integration tests** — coverage for `--brief`, `--level-range`, and L2 vs L3 differentiation (verifies L3 ≤ L2 output size).
+- **Man page + completions update** — `--brief` and `--level-range` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 20)
 - **L2 vs L3 differentiation** — L2 now uses lazy depth 1 (check ip+1), L3 uses lazy depth 2 (check ip+1 and ip+2). L3 produces 66950 vs L2 67226 on alice29 (+0.4% ratio, -4% speed).
 - **`mcx bench --format`** — unified output format flag: `table` (default), `csv`, `json`, or `markdown`. Replaces separate `--csv` and `--json` flags (still accepted as aliases).
