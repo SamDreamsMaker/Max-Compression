@@ -28,11 +28,23 @@
 #define utime _utime
 #define utimbuf _utimbuf
 #else
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#include <sys/utime.h>
+#define access _access
+#ifndef F_OK
+#define F_OK 0
+#endif
+#define utime _utime
+#define utimbuf _utimbuf
+#else
 #include <sys/resource.h>
 #include <dirent.h>
 #include <unistd.h>
 #include <utime.h>
 #include <fnmatch.h>
+#endif
 #endif
 #include <time.h>
 #include <math.h>

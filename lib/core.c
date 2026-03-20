@@ -12,6 +12,7 @@
  * Pipeline: BWT + MTF + RLE + rANS (default) or CM-rANS (best).
  */
 
+#include "compat.h"  /* Must be first — defines _POSIX_C_SOURCE before system headers */
 #include "internal.h"
 #include "analyzer/analyzer.h"
 #include "model/model.h"
@@ -24,7 +25,6 @@
 #include "entropy/adaptive_ac.h"
 #include "preprocess/preprocess.h"
 #include "lz/lzrc.h"
-#include <time.h>
 
 /* Runtime block size override (0 = use MCX_MAX_BLOCK_SIZE) */
 size_t mcx_block_size_override = 0;
@@ -49,9 +49,7 @@ static inline int mcx_profile(void) {
     }
     return mcx_profile_enabled;
 }
-static inline double mcx_time_ms(struct timespec* start, struct timespec* end) {
-    return (end->tv_sec - start->tv_sec) * 1000.0 + (end->tv_nsec - start->tv_nsec) / 1000000.0;
-}
+/* Use portable timer from compat.h: mcx_timer_t, mcx_timer_start, mcx_timer_elapsed_ms */
 
 /* RLE2 (RUNA/RUNB) */
 extern size_t mcx_rle2_encode(uint8_t* dst, size_t dst_cap, const uint8_t* src, size_t src_size);
@@ -843,8 +841,8 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             uint64_t pidx64 = 0;
             int double_bwt = 0; /* Will be set to 1 if double-BWT wins */
             int _cprof = mcx_profile();
-            struct timespec _cp0, _cp1, _cp2, _cp3, _cp4;
-            if (_cprof) clock_gettime(CLOCK_MONOTONIC, &_cp0);
+            mcx_timer_t _cp0, _cp1, _cp2, _cp3, _cp4;
+            if (_cprof) mcx_timer_start(&_cp0);
             if (genome.use_bwt) {
                 size_t primary_idx;
                 size_t bwt_result = mcx_bwt_forward(buf1, &primary_idx, stage_in, stage_size);
@@ -888,7 +886,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 }
             }
             
-            if (_cprof) clock_gettime(CLOCK_MONOTONIC, &_cp1);
+            if (_cprof) mcx_timer_start(&_cp1);
             uint32_t rle32 = (uint32_t)stage_size;
             if (genome.use_mtf_rle) {
                 if (stage_in != buf1) {
@@ -952,7 +950,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 genome.cm_learning = 5;
             }
             
-            if (_cprof) clock_gettime(CLOCK_MONOTONIC, &_cp2);
+            if (_cprof) mcx_timer_start(&_cp2);
             /* Write genome byte now (after all RLE2/double-BWT flags have been set) */
             out1[0] = mcx_encode_genome(&genome);
 
@@ -1023,13 +1021,13 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             }
             
             if (_cprof) {
-                clock_gettime(CLOCK_MONOTONIC, &_cp3);
+                mcx_timer_start(&_cp3);
                 #pragma omp critical
                 {
-                    double bwt_ms = (_cp1.tv_sec - _cp0.tv_sec)*1e3 + (_cp1.tv_nsec - _cp0.tv_nsec)*1e-6;
-                    double mtf_rle_ms = (_cp2.tv_sec - _cp1.tv_sec)*1e3 + (_cp2.tv_nsec - _cp1.tv_nsec)*1e-6;
-                    double ent_ms = (_cp3.tv_sec - _cp2.tv_sec)*1e3 + (_cp3.tv_nsec - _cp2.tv_nsec)*1e-6;
-                    double total_ms = (_cp3.tv_sec - _cp0.tv_sec)*1e3 + (_cp3.tv_nsec - _cp0.tv_nsec)*1e-6;
+                    double bwt_ms = mcx_timer_elapsed_ms(&_cp0, &_cp1);
+                    double mtf_rle_ms = mcx_timer_elapsed_ms(&_cp1, &_cp2);
+                    double ent_ms = mcx_timer_elapsed_ms(&_cp2, &_cp3);
+                    double total_ms = mcx_timer_elapsed_ms(&_cp0, &_cp3);
                     fprintf(stderr, "[PROFILE] Compress block %u (%zu bytes):\n", b, block_src_sizes_arr ? block_src_sizes_arr[b] : src_size);
                     fprintf(stderr, "  BWT forward:    %7.2f ms (%.0f%%)\n", bwt_ms, bwt_ms/total_ms*100);
                     fprintf(stderr, "  MTF+RLE encode: %7.2f ms (%.0f%%)\n", mtf_rle_ms, mtf_rle_ms/total_ms*100);
@@ -1722,9 +1720,9 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 continue;
             }
 
-            struct timespec _prof_t0, _prof_t1, _prof_t2, _prof_t3, _prof_t4;
+            mcx_timer_t _prof_t0, _prof_t1, _prof_t2, _prof_t3, _prof_t4;
             int _do_prof = mcx_profile();
-            if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t0);
+            if (_do_prof) mcx_timer_start(&_prof_t0);
 
             size_t dec_res;
             if (genome.entropy_coder == 2) {
@@ -1743,7 +1741,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 dec_res = mcx_huffman_decompress(
                     buf1, rle_size + 1024, in + chunk_src_offset + payload_offset, chunk_comp_size - payload_offset);
             }
-            if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t1);
+            if (_do_prof) mcx_timer_start(&_prof_t1);
 
             if (MCX_IS_ERROR(dec_res)) {
                 #pragma omp critical
@@ -1765,7 +1763,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 } else {
                     rle_dec = mcx_rle_decode(buf2, bwt_target_size + 1024, stage_out, stage_size);
                 }
-                if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t2);
+                if (_do_prof) mcx_timer_start(&_prof_t2);
                 if (MCX_IS_ERROR(rle_dec) || rle_dec == 0) {
                     #pragma omp critical
                     { omp_err = 1; }
@@ -1773,7 +1771,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                     continue;
                 }
                 mcx_mtf_decode(buf2, rle_dec);
-                if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t3);
+                if (_do_prof) mcx_timer_start(&_prof_t3);
                 stage_out = buf2;
                 stage_size = rle_dec;
             } else if (genome.cm_learning >= 6 && genome.entropy_coder != 2) {
@@ -1817,7 +1815,7 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 }
                 
                 size_t bwt_dec = mcx_bwt_inverse(bwt_dst, primary_idx, stage_out, stage_size);
-                if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t4);
+                if (_do_prof) mcx_timer_start(&_prof_t4);
                 if (MCX_IS_ERROR(bwt_dec) || bwt_dec != bwt_target_size) {
                     #pragma omp critical
                     { omp_err = 1; }
@@ -1828,20 +1826,20 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                     fprintf(stderr, "[PROFILE] Block %d (%zu bytes):\n", b,
                             bwt_target_size);
                     fprintf(stderr, "  rANS decode:   %7.2f ms\n",
-                            mcx_time_ms(&_prof_t0, &_prof_t1));
+                            mcx_timer_elapsed_ms(&_prof_t0, &_prof_t1));
                     if (genome.use_mtf_rle) {
                         fprintf(stderr, "  RLE2 decode:   %7.2f ms\n",
-                                mcx_time_ms(&_prof_t1, &_prof_t2));
+                                mcx_timer_elapsed_ms(&_prof_t1, &_prof_t2));
                         fprintf(stderr, "  MTF decode:    %7.2f ms\n",
-                                mcx_time_ms(&_prof_t2, &_prof_t3));
+                                mcx_timer_elapsed_ms(&_prof_t2, &_prof_t3));
                         fprintf(stderr, "  BWT inverse:   %7.2f ms\n",
-                                mcx_time_ms(&_prof_t3, &_prof_t4));
+                                mcx_timer_elapsed_ms(&_prof_t3, &_prof_t4));
                     } else {
                         fprintf(stderr, "  BWT inverse:   %7.2f ms\n",
-                                mcx_time_ms(&_prof_t1, &_prof_t4));
+                                mcx_timer_elapsed_ms(&_prof_t1, &_prof_t4));
                     }
                     fprintf(stderr, "  TOTAL:         %7.2f ms\n",
-                            mcx_time_ms(&_prof_t0, &_prof_t4));
+                            mcx_timer_elapsed_ms(&_prof_t0, &_prof_t4));
                 }
                 stage_out = bwt_dst;
             } else {
