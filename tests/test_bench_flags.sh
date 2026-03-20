@@ -202,4 +202,31 @@ if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/range_out.txt" > /dev/null 2>&1; then
 fi
 echo "OK: --level-range 1-6 roundtrip verified"
 
+# Test --level-range single level (L6-L6)
+"$MCX" compress --level-range 6-6 "$TMPDIR/input.txt" -o "$TMPDIR/range_single.mcx"
+"$MCX" decompress "$TMPDIR/range_single.mcx" -o "$TMPDIR/range_single_out.txt"
+if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/range_single_out.txt" > /dev/null 2>&1; then
+    echo "FAIL: --level-range 6-6 single-level roundtrip failed"
+    exit 1
+fi
+echo "OK: --level-range 6-6 single-level roundtrip verified"
+
+# Test --level-range full range (L1-L26 would be slow, test L1-L3)
+"$MCX" compress --level-range 1-3 "$TMPDIR/input.txt" -o "$TMPDIR/range_full.mcx"
+"$MCX" decompress "$TMPDIR/range_full.mcx" -o "$TMPDIR/range_full_out.txt"
+if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/range_full_out.txt" > /dev/null 2>&1; then
+    echo "FAIL: --level-range 1-3 roundtrip failed"
+    exit 1
+fi
+echo "OK: --level-range 1-3 roundtrip verified"
+
+# Test --worst: show worst N results
+WORST_OUT=$("$MCX" bench --all-levels --worst 3 "$TMPDIR/input.txt" 2>&1)
+WORST_LINES=$(echo "$WORST_OUT" | grep "^L[0-9]" | wc -l)
+if [ "$WORST_LINES" -ne 3 ]; then
+    echo "FAIL: --worst 3 should show exactly 3 result lines, got $WORST_LINES"
+    exit 1
+fi
+echo "OK: --worst 3 shows exactly 3 result lines"
+
 echo "=== All bench flags tests passed ==="
