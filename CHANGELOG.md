@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 17)
+- **Adaptive hash table size for L1** — scale hash entries with input size (small files get smaller table, better cache usage). Tightened greedy multiplier from 4× to 2×, same ratio (2.15x alice29).
+- **`mcx bench --median`** — report median instead of mean when iterations > 1 (more robust to outliers).
+- **`mcx compress --keep-broken`** — keep partial output on error instead of deleting (useful for debugging). Also added `cleanup_partial()` to remove partial output by default on compression errors.
+- **L6 vs L9 Silesia profiling** — L9 avg +6.3% ratio at -47% compress speed, -85% decompress speed. Best for archival; L6 best for speed/ratio balance.
+- **Integration tests** — coverage for `--top` flag (bench --all-levels --sort ratio --top 3, verify exactly 3 lines).
+- **Man page + completions update** — `--median` and `--keep-broken` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 16)
 - **Multi-rANS trial early exit** — at L12, skip context-variant trials when lo_tables already beats hi_tables by >1%. Reduces entropy encode time on blocks where simpler tables win.
 - **`mcx bench --top N`** — only show top N results by ratio (useful with `--all-levels`).
