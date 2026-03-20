@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <dirent.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
@@ -88,6 +89,7 @@ static void print_usage(void)
         "  -r, --recursive Recurse into directories\n"
         "  -c, --stdout    Write output to stdout\n"
         "  -q, --quiet     Suppress non-error output\n"
+        "  -v, --verbose   Show extra info (peak memory usage)\n"
         "  -t, --threads N Use N threads (default: auto)\n"
         "\n"
         "Examples:\n"
@@ -204,6 +206,24 @@ static int g_delete = 0;    /* Delete source file after success */
 static int g_threads = 0;   /* Thread count (0 = auto) */
 static int g_recursive = 0; /* Recurse into directories */
 static int g_verify = 0;    /* Verify after compress (decompress+compare) */
+static int g_verbose = 0;   /* Show extra info (peak memory, timings) */
+
+/** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
+static long get_peak_rss_kb(void) {
+    struct rusage ru;
+    if (getrusage(RUSAGE_SELF, &ru) == 0)
+        return ru.ru_maxrss; /* KB on Linux */
+    return 0;
+}
+
+/** Format memory size for display */
+static const char* fmt_mem(long kb, char* buf, size_t bufsz) {
+    if (kb >= 1024)
+        snprintf(buf, bufsz, "%.1f MB", kb / 1024.0);
+    else
+        snprintf(buf, bufsz, "%ld KB", kb);
+    return buf;
+}
 
 /* ─── Recursive directory traversal ──────────────────────────────────── */
 
@@ -453,6 +473,10 @@ static int cmd_compress(const char* input, const char* output, int level)
         printf("  Ratio:  %.2fx (%.1f%% smaller)\n", ratio, savings);
         if (elapsed >= 0.01)
             printf("  Time:   %.2fs (%.1f MB/s)\n", elapsed, speed);
+        if (g_verbose) {
+            char membuf[32];
+            printf("  Memory: %s peak RSS\n", fmt_mem(get_peak_rss_kb(), membuf, sizeof(membuf)));
+        }
     }
 
     fclose(fin);
@@ -616,6 +640,10 @@ static int cmd_decompress(const char* input, const char* output)
         printf("  Decompressed: %zu bytes -> '%s'\n", total_out, output);
         if (dt_elapsed >= 0.01)
             printf("  Time:   %.2fs (%.1f MB/s)\n", dt_elapsed, dt_speed);
+        if (g_verbose) {
+            char membuf[32];
+            printf("  Memory: %s peak RSS\n", fmt_mem(get_peak_rss_kb(), membuf, sizeof(membuf)));
+        }
     }
 
     fclose(fin);
@@ -1178,6 +1206,8 @@ int main(int argc, char* argv[])
                 g_recursive = 1;
             } else if (strcmp(argv[i], "--verify") == 0) {
                 g_verify = 1;
+            } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
+                g_verbose = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (argv[i][0] != '-') {
@@ -1246,6 +1276,8 @@ int main(int argc, char* argv[])
                 g_delete = 1;
             } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--recursive") == 0) {
                 g_recursive = 1;
+            } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
+                g_verbose = 1;
             } else if (argv[i][0] != '-') {
                 if (n_inputs < 256) inputs[n_inputs++] = argv[i];
             }
