@@ -394,4 +394,43 @@ if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/adaptive_rt.txt" > /dev/null 2>&1; the
 fi
 echo "OK: --adaptive-level roundtrip verified"
 
+# Test --adaptive-level entropy categories
+# High-entropy random data should select L1
+dd if=/dev/urandom of="$TMPDIR/random.bin" bs=1024 count=64 2>/dev/null
+RAND_OUT=$("$MCX" compress --adaptive-level "$TMPDIR/random.bin" -o "$TMPDIR/rand.mcx" -f 2>/dev/null)
+RAND_LEVEL=$(echo "$RAND_OUT" | grep -oP 'auto-selected L\K\d+')
+if [ "$RAND_LEVEL" != "1" ]; then
+    echo "FAIL: random data should auto-select L1, got L$RAND_LEVEL"
+    echo "$RAND_OUT"
+    exit 1
+fi
+echo "OK: --adaptive-level selects L1 for high-entropy random data"
+
+# Low-entropy repetitive text should select L12
+python3 -c "print('hello world test data ' * 5000)" > "$TMPDIR/repeat.txt" 2>/dev/null || \
+    printf 'hello world test data %.0s' $(seq 1 5000) > "$TMPDIR/repeat.txt"
+TEXT_OUT=$("$MCX" compress --adaptive-level "$TMPDIR/repeat.txt" -o "$TMPDIR/text.mcx" -f 2>/dev/null)
+TEXT_LEVEL=$(echo "$TEXT_OUT" | grep -oP 'auto-selected L\K\d+')
+if [ "$TEXT_LEVEL" != "12" ]; then
+    echo "FAIL: repetitive text should auto-select L12, got L$TEXT_LEVEL"
+    echo "$TEXT_OUT"
+    exit 1
+fi
+# Verify roundtrip
+"$MCX" decompress "$TMPDIR/text.mcx" -o "$TMPDIR/text_rt.txt" -f 2>&1 > /dev/null
+if ! diff -q "$TMPDIR/repeat.txt" "$TMPDIR/text_rt.txt" > /dev/null 2>&1; then
+    echo "FAIL: --adaptive-level L12 roundtrip failed"
+    exit 1
+fi
+echo "OK: --adaptive-level selects L12 for low-entropy text, roundtrip verified"
+
+# Test --cold flag (just verify it's accepted, can't actually drop caches without root)
+COLD_OUT=$("$MCX" bench -l 1 --cold --brief "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$COLD_OUT" | grep -q "L1:"; then
+    echo "FAIL: --cold should produce benchmark output"
+    echo "$COLD_OUT"
+    exit 1
+fi
+echo "OK: bench --cold flag accepted"
+
 echo "=== All bench flags tests passed ==="
