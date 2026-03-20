@@ -125,6 +125,8 @@ size_t mcx_lz_fast_compress(uint8_t* dst, size_t dst_cap,
     uint8_t* op    = dst;
     uint8_t* olimit = dst + dst_cap - 16;       /* output safety margin */
 
+    uint32_t miss_count = 1;  /* Accelerating skip counter (LZ4-style) */
+
     while (ip < ilimit) {
         if (op >= olimit) return 0;
 
@@ -136,9 +138,8 @@ size_t mcx_lz_fast_compress(uint8_t* dst, size_t dst_cap,
         uint32_t mpos1 = ctx->dict[0][h1];
         uint32_t mpos2 = ctx->dict[1][h2];
 
-        /* Update both tables unconditionally (temporal locality) */
+        /* Update primary table always; secondary only on match */
         ctx->dict[0][h1] = (uint32_t)(ip - src);
-        ctx->dict[1][h2] = (uint32_t)(ip - src);
 
         /* Select best match candidate */
         const uint8_t* match = NULL;
@@ -153,13 +154,12 @@ size_t mcx_lz_fast_compress(uint8_t* dst, size_t dst_cap,
             }
         }
 
-        /* Check secondary probe (prefer if longer potential match) */
+        /* Check secondary probe (prefer shorter offset) */
         if (mpos2 > 0) {
             uint32_t off2 = (uint32_t)(ip - src) - mpos2;
             if (off2 > 0 && off2 <= FAST_MAX_OFFSET) {
                 const uint8_t* m2 = src + mpos2;
                 if (read32(m2) == val) {
-                    /* Prefer shorter offset (costs fewer bits) */
                     if (match == NULL || off2 < offset) {
                         match = m2; offset = off2;
                     }
@@ -168,9 +168,16 @@ size_t mcx_lz_fast_compress(uint8_t* dst, size_t dst_cap,
         }
 
         if (match == NULL) {
-            ip++;
+            /* LZ4-style accelerating skip: step = miss_count >> 6 + 1 */
+            uint32_t step = (miss_count >> 6) + 1;
+            ip += step;
+            miss_count++;
             continue;
         }
+
+        /* Update secondary table on match */
+        ctx->dict[1][h2] = (uint32_t)(ip - src);
+        miss_count = 1;  /* Reset on match */
 
         /* Extend match forward */
         uint32_t match_len = FAST_MIN_MATCH;
