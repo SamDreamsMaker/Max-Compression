@@ -254,7 +254,9 @@ size_t mcx_lz_compress_hc(
         return op ? (size_t)(op - (uint8_t*)dst) : 0;
     }
 
-    int hash_log = MCX_LZ_HASH_LOG_HC;
+    /* L4-L6: smaller hash table (256K) for better cache locality.
+     * L7+: full 1M table for max ratio. */
+    int hash_log = (level <= 6) ? MCX_LZ_HASH_LOG : MCX_LZ_HASH_LOG_HC;
     /* Scale down for small inputs */
     while (hash_log > 16 && (1u << hash_log) > src_size * 8)
         hash_log--;
