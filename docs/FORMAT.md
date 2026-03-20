@@ -37,12 +37,18 @@ MCX is a frame-based lossless compression format. Each `.mcx` file contains a si
 
 ### Flags
 
-| Bit | Name | Description |
-|-----|------|-------------|
-| 0 | `HAS_ORIG_SIZE` | Original size field is valid |
-| 1 | `STREAMING` | Stream mode (original size unknown) |
-| 2 | `E8E9` | E8/E9 x86 filter applied at frame level |
-| 3–7 | Reserved | Must be zero |
+| Bit | Value | Name | Description |
+|-----|-------|------|-------------|
+| 0 | `0x01` | `HAS_ORIG_SIZE` | Original size field is valid |
+| 1 | `0x02` | `STREAMING` | Stream mode (original size unknown) |
+| 2 | `0x04` | `E8E9` | E8/E9 x86 filter applied at frame level |
+| 3 | `0x08` | `ADAPTIVE_BLOCKS` | Variable-sized blocks (original block sizes stored in frame) |
+| 4 | `0x10` | `INT_DELTA` | Sorted integer delta preprocessing applied |
+| 5 | `0x20` | `INT_DELTA_W4` | Int-delta width: 0=16-bit, 1=32-bit (only valid with `INT_DELTA`) |
+| 6 | `0x40` | `LZP` | LZP preprocessing applied (repeated block removal before compression) |
+| 7 | `0x80` | `NIBBLE_SPLIT` | Nibble-split preprocessing (high/low nibble streams before BWT) |
+
+**Note:** All 8 flag bits are now allocated. Future preprocessing flags require a format extension (v2+ header).
 
 ### Strategies
 
@@ -189,6 +195,24 @@ For structured binary data (detected by Smart Mode):
 3. Result contains many zeros → compresses efficiently with RLE2 + rANS
 
 The stride value is encoded in the block's genome/metadata.
+
+## Preprocessing Flags
+
+### Adaptive Blocks (`ADAPTIVE_BLOCKS`, 0x08)
+
+When set, block sizes vary based on data entropy. High-entropy regions use smaller blocks (≤4 MB) and low-entropy regions use larger blocks (≤64 MB). An additional table of original block sizes is stored after the block count. Only used on BWT strategies for files >64 MB.
+
+### Integer Delta (`INT_DELTA`, 0x10 + `INT_DELTA_W4`, 0x20)
+
+Auto-detected on sorted integer sequences. The encoder detects runs of monotonically increasing 16-bit or 32-bit integers and replaces them with their deltas (differences between consecutive values). Width is indicated by bit 5: 0 = 16-bit integers, 1 = 32-bit integers. Achieves up to 9× improvement on sorted uint16 arrays.
+
+### LZP Preprocessing (`LZP`, 0x40)
+
+Lempel-Ziv Prediction removes repeated blocks before the main compression pipeline. The outer frame stores the LZP-compressed data and original size; decompression reverses LZP first, then passes the result through the standard decoder.
+
+### Nibble Split (`NIBBLE_SPLIT`, 0x80)
+
+Splits each byte into high and low nibbles, grouping all high nibbles together followed by all low nibbles. Improves BWT compression on structured binary data where nibble-level patterns exist. Applied as a trial — only used when it reduces output size.
 
 ## Constants
 
