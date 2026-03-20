@@ -21,7 +21,7 @@
 
 #define RC_TOP   0x01000000U
 #define PROB_BITS 12
-#define PROB_MAX  (1 << PROB_BITS)   /* 4096 — keep 12-bit for model precision */
+#define PROB_MAX  (1 << PROB_BITS)   /* 4096 */
 #define PROB_HALF (PROB_MAX / 2)
 #define MOVE_BITS 5
 
@@ -160,14 +160,33 @@ static inline void model_update(model_t *m, uint32_t c, int bit, int rate) {
 
 #define MAX_INPUTS 20
 
+/* Lookup table for stretch (int prob → float logit) and squash */
+static float stretch_tab[4097]; /* [0..4096] → logit */
+static float squash_tab[4097];  /* index = (x+8)*256, x in [-8,8] → prob */
+
+static void init_tables(void) {
+    for (int i = 0; i <= 4096; i++) {
+        float p = (float)i / 4096.0f;
+        if (p < 0.0001f) p = 0.0001f;
+        if (p > 0.9999f) p = 0.9999f;
+        stretch_tab[i] = logf(p / (1.0f - p));
+    }
+    for (int i = 0; i <= 4096; i++) {
+        float x = ((float)i / 256.0f) - 8.0f;
+        squash_tab[i] = 1.0f / (1.0f + expf(-x));
+    }
+}
+
 static inline float stretch(float p) {
-    if (p < 0.001f) p = 0.001f;
-    if (p > 0.999f) p = 0.999f;
-    return logf(p / (1.0f - p));
+    int i = (int)(p * 4096.0f + 0.5f);
+    if (i < 0) i = 0; if (i > 4096) i = 4096;
+    return stretch_tab[i];
 }
 
 static inline float squash(float x) {
-    return 1.0f / (1.0f + expf(-x));
+    int i = (int)((x + 8.0f) * 256.0f + 0.5f);
+    if (i < 0) i = 0; if (i > 4096) i = 4096;
+    return squash_tab[i];
 }
 
 typedef struct {
@@ -289,44 +308,53 @@ static inline uint32_t h32(uint32_t a) {
 
 /* ── CM Engine ─────────────────────────────────────────────────── */
 
-#define N_MODELS 15
+#define N_MODELS 20
 
 typedef struct {
     model_t o0, o1, o2, o3, o4, o5, o6, o7;
     model_t word, sparse13, sparse14, sparse24;
     model_t charclass, nibble;
-    model_t run_ctx;        /* byte run context */
-    model_t word_o1;        /* word hash + prev byte */
+    model_t indirect;       /* indirect: predict byte after similar context */
+    model_t o2_word;        /* order-2 combined with word hash */
+    model_t gap15;          /* bytes -1,-5 */
+    model_t delta;          /* diff between consecutive bytes */
+    model_t o1_nibble;      /* order-1 on upper nibbles */
     match_t match;
     sse_t sse;
     mixer_t mx1[256];     /* Mixer 1: per prev[0] */
-    mixer_t mx2[8];       /* Mixer 2: per char_class(prev[0]) */
+    mixer_t mx2[8];      /* Mixer 2: per nibble of prev[0] */
     mixer_t mx3[8];       /* Mixer 3: per bit position */
     mixer_t mxf[1];      /* Final mixer: combines mx1,mx2,mx3 outputs (global) */
     float lr;
     uint8_t prev[8];
     uint32_t word_hash;
     uint8_t partial;
+    /* Indirect context: maps context hash → last byte seen in that context */
+    uint8_t *ictx;        /* indirect context table */
+    uint32_t ictx_size;
 } cm_t;
 
 static void cm_init(cm_t *cm, const uint8_t *data) {
     memset(cm, 0, sizeof(cm_t));
     model_init(&cm->o0, 512);
-    model_init(&cm->o1, 256*256);
-    model_init(&cm->o2, 1<<18);
-    model_init(&cm->o3, 1<<20);
-    model_init(&cm->o4, 1<<21);
-    model_init(&cm->o5, 1<<22);
-    model_init(&cm->o6, 1<<22);
-    model_init(&cm->o7, 1<<22);
-    model_init(&cm->word, 1<<20);
-    model_init(&cm->sparse13, 1<<18);  /* bytes -1,-3 */
-    model_init(&cm->sparse14, 1<<18);  /* bytes -1,-4 */
-    model_init(&cm->sparse24, 1<<18);  /* bytes -2,-4 */
-    model_init(&cm->charclass, 1<<16); /* char type context */
-    model_init(&cm->nibble, 1<<16);    /* upper nibble context */
-    model_init(&cm->run_ctx, 1<<16);  /* byte run context */
-    model_init(&cm->word_o1, 1<<22);  /* word+prev */
+    model_init(&cm->o1, 256*256);      /* 64K — exact, no hash */
+    model_init(&cm->o2, 1<<20);        /* 1M */
+    model_init(&cm->o3, 1<<22);        /* 4M */
+    model_init(&cm->o4, 1<<23);        /* 8M */
+    model_init(&cm->o5, 1<<24);        /* 16M */
+    model_init(&cm->o6, 1<<24);        /* 16M */
+    model_init(&cm->o7, 1<<24);        /* 16M */
+    model_init(&cm->word, 1<<22);      /* 4M */
+    model_init(&cm->sparse13, 1<<20);  /* 1M */
+    model_init(&cm->sparse14, 1<<20);  /* 1M */
+    model_init(&cm->sparse24, 1<<20);  /* 1M */
+    model_init(&cm->charclass, 1<<18); /* 256K */
+    model_init(&cm->nibble, 1<<18);    /* 256K */
+    model_init(&cm->indirect, 1<<22);   /* 4M — indirect context */
+    model_init(&cm->o2_word, 1<<22);   /* 4M — order-2 × word */
+    model_init(&cm->gap15, 1<<20);     /* 1M — bytes -1,-5 */
+    model_init(&cm->delta, 1<<20);    /* 1M — delta context */
+    model_init(&cm->o1_nibble, 1<<16);/* 64K — nibble order-1 */
     match_init(&cm->match, data);
     sse_init(&cm->sse);
     for (int i = 0; i < 256; i++) mixer_init(&cm->mx1[i], N_MODELS);
@@ -335,6 +363,8 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     mixer_init(&cm->mxf[0], 3);
     cm->lr = 0.012f;
     cm->partial = 1;
+    cm->ictx_size = 1 << 22; /* 4M */
+    cm->ictx = (uint8_t*)calloc(cm->ictx_size, 1);
 }
 
 static void cm_free(cm_t *cm) {
@@ -344,8 +374,10 @@ static void cm_free(cm_t *cm) {
     model_free(&cm->word); model_free(&cm->sparse13);
     model_free(&cm->sparse14); model_free(&cm->sparse24);
     model_free(&cm->charclass); model_free(&cm->nibble);
-    model_free(&cm->run_ctx); model_free(&cm->word_o1);
+    model_free(&cm->indirect); model_free(&cm->o2_word); model_free(&cm->gap15);
+    model_free(&cm->delta); model_free(&cm->o1_nibble);
     match_free(&cm->match);
+    if (cm->ictx) { free(cm->ictx); cm->ictx = NULL; }
 }
 
 static inline uint8_t char_class(uint8_t c) {
@@ -378,10 +410,26 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[11] = h32(((uint32_t)p[1]<<8)|p[3]) ^ par;
     ctx[12] = ((uint32_t)char_class(p[0])<<12)|((uint32_t)char_class(p[1])<<8)|par;
     ctx[13] = ((uint32_t)(p[0]>>4)<<12)|((uint32_t)(p[1]>>4)<<8)|par;
-    /* Run context: is prev same as prev-1? */
-    ctx[14] = ((p[0]==p[1]) ? 256 : 0) | ((p[1]==p[2]) ? 512 : 0) | par;
-    /* Word + prev byte */
-    ctx[15] = h32(cm->word_hash ^ ((uint32_t)p[0]<<16)) ^ par;
+    
+    /* Indirect context: look up what byte usually follows this o2 context,
+       then use THAT byte as context for prediction */
+    {
+        uint32_t o2h = h32(h01) % cm->ictx_size;
+        uint8_t indirect_byte = cm->ictx[o2h];
+        ctx[14] = h32(((uint32_t)indirect_byte << 8) | par);
+    }
+    
+    /* Order-2 × word hash */
+    ctx[15] = h32(h01 ^ cm->word_hash) ^ par;
+    
+    /* Gap: bytes -1, -5 */
+    ctx[16] = h32(((uint32_t)p[0]<<8)|p[4]) ^ par;
+    
+    /* Delta: diff between consecutive bytes × partial */
+    ctx[17] = h32(((uint32_t)(uint8_t)(p[0]-p[1])<<8)|((uint8_t)(p[1]-p[2]))) ^ par;
+    
+    /* Nibble order-1 */
+    ctx[18] = ((uint32_t)(p[0]>>4)<<8) | ((uint32_t)(p[1]>>4)<<4) | (par & 0xF);
 }
 
 /* Get P(bit=0) for current bit position */
@@ -404,12 +452,22 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *stretched_out)
     preds[11] = model_get(&cm->sparse24, ctx[11]);
     preds[12] = model_get(&cm->charclass, ctx[12]);
     preds[13] = model_get(&cm->nibble, ctx[13]);
-    preds[14] = match_predict(&cm->match, pos, bp);
+    preds[14] = model_get(&cm->indirect, ctx[14]);
+    preds[15] = model_get(&cm->o2_word, ctx[15]);
+    preds[16] = model_get(&cm->gap15, ctx[16]);
+    preds[17] = model_get(&cm->delta, ctx[17]);
+    preds[18] = model_get(&cm->o1_nibble, ctx[18]);
+    preds[19] = match_predict(&cm->match, pos, bp);
     
-    for (int i = 0; i < N_MODELS; i++)
-        stretched_out[i] = stretch((float)preds[i] / PROB_MAX);
+    for (int i = 0; i < N_MODELS; i++) {
+        /* Mask out uninformative predictions (exactly 50%) */
+        if (preds[i] == PROB_HALF)
+            stretched_out[i] = 0.0f;
+        else
+            stretched_out[i] = stretch((float)preds[i] / PROB_MAX);
+    }
     
-    /* Three first-stage mixers, averaged */
+    /* Three first-stage mixers, weighted average (mx1 is finest-grained) */
     float m1 = mixer_mix(&cm->mx1[cm->prev[0]], stretched_out);
     float m2 = mixer_mix(&cm->mx2[char_class(cm->prev[0])], stretched_out);
     float m3 = mixer_mix(&cm->mx3[bp], stretched_out);
@@ -445,7 +503,11 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     model_update(&cm->sparse24, ctx[11], bit, 4);
     model_update(&cm->charclass, ctx[12], bit, 4);
     model_update(&cm->nibble, ctx[13], bit, 4);
-    /* run_ctx and word_o1 removed — hurt compression */
+    model_update(&cm->indirect, ctx[14], bit, 5);
+    model_update(&cm->o2_word, ctx[15], bit, 5);
+    model_update(&cm->gap15, ctx[16], bit, 4);
+    model_update(&cm->delta, ctx[17], bit, 5);
+    model_update(&cm->o1_nibble, ctx[18], bit, 4);
     
     mixer_learn(&cm->mx1[cm->prev[0]], stretched, bit, cm->lr);
     mixer_learn(&cm->mx2[char_class(cm->prev[0])], stretched, bit, cm->lr);
@@ -458,6 +520,12 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
 }
 
 static void cm_byte_done(cm_t *cm, uint8_t byte) {
+    /* Update indirect context table: map (prev[0],prev[1]) → byte just seen */
+    {
+        uint32_t o2h = h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]) % cm->ictx_size;
+        cm->ictx[o2h] = byte;
+    }
+    
     for (int j = 7; j > 0; j--) cm->prev[j] = cm->prev[j-1];
     cm->prev[0] = byte;
     cm->partial = 1;
@@ -560,6 +628,7 @@ static size_t cm_decompress(uint8_t *dst, size_t cap,
 /* ── Main ──────────────────────────────────────────────────────── */
 
 int main(int argc, char **argv) {
+    init_tables();
     if (argc < 2) { fprintf(stderr, "Usage: %s <file>\n", argv[0]); return 1; }
     
     FILE *f = fopen(argv[1], "rb");
