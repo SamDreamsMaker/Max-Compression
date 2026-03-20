@@ -53,8 +53,18 @@ static inline void mcx_lz_match_copy(uint8_t* dst, uint8_t* dst_end, size_t offs
     } else if (offset >= length) {
         /* Non-overlapping but near the end: use regular memcpy */
         memcpy(dst, src, length);
+    } else if (offset >= 8 && dst + length + 8 <= dst_end) {
+        /* Overlapping but offset ≥ 8: copy in 8-byte chunks.
+         * Each chunk reads from already-written data (gap ≥ 8 bytes). */
+        size_t i = 0;
+        for (; i + 7 < length; i += 8) {
+            memcpy(dst + i, src + i, 8);
+        }
+        for (; i < length; i++) {
+            dst[i] = src[i];
+        }
     } else {
-        /* Overlapping: byte-by-byte */
+        /* Small overlap (offset < 8): byte-by-byte */
         size_t i;
         for (i = 0; i < length; i++) {
             dst[i] = src[i];
