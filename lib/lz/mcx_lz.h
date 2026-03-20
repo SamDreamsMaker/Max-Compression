@@ -68,7 +68,20 @@ size_t mcx_lz_compress(
 );
 
 /**
- * High-ratio LZ77 compression with lazy match evaluation.
+ * Lazy LZ77 compression with dual-probe hash (no chains).
+ * Checks ip+1 for a longer match before emitting. Faster than HC
+ * but better ratio than pure greedy. Good for L2-L3.
+ */
+size_t mcx_lz_compress_lazy(
+    void*       dst,
+    size_t      dst_cap,
+    const void* src,
+    size_t      src_size,
+    int         accel
+);
+
+/**
+ * High-ratio LZ77 compression with hash-chain match finding.
  * Slower than mcx_lz_compress but finds better matches.
  */
 size_t mcx_lz_compress_hc(

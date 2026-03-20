@@ -418,6 +418,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 size_t lz_size;
                 if (strategy == MCX_STRATEGY_LZ_HC) {
                     lz_size = mcx_lz_compress_hc(lz_buf, lz_cap, in + src_offset, block_src_size, level);
+                } else if (level >= 2) {
+                    /* L2-L3: lazy matching (check ip+1), better ratio than greedy */
+                    lz_size = mcx_lz_compress_lazy(lz_buf, lz_cap, in + src_offset, block_src_size, 1);
                 } else {
                     lz_size = mcx_lz_compress(lz_buf, lz_cap, in + src_offset, block_src_size, 1);
                 }
@@ -1927,6 +1930,8 @@ static size_t stream_compress_block(mcx_cctx* cctx)
         size_t lz_size;
         if (strategy == MCX_STRATEGY_LZ_HC) {
             lz_size = mcx_lz_compress_hc(lz_buf, lz_cap, cctx->in_buf, cctx->in_pos, cctx->level);
+        } else if (cctx->level >= 2) {
+            lz_size = mcx_lz_compress_lazy(lz_buf, lz_cap, cctx->in_buf, cctx->in_pos, 1);
         } else {
             lz_size = mcx_lz_compress(lz_buf, lz_cap, cctx->in_buf, cctx->in_pos, 1);
         }

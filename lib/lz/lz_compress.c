@@ -219,12 +219,164 @@ size_t mcx_lz_compress(
 }
 
 /* ═══════════════════════════════════════════════════════════════════
- *  High-compression mode (lazy match evaluation)
+ *  Lazy compressor (dual-probe, no chains)
  *
- *  Instead of immediately encoding the first match found, we check
- *  if the NEXT position has a better (longer) match. If so, we
- *  emit ip as a literal and use the better match at ip+1.
+ *  Like the greedy compressor but checks ip+1 for a longer match
+ *  before emitting. Better ratio than pure greedy, faster than HC.
  * ═══════════════════════════════════════════════════════════════════ */
+
+size_t mcx_lz_compress_lazy(
+    void* dst, size_t dst_cap,
+    const void* src, size_t src_size, int accel)
+{
+    const uint8_t* ip     = (const uint8_t*)src;
+    const uint8_t* ip_end = ip + src_size;
+    uint8_t* op     = (uint8_t*)dst;
+    uint8_t* op_end = op + dst_cap;
+    const uint8_t* match_limit = ip_end - MCX_LZ_LAST_LITERALS;
+    const uint8_t* mflimit = ip_end - MCX_LZ_MIN_MATCH;
+
+    if (accel < 1) accel = 1;
+
+    if (src_size < MCX_LZ_MIN_MATCH + MCX_LZ_LAST_LITERALS) {
+        op = lz_write_last_literals(op, op_end, ip, src_size);
+        return op ? (size_t)(op - (uint8_t*)dst) : 0;
+    }
+
+    int hash_log = MCX_LZ_HASH_LOG;
+    while (hash_log > 14 && (1u << hash_log) > src_size * 4)
+        hash_log--;
+    int hash_size = 1 << hash_log;
+    uint32_t* ht = (uint32_t*)calloc(hash_size, sizeof(uint32_t));
+    uint32_t* ht2 = (uint32_t*)calloc(hash_size, sizeof(uint32_t));
+    if (!ht || !ht2) { free(ht); free(ht2); return 0; }
+
+    const uint8_t* anchor = ip;
+    ip++;
+
+    while (ip < mflimit) {
+        uint32_t h1 = lz_hash4(ip, hash_log);
+        uint32_t pos1 = ht[h1];
+        ht[h1] = (uint32_t)(ip - (const uint8_t*)src);
+
+        /* Primary probe */
+        const uint8_t* ref = (const uint8_t*)src + pos1;
+        size_t offset = (size_t)(ip - ref);
+        size_t match_len = 0;
+
+        if (offset > 0 && offset <= MCX_LZ_MAX_OFFSET && lz_read32(ref) == lz_read32(ip)) {
+            size_t max_m = (size_t)(match_limit - ip);
+            if (max_m >= MCX_LZ_MIN_MATCH)
+                match_len = MCX_LZ_MIN_MATCH +
+                    lz_count_match(ip + MCX_LZ_MIN_MATCH, ref + MCX_LZ_MIN_MATCH,
+                                   max_m - MCX_LZ_MIN_MATCH);
+        }
+
+        /* Secondary probe */
+        if (match_len < MCX_LZ_MIN_MATCH) {
+            uint32_t h2 = lz_hash4_alt(ip, hash_log);
+            uint32_t pos2 = ht2[h2];
+            ht2[h2] = (uint32_t)(ip - (const uint8_t*)src);
+
+            ref = (const uint8_t*)src + pos2;
+            offset = (size_t)(ip - ref);
+
+            if (offset > 0 && offset <= MCX_LZ_MAX_OFFSET && lz_read32(ref) == lz_read32(ip)) {
+                size_t max_m = (size_t)(match_limit - ip);
+                if (max_m >= MCX_LZ_MIN_MATCH)
+                    match_len = MCX_LZ_MIN_MATCH +
+                        lz_count_match(ip + MCX_LZ_MIN_MATCH, ref + MCX_LZ_MIN_MATCH,
+                                       max_m - MCX_LZ_MIN_MATCH);
+            }
+        } else {
+            /* Still update secondary table */
+            ht2[lz_hash4_alt(ip, hash_log)] = (uint32_t)(ip - (const uint8_t*)src);
+        }
+
+        if (match_len < MCX_LZ_MIN_MATCH) {
+            ip += accel;
+            continue;
+        }
+
+        /* Lazy evaluation: check ip+1 for a longer match */
+        if (ip + 1 < mflimit) {
+            uint32_t h1n = lz_hash4(ip + 1, hash_log);
+            uint32_t pos1n = ht[h1n];
+            ht[h1n] = (uint32_t)(ip + 1 - (const uint8_t*)src);
+
+            const uint8_t* ref2 = (const uint8_t*)src + pos1n;
+            size_t off2 = (size_t)(ip + 1 - ref2);
+            size_t ml2 = 0;
+
+            if (off2 > 0 && off2 <= MCX_LZ_MAX_OFFSET && lz_read32(ref2) == lz_read32(ip + 1)) {
+                size_t max_m2 = (size_t)(match_limit - (ip + 1));
+                if (max_m2 >= MCX_LZ_MIN_MATCH)
+                    ml2 = MCX_LZ_MIN_MATCH +
+                        lz_count_match(ip + 1 + MCX_LZ_MIN_MATCH, ref2 + MCX_LZ_MIN_MATCH,
+                                       max_m2 - MCX_LZ_MIN_MATCH);
+            }
+
+            /* Also check secondary */
+            if (ml2 <= match_len) {
+                uint32_t h2n = lz_hash4_alt(ip + 1, hash_log);
+                uint32_t pos2n = ht2[h2n];
+                ht2[h2n] = (uint32_t)(ip + 1 - (const uint8_t*)src);
+
+                const uint8_t* ref2b = (const uint8_t*)src + pos2n;
+                size_t off2b = (size_t)(ip + 1 - ref2b);
+
+                if (off2b > 0 && off2b <= MCX_LZ_MAX_OFFSET && lz_read32(ref2b) == lz_read32(ip + 1)) {
+                    size_t max_m2b = (size_t)(match_limit - (ip + 1));
+                    if (max_m2b >= MCX_LZ_MIN_MATCH) {
+                        size_t ml2b = MCX_LZ_MIN_MATCH +
+                            lz_count_match(ip + 1 + MCX_LZ_MIN_MATCH, ref2b + MCX_LZ_MIN_MATCH,
+                                           max_m2b - MCX_LZ_MIN_MATCH);
+                        if (ml2b > ml2) {
+                            ml2 = ml2b;
+                            ref2 = ref2b;
+                            off2 = off2b;
+                        }
+                    }
+                }
+            }
+
+            if (ml2 > match_len + 1) {
+                /* Better match at ip+1 */
+                ip++;
+                match_len = ml2;
+                offset = off2;
+                ref = ref2;
+            }
+        }
+
+        /* Backward extension */
+        ref = (const uint8_t*)src + ((uint32_t)(ip - (const uint8_t*)src) - offset);
+        while (ip > anchor && ref > (const uint8_t*)src && ip[-1] == ref[-1]) {
+            ip--; ref--; match_len++;
+        }
+
+        /* Write sequence */
+        op = lz_write_sequence(op, op_end, anchor, (size_t)(ip - anchor),
+                               (uint16_t)offset, match_len);
+        if (!op) { free(ht); free(ht2); return 0; }
+
+        /* Update hash for match positions */
+        const uint8_t* mp = ip + 1;
+        ip += match_len;
+        anchor = ip;
+        const uint8_t* mp_end = ip < mflimit ? ip : mflimit;
+        while (mp < mp_end) {
+            uint32_t mpos = (uint32_t)(mp - (const uint8_t*)src);
+            ht[lz_hash4(mp, hash_log)] = mpos;
+            mp += 2;
+        }
+    }
+
+    op = lz_write_last_literals(op, op_end, anchor, (size_t)(ip_end - anchor));
+    free(ht);
+    free(ht2);
+    return op ? (size_t)(op - (uint8_t*)dst) : 0;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
  *  HC compressor with hash chains — better match finding.
