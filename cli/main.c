@@ -3039,6 +3039,7 @@ int main(int argc, char* argv[])
         int bench_no_header = 0;
         int bench_repeat = 1;
         int bench_cold = 0;
+        int bench_profile = 0;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         const char* bench_exclude = NULL;
@@ -3131,6 +3132,8 @@ int main(int argc, char* argv[])
                 if (bench_repeat < 1) bench_repeat = 1;
             } else if (strcmp(argv[i], "--cold") == 0) {
                 bench_cold = 1;
+            } else if (strcmp(argv[i], "--profile") == 0) {
+                bench_profile = 1;
             } else if ((strcmp(argv[i], "--output") == 0 || strcmp(argv[i], "-o") == 0) && i + 1 < argc) {
                 bench_output_file = argv[++i];
             } else if (strcmp(argv[i], "--compare-self") == 0 && i + 1 < argc) {
@@ -3245,6 +3248,9 @@ int main(int argc, char* argv[])
             if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return ret;
         }
+        /* Enable per-phase profiling if --profile flag is set */
+        if (bench_profile) setenv("MCX_PROFILE", "1", 1);
+
         if (bench_histogram) {
             int r = cmd_bench_histogram(bench_file, bench_level);
             if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
