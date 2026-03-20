@@ -36,6 +36,8 @@ _mcx() {
         '--verify[Verify roundtrip after compress]'
         '--dry-run[Predict strategy without compressing]'
         '--estimate[Estimate compressed size]'
+        '--level-scan[Try L1-L12, pick best ratio]'
+        '--no-trials[Skip multi-strategy trial at L20+]'
         '-o[Output file]:output:_files'
         '--output[Output file]:output:_files'
         '-q[Quiet mode]'
@@ -103,6 +105,7 @@ _mcx() {
         '--level[Specific level]:level:(1 3 6 7 8 9 12 14 20 24 26)'
         '--compare[Include gzip/bzip2/xz]'
         '--csv[CSV output format]'
+        '--warmup[Run warmup iteration before timing]'
         '-t[Thread count]:threads:'
         '-T[Thread count]:threads:'
         '*:input:_files'
@@ -117,7 +120,8 @@ _mcx() {
             upgrade|recompress) _arguments $upgrade_opts ;;
             pipe) _arguments $pipe_opts ;;
             bench|compare) _arguments $bench_opts ;;
-            info|stat) _arguments '--json[JSON output]' '*:input:_files' ;;
+            info) _arguments '--json[JSON output]' '--blocks[Show per-block details]' '*:input:_files' ;;
+            stat) _arguments '--json[JSON output]' '*:input:_files' ;;
             ls|list) _arguments '--json[JSON output]' '*:input:_files -g "*.mcx"' ;;
             version) _arguments '--build[Show build details]' ;;
             cat) _files ;;

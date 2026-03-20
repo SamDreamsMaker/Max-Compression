@@ -13,7 +13,7 @@ _mcx() {
             return 0
             ;;
         compress)
-            COMPREPLY=( $(compgen -W "-l -o -q -v -f -r -c -t --level -T --output --quiet --verbose --force --recursive --stdout --fast --default --best --delete --verify --threads --strategy --block-size --dry-run --estimate" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "-l -o -q -v -f -r -c -t --level -T --output --quiet --verbose --force --recursive --stdout --fast --default --best --delete --verify --threads --strategy --block-size --dry-run --estimate --level-scan --no-trials" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         decompress|extract|x|d)
@@ -29,7 +29,7 @@ _mcx() {
             return 0
             ;;
         bench|compare)
-            COMPREPLY=( $(compgen -W "-l --level --compare --csv -t -T --threads" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "-l --level --compare --csv --warmup -t -T --threads" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         diff)
@@ -52,7 +52,11 @@ _mcx() {
             COMPREPLY=( $(compgen -W "1 2 4 8" -- "${cur}") )
             return 0
             ;;
-        info|stat|ls|list)
+        info)
+            COMPREPLY=( $(compgen -W "--json --blocks" -- "${cur}") $(compgen -f -- "${cur}") )
+            return 0
+            ;;
+        stat|ls|list)
             COMPREPLY=( $(compgen -W "--json" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
