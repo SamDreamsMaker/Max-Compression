@@ -410,6 +410,12 @@ Example: \fB\-\-exclude '*.log'\fR skips all .log files. Uses
 For bench, when the input is a directory, each file is benchmarked
 individually and results are shown per file.
 .TP
+.BR \-\-aggregate
+For \fBbench\fR (directory input): show aggregate totals (total input
+size, total output size, overall compression ratio) alongside per\-file
+results. Useful for comparing overall performance across compressors on
+a corpus.
+.TP
 .BR \-\-keep\-broken
 For \fBcompress\fR: keep partial output on error instead of deleting.
 Useful for debugging compression failures. By default, partial output
