@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 26)
+- **12-bit range coder probability profiling** — tested RC_PROB_BITS=12 vs 11 on mozilla 1MB (LZRC path): 654372 vs 652110 (+0.35% worse), identical speed (3.2s). Higher precision slows model adaptation in LZRC context models. Not worth changing.
+- **`mcx bench --no-header`** — suppress column headers for cleaner piping output. Combines with `--brief` for minimal output.
+- **`mcx compress --decompress-check`** — after compressing, decompress in-memory and verify CRC matches original data. Stronger than `--verify` which re-compresses.
+- **L1 vs L3 Silesia profiling** — L3 lazy biggest wins: xml +20.6%, nci +10.1%, webster +7.3%, reymont +6.7% (structured/repetitive text). L1 greedy competitive on: sao +0.8%, x-ray +0%, ooffice +2.3% (binary/near-random data). Speed cost: L3 is 9-22% slower. Lazy matching helps most on text/structured data with overlapping matches.
+- **Integration tests** — coverage for `--aggregate` with `--json` and `--csv` output formats, and `--no-header` flag (suppress headers, keep data).
+- **Man page + completions update** — `--no-header` and `--decompress-check` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 25)
 - **Range coder precision profiling** — tested 16-bit vs 24-bit precision for LZRC: 652331 vs 652110 (+0.03% worse), identical speed (0.3/10.5 MB/s). Normalize fires more often but probability resolution suffers. Not worth changing in either direction.
 - **`mcx bench --aggregate`** — when benchmarking a directory, show aggregate totals (total input size, total output size, overall ratio) alongside per-file results.
