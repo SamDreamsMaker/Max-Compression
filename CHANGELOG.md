@@ -4,6 +4,16 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 19)
+- **`mcx bench --histogram`** — show compressed size distribution across block sizes, useful for analyzing adaptive block behavior.
+- **`--exclude` integration test** — verifies that `--exclude '*.log'` correctly skips matching files during recursive compression.
+- **L1-L3 Silesia profiling** — L2 and L3 produce identical output (both call `mcx_lz_compress_lazy` with same params). L1→L2 gains: dickens +4.8%, mozilla +3.0%, nci +9.1%, xml +18.1%. Speed: L1 13.4 MB/s → L2 10.7 MB/s (-20%). No differentiation exists between L2 and L3 in current code.
+- **Man page + completions update** — `--percentile`, `--exclude`, and `--histogram` documented across man page, Bash, Zsh, and Fish completions.
+
+### Skipped (Batch 19)
+- **Bit-interleaved rANS state storage** — 4 rANS states are already local `uint32_t` variables (registers), not memory arrays. Cache line packing irrelevant; decode bottleneck is lookup table access, not state storage.
+- **Compress `--tag` flag** — frame header has no unused bytes (16 bytes fully allocated, all 8 flag bits used). Needs v3.0 format extension.
+
 ### Added (Batch 18)
 - **`mcx bench --percentile`** — report p5/p50/p95 speed distribution when iterations ≥ 5. Provides a full picture of benchmark variance alongside mean/median.
 - **`mcx compress --exclude GLOB`** — skip files matching a glob pattern when using `-r` recursive mode (e.g. `--exclude '*.mcx'` or `--exclude '*.log'`).
