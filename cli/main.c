@@ -2425,6 +2425,44 @@ static int cmd_stat_compare(const char* file1, const char* file2, int json)
     return 0;
 }
 
+static int cmd_stat_histogram(const char* input)
+{
+    size_t size;
+    uint8_t* data = read_file(input, &size);
+    if (!data) return 1;
+
+    uint32_t freq[256];
+    memset(freq, 0, sizeof(freq));
+    for (size_t i = 0; i < size; i++) freq[data[i]]++;
+
+    /* Find max frequency for scaling */
+    uint32_t max_freq = 0;
+    for (int i = 0; i < 256; i++)
+        if (freq[i] > max_freq) max_freq = freq[i];
+
+    /* Extract basename */
+    const char* bname = input;
+    for (const char* p = input; *p; p++) if (*p == '/') bname = p + 1;
+
+    printf("Byte frequency histogram: %s (%zu bytes)\n\n", bname, size);
+
+    int bar_width = 50;
+    for (int i = 0; i < 256; i++) {
+        if (freq[i] == 0) continue;
+        int len = (max_freq > 0) ? (int)((double)freq[i] / max_freq * bar_width) : 0;
+        if (len < 1) len = 1;
+        char label[16];
+        if (i >= 32 && i <= 126) snprintf(label, sizeof(label), "'%c' %3d", i, i);
+        else snprintf(label, sizeof(label), "    %3d", i);
+        printf("%s ", label);
+        for (int b = 0; b < len; b++) printf("\xe2\x96\x88");
+        printf(" %u (%.1f%%)\n", freq[i], 100.0 * freq[i] / size);
+    }
+
+    free(data);
+    return 0;
+}
+
 static int cmd_stat(const char* input, int json)
 {
     size_t size;
@@ -3216,18 +3254,23 @@ int main(int argc, char* argv[])
         int compare_flag = 0;
         const char* stat_inputs[2] = {NULL, NULL};
         int stat_ninputs = 0;
+        int histogram_flag = 0;
         for (int i = 2; i < argc; i++) {
             if (strcmp(argv[i], "--json") == 0) json_flag = 1;
             else if (strcmp(argv[i], "--compare") == 0) compare_flag = 1;
+            else if (strcmp(argv[i], "--histogram") == 0) histogram_flag = 1;
             else if (stat_ninputs < 2) stat_inputs[stat_ninputs++] = argv[i];
         }
         if (compare_flag && stat_ninputs == 2) {
             return cmd_stat_compare(stat_inputs[0], stat_inputs[1], json_flag);
         }
         if (!stat_inputs[0]) {
-            fprintf(stderr, "Usage: mcx stat [--json] <file>\n"
-                            "       mcx stat --compare <file1> <file2>\n");
+            fprintf(stderr, "Usage: mcx stat [--json] [--histogram] <file>\n"
+                            "       mcx stat --compare [--json] <file1> <file2>\n");
             return 1;
+        }
+        if (histogram_flag) {
+            return cmd_stat_histogram(stat_inputs[0]);
         }
         return cmd_stat(stat_inputs[0], json_flag);
 

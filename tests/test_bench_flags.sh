@@ -793,4 +793,18 @@ if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/best_rt.txt" > /dev/null 2>&1; then
 fi
 echo "OK: compress --best roundtrip verified"
 
+# Test stat --histogram
+HIST_OUT=$("$MCX" stat --histogram "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$HIST_OUT" | grep -q "Byte frequency histogram"; then
+    echo "FAIL: stat --histogram should show header"
+    exit 1
+fi
+# Should have at least some byte entries
+HIST_LINES=$(echo "$HIST_OUT" | grep -c "█")
+if [ "$HIST_LINES" -lt 5 ]; then
+    echo "FAIL: stat --histogram should show at least 5 byte entries, got $HIST_LINES"
+    exit 1
+fi
+echo "OK: stat --histogram shows byte frequency bars"
+
 echo "=== All bench flags tests passed ==="

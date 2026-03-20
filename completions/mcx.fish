@@ -143,6 +143,7 @@ complete -c mcx -n '__fish_seen_subcommand_from info' -F -d 'Input file'
 # stat — accept files + --json
 complete -c mcx -n '__fish_seen_subcommand_from stat' -l json -d 'JSON output'
 complete -c mcx -n '__fish_seen_subcommand_from stat' -l compare -d 'Compare two files side-by-side'
+complete -c mcx -n '__fish_seen_subcommand_from stat' -l histogram -d 'ASCII byte frequency histogram'
 complete -c mcx -n '__fish_seen_subcommand_from stat' -F -d 'Input file'
 
 # ls/list — accept files + --json
