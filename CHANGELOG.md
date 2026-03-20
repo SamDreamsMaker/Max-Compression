@@ -4,6 +4,16 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 40)
+- **`mcx bench --chart`** — refactored into `cmd_bench_chart()` function, now supports directory input (per-file charts) and `--all-levels` (26 levels in bar chart).
+- **`mcx stat --compare --json`** — JSON output for side-by-side comparison with entropy, size, printable %, unique bytes, runs, max run, and top 5 byte frequency differences.
+- **`mcx compress --best`** — alias for `--level-scan`, familiar to gzip/bzip2 users. Updated help text, man page, and shell completions.
+- **`mcx bench --suite`** — documented in man page and shell completions (Bash/Zsh/Fish).
+- **Mozilla L12 --block-size 4M profiling** — 37.2s/16.9MB (3.02x) vs default 64MB: 43.0s/17.4MB (2.94x). 4M blocks are 13% faster AND 2.8% smaller on heterogeneous binary — SA sort scales super-linearly, smaller blocks reduce total sort time.
+- **BWT inverse tiling review** — serial LF-chain dependency prevents tiling; each step depends on previous index. Prefetch 2-steps-ahead already optimal.
+- **Integration tests** — coverage for `stat --compare --json`, `bench --chart` (7 levels), `--baseline-dir` regression detection.
+- **Man page + completions update** — `--baseline-dir`, `--chart`, `--suite`, `--best`, `stat --compare` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 39)
 - **`mcx bench --baseline-dir DIR`** — per-file baselines in a directory. First run saves `DIR/filename.baseline`, subsequent runs compare against saved values with delta and percentage. Works with single files and directories. Returns exit code 1 on regression.
 - **`mcx stat --compare FILE1 FILE2`** — side-by-side file statistics comparison showing entropy, size, printable %, unique bytes, runs, max run length, and top 5 byte frequency differences with deltas.
