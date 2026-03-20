@@ -106,5 +106,25 @@ $MCX compress --atomic -q "$TMP/input.txt" -o "$TMP/atomic.mcx" -f
 $MCX decompress -q "$TMP/atomic.mcx" -o "$TMP/atomic.txt" -f
 diff "$TMP/input.txt" "$TMP/atomic.txt" && echo "  --atomic: OK"
 
+# --exclude: skip files matching glob pattern when using -r
+mkdir -p "$TMP/exdir/sub"
+echo "keep me" > "$TMP/exdir/data.txt"
+echo "keep me too" > "$TMP/exdir/sub/data2.txt"
+echo "skip me" > "$TMP/exdir/debug.log"
+echo "skip me too" > "$TMP/exdir/sub/trace.log"
+$MCX compress -r --exclude '*.log' -q "$TMP/exdir" -f
+# .txt files should be compressed
+if [ -f "$TMP/exdir/data.txt.mcx" ] && [ -f "$TMP/exdir/sub/data2.txt.mcx" ]; then
+    echo "  --exclude (txt compressed): OK"
+else
+    echo "  --exclude: FAIL (txt files not compressed)" && exit 1
+fi
+# .log files should NOT be compressed
+if [ ! -f "$TMP/exdir/debug.log.mcx" ] && [ ! -f "$TMP/exdir/sub/trace.log.mcx" ]; then
+    echo "  --exclude (log skipped): OK"
+else
+    echo "  --exclude: FAIL (log files were compressed)" && exit 1
+fi
+
 echo ""
 echo "All CLI flag tests passed!"
