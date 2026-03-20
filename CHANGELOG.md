@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 28)
+- **6-bit context for multi-table rANS** — implemented `mt_compress_ctx6()` with 64-entry ctx_map (saves 192 bytes header vs 8-bit). New 0xA0 format flag, encode+decode paths. Auto-trialed alongside existing modes; 8-bit context still wins on text like alice29 but 6-bit may help on small blocks.
+- **`mcx bench --warmup-iterations N`** — run N warmup iterations instead of default 1 for more stable cold-start elimination. Useful for SSDs with caching or systems with variable turbo boost.
+- **`mcx compress --adaptive-level`** — analyze file entropy and auto-select optimal level: >7.5 bits/byte → L1, >7.0 → L3, >6.0 → L6, ≤6.0 → L12. O(n) instant analysis, no trial compression needed.
+- **`--priority` L12 Silesia profiling** — all 12 files produce byte-identical output at L12 regardless of priority mode (speed/balanced/ratio). At L12, `--fast-decode` and `--no-trials` have no practical effect on BWT blocks (CM-rANS rarely wins, no multi-strategy trial).
+- **Integration tests** — coverage for `--repeat` with `--format json` (2 JSON result objects), `--warmup-iterations`, and `--adaptive-level` roundtrip integrity.
+- **Man page + completions update** — `--warmup-iterations`, `--adaptive-level`, and `--repeat`/`--priority` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 27)
 - **RC_MOVE_BITS tuning profiling** — tested RC_MOVE_BITS=4 vs current 5 on mozilla 1MB L20: 657707 vs 652110 (+0.86% worse), identical speed (3.02s vs 3.01s). Faster adaptation causes models to overshoot and oscillate. Not worth changing.
 - **`mcx bench --repeat N`** — run entire benchmark N times and show min/max/avg across runs. More robust than `--iterations` (which averages within a single run). Useful for detecting system-level variance (thermals, background load).
