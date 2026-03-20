@@ -21,7 +21,7 @@
 
 #define RC_TOP   0x01000000U
 #define PROB_BITS 12
-#define PROB_MAX  (1 << PROB_BITS)   /* 4096 */
+#define PROB_MAX  (1 << PROB_BITS)   /* 4096 — keep 12-bit for model precision */
 #define PROB_HALF (PROB_MAX / 2)
 #define MOVE_BITS 5
 
@@ -200,7 +200,7 @@ static void mixer_learn(mixer_t *mx, float *s, int bit, float lr) {
 
 /* ── Match Model ───────────────────────────────────────────────── */
 
-#define MATCH_HASH_SIZE (1 << 20)
+#define MATCH_HASH_SIZE (1 << 22) /* 4M entries for better match finding */
 
 typedef struct {
     uint32_t *tab;
@@ -234,16 +234,17 @@ static void match_update(match_t *m, uint32_t pos) {
         else { m->active = 0; m->mlen = 0; }
     }
     if (!m->active) {
-        uint32_t h = (m->data[pos-1] | ((uint32_t)m->data[pos-2]<<8) |
-                      ((uint32_t)m->data[pos-3]<<16) | ((uint32_t)m->data[pos-4]<<24));
-        h = (h * 2654435761u) >> (32 - 20);
-        uint32_t ref = m->tab[h];
+        /* Try 4-byte match */
+        uint32_t h4 = (m->data[pos-1] | ((uint32_t)m->data[pos-2]<<8) |
+                       ((uint32_t)m->data[pos-3]<<16) | ((uint32_t)m->data[pos-4]<<24));
+        h4 = (h4 * 2654435761u) >> (32 - 22);
+        uint32_t ref = m->tab[h4];
         if (ref != 0xFFFFFFFF && ref >= 4 && ref + 4 <= pos &&
             m->data[ref-1]==m->data[pos-1] && m->data[ref-2]==m->data[pos-2] &&
             m->data[ref-3]==m->data[pos-3] && m->data[ref-4]==m->data[pos-4]) {
             m->active = 1; m->mpos = ref; m->mlen = 4;
         }
-        m->tab[h] = pos;
+        m->tab[h4] = pos;
     }
 }
 
@@ -301,6 +302,7 @@ typedef struct {
     mixer_t mx1[256];     /* Mixer 1: per prev[0] */
     mixer_t mx2[8];       /* Mixer 2: per char_class(prev[0]) */
     mixer_t mx3[8];       /* Mixer 3: per bit position */
+    mixer_t mxf[1];      /* Final mixer: combines mx1,mx2,mx3 outputs (global) */
     float lr;
     uint8_t prev[8];
     uint32_t word_hash;
@@ -330,6 +332,7 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     for (int i = 0; i < 256; i++) mixer_init(&cm->mx1[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
+    mixer_init(&cm->mxf[0], 3);
     cm->lr = 0.012f;
     cm->partial = 1;
 }
@@ -406,7 +409,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *stretched_out)
     for (int i = 0; i < N_MODELS; i++)
         stretched_out[i] = stretch((float)preds[i] / PROB_MAX);
     
-    /* Three mixers with different contexts, then average */
+    /* Three first-stage mixers, averaged */
     float m1 = mixer_mix(&cm->mx1[cm->prev[0]], stretched_out);
     float m2 = mixer_mix(&cm->mx2[char_class(cm->prev[0])], stretched_out);
     float m3 = mixer_mix(&cm->mx3[bp], stretched_out);
@@ -447,7 +450,8 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     mixer_learn(&cm->mx1[cm->prev[0]], stretched, bit, cm->lr);
     mixer_learn(&cm->mx2[char_class(cm->prev[0])], stretched, bit, cm->lr);
     mixer_learn(&cm->mx3[bp], stretched, bit, cm->lr);
-    /* SSE update: use the blended mixed_prob */
+    
+    /* SSE update */
     sse_update(&cm->sse, cm->partial & (SSE_CTXS-1), mixed_prob, bit);
     
     cm->partial = (cm->partial << 1) | bit;
@@ -490,11 +494,11 @@ static size_t cm_compress(uint8_t *dst, size_t cap,
             uint16_t prob = cm_predict(&cm, (uint32_t)i, bp, stretched);
             rcenc_bit(&rc, prob, b);
             
-            /* Recompute blended mixed_prob for SSE update */
-            float m1 = mixer_mix(&cm.mx1[cm.prev[0]], stretched);
-            float m2 = mixer_mix(&cm.mx2[char_class(cm.prev[0])], stretched);
-            float m3_ = mixer_mix(&cm.mx3[bp], stretched);
-            float mixed = (m1 + m2 + m3_) / 3.0f;
+            /* Recompute mixed_prob for updates */
+            float em1 = mixer_mix(&cm.mx1[cm.prev[0]], stretched);
+            float em2 = mixer_mix(&cm.mx2[char_class(cm.prev[0])], stretched);
+            float em3 = mixer_mix(&cm.mx3[bp], stretched);
+            float mixed = (em1 + em2 + em3) / 3.0f;
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
@@ -535,10 +539,10 @@ static size_t cm_decompress(uint8_t *dst, size_t cap,
             uint16_t prob = cm_predict(&cm, (uint32_t)i, bp, stretched);
             int b = rcdec_bit(&rc, prob);
             
-            float m1 = mixer_mix(&cm.mx1[cm.prev[0]], stretched);
-            float m2 = mixer_mix(&cm.mx2[char_class(cm.prev[0])], stretched);
-            float m3_ = mixer_mix(&cm.mx3[bp], stretched);
-            float mixed = (m1 + m2 + m3_) / 3.0f;
+            float dm1 = mixer_mix(&cm.mx1[cm.prev[0]], stretched);
+            float dm2 = mixer_mix(&cm.mx2[char_class(cm.prev[0])], stretched);
+            float dm3 = mixer_mix(&cm.mx3[bp], stretched);
+            float mixed = (dm1 + dm2 + dm3) / 3.0f;
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
