@@ -53,7 +53,7 @@ static uint8_t* load_file(const char* path, size_t* out_size)
     return buf;
 }
 
-/* ─── Test: alice29.txt at L12 must produce exactly 43144 bytes ────── */
+/* ─── Test: alice29.txt at L12 must produce exactly 43154 bytes ────── */
 
 static int test_alice29_l12(const char* corpus_dir)
 {
