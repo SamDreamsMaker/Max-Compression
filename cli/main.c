@@ -26,6 +26,8 @@
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
 #include "../lib/optimizer/genetic.h"
+#include "../lib/analyzer/analyzer.h"
+#include "../lib/babel/babel_stride.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -95,6 +97,7 @@ static void print_usage(void)
         "  -s, --strategy  Force strategy: lz, bwt, cm, smart, lzrc\n"
         "  -t, --threads N Use N threads (default: auto)\n"
         "      --block-size SIZE  Override block size (e.g. 1M, 4M, 32M)\n"
+        "  -n, --dry-run   Analyze file without compressing\n"
         "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
@@ -211,6 +214,7 @@ static int g_threads = 0;   /* Thread count (0 = auto) */
 static int g_recursive = 0; /* Recurse into directories */
 static int g_verify = 0;    /* Verify after compress (decompress+compare) */
 static int g_verbose = 0;   /* Show extra info (peak memory, timings) */
+static int g_dryrun = 0;    /* Dry-run: analyze only, don't compress */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -316,6 +320,62 @@ static int cmd_compress(const char* input, const char* output, int level)
         output = auto_output;
     }
     
+    fseek(fin, 0, SEEK_END);
+    size_t src_size = ftell(fin);
+    fseek(fin, 0, SEEK_SET);
+
+    /* ── Dry-run mode: analyze and predict, don't compress ── */
+    if (g_dryrun) {
+        size_t sample = src_size < 65536 ? src_size : 65536;
+        uint8_t* sample_buf = (uint8_t*)malloc(sample);
+        if (sample_buf) {
+            size_t nr = fread(sample_buf, 1, sample, fin);
+            fclose(fin);
+
+            mcx_analysis_t a = mcx_analyze(sample_buf, nr);
+            const char* type_str = "unknown";
+            switch (a.type) {
+                case MCX_DTYPE_TEXT_ASCII:   type_str = "ASCII text"; break;
+                case MCX_DTYPE_TEXT_UTF8:    type_str = "UTF-8 text"; break;
+                case MCX_DTYPE_BINARY:       type_str = "binary"; break;
+                case MCX_DTYPE_STRUCTURED:   type_str = "structured (JSON/XML/CSV)"; break;
+                case MCX_DTYPE_EXECUTABLE:   type_str = "executable (x86)"; break;
+                case MCX_DTYPE_NUMERIC:      type_str = "numeric"; break;
+                case MCX_DTYPE_HIGH_ENTROPY: type_str = "high entropy (compressed/encrypted)"; break;
+                default: break;
+            }
+
+            /* Determine which strategy the level would pick */
+            const char* strat_str = "auto";
+            if (level == 26) strat_str = "LZRC (binary tree)";
+            else if (level == 24) strat_str = "LZRC (hash chain)";
+            else if (level <= 3) strat_str = "LZ77 fast";
+            else if (level <= 9) strat_str = "LZ77 lazy + rANS";
+            else if (a.type == MCX_DTYPE_HIGH_ENTROPY) strat_str = "STORE (incompressible)";
+            else if (level <= 14) strat_str = "BWT + MTF + rANS";
+            else if (level <= 19) strat_str = "BWT + MTF + CM-rANS";
+            else strat_str = "Smart (auto-select BWT/stride/LZRC)";
+
+            int stride = mcx_babel_stride_detect(sample_buf, nr);
+
+            printf("Dry-run analysis for '%s' (%zu bytes)\n\n", input, src_size);
+            printf("  Data type:    %s\n", type_str);
+            printf("  Entropy:      %.2f bits/byte (%.1f%% of maximum)\n", a.entropy, a.entropy / 8.0 * 100.0);
+            printf("  Level:        %d\n", level);
+            printf("  Strategy:     %s\n", strat_str);
+            if (stride > 0)
+                printf("  Stride:       %d bytes detected (stride-delta likely beneficial)\n", stride);
+            printf("  Est. ratio:   ~%.1fx (based on entropy)\n", 8.0 / a.entropy);
+            printf("\n  (No output file written)\n");
+
+            free(sample_buf);
+        } else {
+            fclose(fin);
+            fprintf(stderr, "Error: out of memory\n");
+        }
+        return 0;
+    }
+
     /* Check if output exists (unless --force or --stdout) */
     if (!g_stdout && !g_force && output) {
         FILE* check = fopen(output, "rb");
@@ -326,17 +386,13 @@ static int cmd_compress(const char* input, const char* output, int level)
             return 1;
         }
     }
-    
+
     FILE* fout = g_stdout ? stdout : fopen(output, "wb");
     if (!fout) {
         fprintf(stderr, "Error: cannot create '%s': %s\n", output, strerror(errno));
         fclose(fin);
         return 1;
     }
-
-    fseek(fin, 0, SEEK_END);
-    size_t src_size = ftell(fin);
-    fseek(fin, 0, SEEK_SET);
 
     size_t total_out = 0;
     double t0 = get_time_sec();
@@ -1488,6 +1544,8 @@ int main(int argc, char* argv[])
                 g_recursive = 1;
             } else if (strcmp(argv[i], "--verify") == 0) {
                 g_verify = 1;
+            } else if (strcmp(argv[i], "--dry-run") == 0 || strcmp(argv[i], "-n") == 0) {
+                g_dryrun = 1;
             } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
                 g_verbose = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threads") == 0) {
