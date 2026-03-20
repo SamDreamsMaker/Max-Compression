@@ -63,7 +63,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] [--all-levels] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] <input>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1312,7 +1312,37 @@ static size_t parse_size_suffix(const char* s) {
     return val;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only)
+/* Sort modes for --sort flag */
+#define BENCH_SORT_LEVEL 0
+#define BENCH_SORT_RATIO 1
+#define BENCH_SORT_SPEED 2
+
+typedef struct {
+    int level;
+    size_t comp_size;
+    double ratio;
+    double saving;
+    double comp_speed;
+    double dec_speed;
+    long peak_rss;
+    int ok;
+} BenchResult;
+
+static int bench_cmp_ratio(const void* a, const void* b) {
+    double ra = ((const BenchResult*)a)->ratio;
+    double rb = ((const BenchResult*)b)->ratio;
+    return (rb > ra) - (rb < ra); /* descending */
+}
+static int bench_cmp_speed(const void* a, const void* b) {
+    double sa = ((const BenchResult*)a)->comp_speed;
+    double sb = ((const BenchResult*)b)->comp_speed;
+    return (sb > sa) - (sb < sa); /* descending */
+}
+static int bench_cmp_level(const void* a, const void* b) {
+    return ((const BenchResult*)a)->level - ((const BenchResult*)b)->level;
+}
+
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -1423,11 +1453,13 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
     size_t comp_cap = mcx_compress_bound(src_size);
     uint8_t* comp = (uint8_t*)malloc(comp_cap);
     uint8_t* dec = (uint8_t*)malloc(src_size + 64);
-    if (!comp || !dec) {
+    BenchResult* results = (BenchResult*)calloc(n_levels, sizeof(BenchResult));
+    if (!comp || !dec || !results) {
         fprintf(stderr, "Error: out of memory\n");
-        free(src); free(comp); free(dec);
+        free(src); free(comp); free(dec); free(results);
         return 1;
     }
+    int n_results = 0;
 
     for (int i = 0; i < n_levels; i++) {
         int level = levels[i];
@@ -1489,39 +1521,61 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
 
         long peak_rss = show_memory ? get_peak_rss_kb() : 0;
 
+        /* Collect result */
+        results[n_results].level = level;
+        results[n_results].comp_size = comp_size;
+        results[n_results].ratio = ratio;
+        results[n_results].saving = saving;
+        results[n_results].comp_speed = comp_speed;
+        results[n_results].dec_speed = dec_speed;
+        results[n_results].peak_rss = peak_rss;
+        results[n_results].ok = ok;
+        n_results++;
+    }
+
+    /* Sort results if requested */
+    if (sort_mode == BENCH_SORT_RATIO)
+        qsort(results, n_results, sizeof(BenchResult), bench_cmp_ratio);
+    else if (sort_mode == BENCH_SORT_SPEED)
+        qsort(results, n_results, sizeof(BenchResult), bench_cmp_speed);
+    /* BENCH_SORT_LEVEL is already in order */
+
+    /* Print results */
+    for (int i = 0; i < n_results; i++) {
+        BenchResult* r = &results[i];
         if (json) {
             if (i > 0) printf(",\n");
             printf("    {\"compressor\": \"mcx\", \"level\": %d, \"compressed_bytes\": %zu, "
                    "\"ratio\": %.4f, \"saving_pct\": %.2f, \"comp_mbs\": %.1f, \"dec_mbs\": %.1f, "
                    "\"verified\": %s",
-                   level, comp_size, ratio, saving, comp_speed, dec_speed,
-                   ok ? "true" : "false");
-            if (show_memory) printf(", \"peak_rss_kb\": %ld", peak_rss);
+                   r->level, r->comp_size, r->ratio, r->saving, r->comp_speed, r->dec_speed,
+                   r->ok ? "true" : "false");
+            if (show_memory) printf(", \"peak_rss_kb\": %ld", r->peak_rss);
             printf("}");
         } else if (csv) {
             if (show_memory) {
                 printf("%s,%zu,mcx,%d,%zu,%.4f,%.2f,%.1f,%.1f,%ld\n",
-                       input, src_size, level, comp_size, ratio, saving,
-                       comp_speed, dec_speed, peak_rss);
+                       input, src_size, r->level, r->comp_size, r->ratio, r->saving,
+                       r->comp_speed, r->dec_speed, r->peak_rss);
             } else {
                 printf("%s,%zu,mcx,%d,%zu,%.4f,%.2f,%.1f,%.1f\n",
-                       input, src_size, level, comp_size, ratio, saving,
-                       comp_speed, dec_speed);
+                       input, src_size, r->level, r->comp_size, r->ratio, r->saving,
+                       r->comp_speed, r->dec_speed);
             }
         } else {
             char membuf[32];
             if (ratio_only) {
                 printf("L%-5d %10zu %9.2fx %7.1f%%\n",
-                       level, comp_size, ratio, saving);
+                       r->level, r->comp_size, r->ratio, r->saving);
             } else if (show_memory) {
                 printf("L%-5d %10zu %9.2fx %7.1f%% %9.1f %9.1f %10s %s\n",
-                       level, comp_size, ratio, saving, comp_speed, dec_speed,
-                       fmt_mem(peak_rss, membuf, sizeof(membuf)),
-                       ok ? "" : " FAIL!");
+                       r->level, r->comp_size, r->ratio, r->saving, r->comp_speed, r->dec_speed,
+                       fmt_mem(r->peak_rss, membuf, sizeof(membuf)),
+                       r->ok ? "" : " FAIL!");
             } else {
                 printf("L%-5d %10zu %9.2fx %7.1f%% %9.1f %9.1f %s\n",
-                       level, comp_size, ratio, saving, comp_speed, dec_speed,
-                       ok ? "" : " FAIL!");
+                       r->level, r->comp_size, r->ratio, r->saving, r->comp_speed, r->dec_speed,
+                       r->ok ? "" : " FAIL!");
             }
         }
     }
@@ -1531,7 +1585,7 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
     } else if (!csv) {
         printf("\n");
     }
-    free(src); free(comp); free(dec);
+    free(src); free(comp); free(dec); free(results);
     return 0;
 }
 
@@ -2386,6 +2440,7 @@ int main(int argc, char* argv[])
         int bench_memory = 0;
         int bench_all_levels = 0;
         int bench_ratio_only = 0;
+        int bench_sort_mode = BENCH_SORT_LEVEL; /* default: sort by level */
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
@@ -2420,6 +2475,15 @@ int main(int argc, char* argv[])
                 bench_all_levels = 1;
             } else if (strcmp(argv[i], "--ratio-only") == 0) {
                 bench_ratio_only = 1;
+            } else if (strcmp(argv[i], "--sort") == 0 && i + 1 < argc) {
+                const char* sval = argv[++i];
+                if (strcmp(sval, "ratio") == 0) bench_sort_mode = BENCH_SORT_RATIO;
+                else if (strcmp(sval, "speed") == 0) bench_sort_mode = BENCH_SORT_SPEED;
+                else if (strcmp(sval, "level") == 0) bench_sort_mode = BENCH_SORT_LEVEL;
+                else {
+                    fprintf(stderr, "Error: --sort must be ratio, speed, or level\n");
+                    return 1;
+                }
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
@@ -2433,7 +2497,7 @@ int main(int argc, char* argv[])
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
