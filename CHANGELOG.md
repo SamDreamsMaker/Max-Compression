@@ -4,6 +4,13 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 36)
+- **LZ overlapping match copy optimization** — for matches with offset ≥8, use 8-byte memcpy chunks instead of byte-by-byte copy. No measurable speed change (107 MB/s on dickens L6) — match copy is not the decode bottleneck.
+- **`mcx info --entropy`** — decompresses .mcx file and computes Shannon entropy of original data. Shows bits/byte and percentage of maximum (8.0). Example: xml → 5.52 bits/byte (69.0% of maximum).
+- **L12 vs L20 Silesia profiling** — L20 only benefits ooffice (-14.4%, LZRC beats BWT on binary) and sao (-0.85%). All text files produce identical output — L20 detects text and uses same BWT strategy as L12. L20's multi-strategy trial adds significant compress time for marginal benefit on most file types.
+- **Integration tests** — coverage for `info --entropy` (bits/byte output) and `--profile` phase breakdown.
+- **Man page + completions update** — `--profile` and `--diff` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 35)
 - **`mcx bench --profile`** — enables per-phase time breakdown via `MCX_PROFILE=1`. Shows BWT forward/MTF+RLE/entropy encode times for compress, and rANS decode/RLE2/MTF/BWT inverse times for decompress, with percentage breakdown per block.
 - **BWT 64-bit threshold review** — 16MB threshold is already optimal. 24-bit LF indices in merged 32-bit format cap at 16M entries. Lowering threshold pushes blocks to slower 64-bit path. No change needed.
