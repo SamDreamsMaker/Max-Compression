@@ -64,7 +64,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] <input>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1737,6 +1737,79 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
     return 0;
 }
 
+/* ─── Bench --histogram: compressed size vs block size ────────────────── */
+
+static int cmd_bench_histogram(const char* input, int level) {
+    size_t src_size;
+    uint8_t* src = read_file(input, &src_size);
+    if (!src) return 1;
+
+    /* Default to L12 (BWT) since block size mainly affects BWT levels */
+    if (level == 0) level = 12;
+
+    /* Block sizes to try: 64K to 64M (powers of 4) */
+    static const size_t block_sizes[] = {
+        64*1024, 256*1024, 1024*1024, 4*1024*1024, 16*1024*1024, 64*1024*1024
+    };
+    static const char* block_labels[] = {
+        "64K", "256K", "1M", "4M", "16M", "64M"
+    };
+    int n_sizes = sizeof(block_sizes) / sizeof(block_sizes[0]);
+
+    printf("Block size histogram: '%s' (%zu bytes) at L%d\n\n", input, src_size, level);
+    printf("%-10s %12s %9s %7s  %s\n", "BlockSize", "Compressed", "Ratio", "Save%", "Bar");
+    printf("%-10s %12s %9s %7s  %s\n", "---------", "----------", "-----", "-----", "---");
+
+    extern size_t mcx_block_size_override;
+    size_t saved_override = mcx_block_size_override;
+    size_t max_comp = mcx_compress_bound(src_size);
+    uint8_t* comp = (uint8_t*)malloc(max_comp);
+    if (!comp) { free(src); return 1; }
+
+    size_t best_size = (size_t)-1;
+    const char* best_label = "";
+
+    for (int i = 0; i < n_sizes; i++) {
+        /* Skip block sizes larger than input (would be identical to previous) */
+        if (i > 0 && block_sizes[i] > src_size && block_sizes[i-1] >= src_size)
+            continue;
+
+        mcx_block_size_override = block_sizes[i];
+        size_t comp_size = mcx_compress(comp, max_comp, src, src_size, level);
+        if (mcx_is_error(comp_size)) {
+            printf("%-10s %12s %9s %7s  (error)\n", block_labels[i], "-", "-", "-");
+            continue;
+        }
+
+        double ratio = (double)src_size / comp_size;
+        double saving = (1.0 - (double)comp_size / src_size) * 100.0;
+
+        /* Bar: scale to 40 chars, based on ratio 1.0-6.0 range */
+        int bar_len = (int)((ratio - 1.0) / 5.0 * 40.0);
+        if (bar_len < 0) bar_len = 0;
+        if (bar_len > 40) bar_len = 40;
+        char bar[41];
+        for (int b = 0; b < bar_len; b++) bar[b] = '#';
+        bar[bar_len] = '\0';
+
+        printf("%-10s %12zu %8.2fx %6.1f%%  %s\n",
+               block_labels[i], comp_size, ratio, saving, bar);
+
+        if (comp_size < best_size) {
+            best_size = comp_size;
+            best_label = block_labels[i];
+        }
+    }
+
+    printf("\nBest block size: %s (%zu bytes, %.2fx)\n",
+           best_label, best_size, (double)src_size / best_size);
+
+    mcx_block_size_override = saved_override;
+    free(comp);
+    free(src);
+    return 0;
+}
+
 /* ─── CRC32 (IEEE 802.3) ─────────────────────────────────────────────── */
 
 static uint32_t g_crc32_table[256];
@@ -2604,6 +2677,7 @@ int main(int argc, char* argv[])
         int bench_top_n = 0; /* 0 = show all results */
         int bench_median = 0;
         int bench_percentile = 0;
+        int bench_histogram = 0;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
@@ -2657,6 +2731,8 @@ int main(int argc, char* argv[])
                 bench_median = 1;
             } else if (strcmp(argv[i], "--percentile") == 0) {
                 bench_percentile = 1;
+            } else if (strcmp(argv[i], "--histogram") == 0) {
+                bench_histogram = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
@@ -2670,6 +2746,8 @@ int main(int argc, char* argv[])
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
+        if (bench_histogram)
+            return cmd_bench_histogram(bench_file, bench_level);
         return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_median, bench_percentile);
 
     } else if (strcmp(argv[1], "test") == 0) {
