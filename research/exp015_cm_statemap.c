@@ -210,7 +210,7 @@ static inline float squash(float x) {
 
 /* ── Mixer ─────────────────────────────────────────────────────── */
 
-#define MAX_INPUTS 24
+#define MAX_INPUTS 32
 
 typedef struct {
     float w[MAX_INPUTS];
@@ -361,7 +361,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 23
+#define N_MODELS 25
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -372,6 +372,8 @@ typedef struct {
     smap_t o8;              /* order-8 */
     smap_t word2;           /* word order-2 (two consecutive words) */
     smap_t sparse024;       /* sparse: bytes 0,2,4 */
+    smap_t word_cc;         /* word hash × char class */
+    smap_t o1_cc;           /* order-1 × char class sequence */
     match_t match;
     sse_t sse;
     sse_t apm;  /* second-stage APM with different context */
@@ -410,6 +412,8 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     smap_init(&cm->o8, 1<<24);
     smap_init(&cm->word2, 1<<22);
     smap_init(&cm->sparse024, 1<<20);
+    smap_init(&cm->word_cc, 1<<22);
+    smap_init(&cm->o1_cc, 1<<20);
     match_init(&cm->match, data);
     sse_init(&cm->sse);
     sse_init(&cm->apm);
@@ -432,6 +436,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->delta); smap_free(&cm->o1_nibble);
     smap_free(&cm->o8);
     smap_free(&cm->word2); smap_free(&cm->sparse024);
+    smap_free(&cm->word_cc); smap_free(&cm->o1_cc);
     match_free(&cm->match);
     if (cm->ictx) free(cm->ictx);
 }
@@ -469,6 +474,11 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[20] = h32(cm->word_hash ^ cm->prev_word_hash) ^ par;
     /* Sparse: bytes 0,2,4 */
     ctx[21] = h32(((uint32_t)p[0]<<16)|((uint32_t)p[2]<<8)|p[4]) ^ par;
+    /* Word × char class */
+    ctx[22] = h32(cm->word_hash ^ ((uint32_t)char_class(p[0])<<16)) ^ par;
+    /* Order-1 × char class sequence (3 consecutive classes) */
+    ctx[23] = h32(((uint32_t)p[0]<<16) | ((uint32_t)char_class(p[0])<<12) |
+                  ((uint32_t)char_class(p[1])<<8) | ((uint32_t)char_class(p[2])<<4)) ^ par;
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
@@ -498,7 +508,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[19] = smap_get(&cm->o8, ctx[19]);
     preds[20] = smap_get(&cm->word2, ctx[20]);
     preds[21] = smap_get(&cm->sparse024, ctx[21]);
-    preds[22] = match_predict(&cm->match, pos, bp);
+    preds[22] = smap_get(&cm->word_cc, ctx[22]);
+    preds[23] = smap_get(&cm->o1_cc, ctx[23]);
+    preds[24] = match_predict(&cm->match, pos, bp);
     
     for (int i = 0; i < N_MODELS; i++) {
         if (preds[i] == PROB_HALF) str[i] = 0.0f;
@@ -545,6 +557,8 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->o8, ctx[19], bit);
     smap_update(&cm->word2, ctx[20], bit);
     smap_update(&cm->sparse024, ctx[21], bit);
+    smap_update(&cm->word_cc, ctx[22], bit);
+    smap_update(&cm->o1_cc, ctx[23], bit);
     
     /* Adaptive mixer learning rate: fast early, slow later */
     float lr = cm->total_bits < 2000 ? 0.05f :
