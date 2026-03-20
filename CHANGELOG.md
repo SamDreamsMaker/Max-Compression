@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 23)
+- **Decompress-speed-aware entropy trial** — penalize Adaptive AC when ratio gain is <5% over rANS, fixing the L9 8× decompress slowdown on files like dickens. Trial system now considers decode speed cost, not just ratio.
+- **`mcx bench --filter`** — benchmark with a forced preprocessing filter (delta/nibble/none) to measure filter impact on specific data.
+- **`mcx compress --fast-decode`** — prefer faster-decoding entropy coders (rANS over Adaptive AC) even at slight ratio cost. Useful when decompress speed matters more than maximum compression.
+- **L20 compress profiling** — on dickens (text): L20 uses BWT+rANS (not LZRC — text detected, LZRC skipped), total 16.3s, same breakdown as L12 (BWT 35%, entropy 60%, MTF+RLE 5%). On mozilla (binary 1MB): LZRC selected, BT match finder 95%, range encode 5%, 0.3 MB/s.
+- **Integration tests** — coverage for `--worst` flag with `--sort speed` (verify worst by speed, not ratio).
+- **Man page + completions update** — `--fast-decode` and `--filter` (bench) documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 22)
 - **`mcx bench --worst N`** — show worst N results by ratio (useful for identifying hard-to-compress files in a batch).
 - **L9 decompress profiling** — L9 is 8× slower than L6 on dickens (13 vs 105 MB/s). Trial system picks Adaptive AC (0xAE) for L9 vs rANS (0xA8) for L6. Adaptive AC has serial dependency chains and per-symbol model updates — inherently slow decode. On small files (alice29), both use rANS and decode equally fast (~90 MB/s).
