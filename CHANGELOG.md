@@ -5,6 +5,10 @@ All notable changes to MaxCompression are documented in this file.
 ## [2.1.2] — 2026-03-20
 
 ### Added
+- **`--strategy/-s` flag** — force compression strategy: `lz`, `bwt`, `cm`, `smart`, `lzrc`.
+- **`--block-size` flag** — override BWT block size at runtime (64K-256M, e.g. `--block-size 4M`).
+- **`--dry-run/-n` flag** — analyze file and predict strategy/entropy without compressing.
+- **`mcx bench --compare`** — run gzip/bzip2/xz alongside MCX with comparison table.
 - **`--json` flag** for `mcx info` and `mcx stat` — machine-readable JSON output for scripting/CI.
 - **`mcx checksum` command** — CRC32 of compressed file with header metadata for transfer verification.
 - **`mcx version --build`** — extended build info (SIMD, optimization, C std, BWT engine).
@@ -15,11 +19,18 @@ All notable changes to MaxCompression are documented in this file.
 - **Python bindings docs** — `verify()` and `diff()` API reference and usage examples.
 
 ### Changed
+- **Version synced to 2.1.2** across CMakeLists.txt, maxcomp.h, and README badge.
 - **Table-based Huffman decoder** — 9-bit lookup table replaces bit-by-bit tree walk; O(1) for codes ≤9 bits.
 - **BWT inverse 2× unrolled** — reduced loop overhead in LF-mapping reconstruction.
 - **Better CLI error messages** — decompress errors now include filename and specific error name.
 
+### CI/CD
+- **pkg-config integration test** — builds minimal C program via `pkg-config --cflags --libs maxcomp`.
+- **CMake find_package test** — validates `find_package(MaxCompression)` downstream usage.
+- **Doxygen API docs job** — generates docs and checks for undocumented public symbols.
+
 ### Documentation
+- **CONTRIBUTING.md** — added benchmark guide and test pattern instructions.
 - **FORMAT.md** — updated with all 8 frame flags (adaptive blocks, int-delta, LZP, nibble-split).
 
 ## [2.1.1] — 2026-03-19
