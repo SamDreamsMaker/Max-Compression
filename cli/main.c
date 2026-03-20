@@ -62,7 +62,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--warmup] <input>  # benchmark levels\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] <input>  # benchmark levels\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1224,13 +1224,18 @@ static size_t run_external_compressor(const char* cmd_fmt, const char* input, do
     return size;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup)
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
     if (!src) return 1;
 
-    if (csv) {
+    if (json) {
+        printf("{\n");
+        printf("  \"file\": "); json_print_string(input); printf(",\n");
+        printf("  \"original_bytes\": %zu,\n", src_size);
+        printf("  \"results\": [\n");
+    } else if (csv) {
         /* CSV header */
         printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs\n");
     } else {
@@ -1254,27 +1259,35 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         };
         int n_ext = sizeof(externals) / sizeof(externals[0]);
 
+        int first_ext = 1;
         for (int i = 0; i < n_ext; i++) {
             double elapsed = 0;
             size_t csize = run_external_compressor(externals[i].cmd, input, &elapsed);
             if (csize > 0) {
                 double ratio = (double)src_size / csize;
                 double saving = 100.0 * (1.0 - (double)csize / src_size);
-                if (csv) {
+                if (json) {
+                    if (!first_ext) printf(",\n");
+                    printf("    {\"compressor\": "); json_print_string(externals[i].name);
+                    printf(", \"compressed_bytes\": %zu, \"ratio\": %.4f, \"saving_pct\": %.2f, \"time_s\": %.2f}",
+                           csize, ratio, saving, elapsed);
+                    first_ext = 0;
+                } else if (csv) {
                     printf("%s,%zu,%s,0,%zu,%.4f,%.2f,0,0\n",
                            input, src_size, externals[i].name, csize, ratio, saving);
                 } else {
                     printf("%-12s %10zu %9.2fx %7.1f%% %9.2f\n",
                            externals[i].name, csize, ratio, saving, elapsed);
                 }
-            } else if (!csv) {
+            } else if (!csv && !json) {
                 printf("%-12s %10s\n", externals[i].name, "(not found)");
             }
         }
-        if (!csv) printf("\n");
+        if (json && !first_ext) printf(",\n");
+        if (!csv && !json) printf("\n");
     }
 
-    if (!csv) {
+    if (!csv && !json) {
         printf("%-6s %10s %10s %8s %10s %10s\n",
                "Level", "Compressed", "Ratio", "Saving", "Comp MB/s", "Dec MB/s");
         printf("─────────────────────────────────────────────────────────────\n");
@@ -1342,7 +1355,14 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         double ratio = (double)src_size / comp_size;
         double saving = 100.0 * (1.0 - (double)comp_size / src_size);
 
-        if (csv) {
+        if (json) {
+            if (i > 0) printf(",\n");
+            printf("    {\"compressor\": \"mcx\", \"level\": %d, \"compressed_bytes\": %zu, "
+                   "\"ratio\": %.4f, \"saving_pct\": %.2f, \"comp_mbs\": %.1f, \"dec_mbs\": %.1f, "
+                   "\"verified\": %s}",
+                   level, comp_size, ratio, saving, comp_speed, dec_speed,
+                   ok ? "true" : "false");
+        } else if (csv) {
             printf("%s,%zu,mcx,%d,%zu,%.4f,%.2f,%.1f,%.1f\n",
                    input, src_size, level, comp_size, ratio, saving,
                    comp_speed, dec_speed);
@@ -1353,7 +1373,11 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         }
     }
 
-    if (!csv) printf("\n");
+    if (json) {
+        printf("\n  ]\n}\n");
+    } else if (!csv) {
+        printf("\n");
+    }
     free(src); free(comp); free(dec);
     return 0;
 }
@@ -2177,6 +2201,7 @@ int main(int argc, char* argv[])
         int bench_compare = 0;
         int bench_csv = 0;
         int bench_warmup = 0;
+        int bench_json = 0;
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
@@ -2189,6 +2214,8 @@ int main(int argc, char* argv[])
                 bench_compare = 1;
             } else if (strcmp(argv[i], "--csv") == 0) {
                 bench_csv = 1;
+            } else if (strcmp(argv[i], "--json") == 0) {
+                bench_json = 1;
             } else if (strcmp(argv[i], "--warmup") == 0) {
                 bench_warmup = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
@@ -2198,13 +2225,13 @@ int main(int argc, char* argv[])
             }
         }
         if (!bench_file) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--warmup] <file>\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--json] [--warmup] <file>\n");
             return 1;
         }
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
