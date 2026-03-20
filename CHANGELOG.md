@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 33)
+- **Two-histogram frequency counting** — split input into halves, count into separate f1/f2 arrays (2×1KB, both fit L1 cache), merge at end. Reduces write conflicts when consecutive bytes map to same freq[] slot.
+- **`mcx bench --save-baseline FILE`** — explicitly save current benchmark results as baseline. Unlike `--delta` (auto-saves on first run), `--save-baseline` always overwrites. Compatible with `--delta` for subsequent comparisons.
+- **`--memory-limit` scope documentation** — clarified that `--memory-limit` primarily affects BWT levels (L10-L14). LZ hash tables are fixed at 2-8MB (compile-time constants), far smaller than BWT's 571MB peak RSS.
+- **Decompress memory profiling** — L1=96.1MB, L6=93.5MB, L12=531.9MB (default 64MB blocks). L12 with 4MB blocks=494.2MB, 16MB blocks=494.2MB. Decompressor pre-allocates for worst-case block; reducing block size saves minimal memory.
+- **Integration tests** — coverage for `--delta` regression detection (tampered baseline → exit 1) and `--save-baseline` file creation.
+- **Man page + completions update** — `--delta`, `--memory-limit`, and `--save-baseline` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 32)
 - **Entropy frequency counting 4× unroll** — reduced loop overhead in `compute_entropy()`. SIMD histogram not practical on Atom C2338 (no AVX2 gather/scatter); scalar 4× unroll is the practical optimum.
 - **`mcx bench --delta BASELINE`** — saves baseline on first run (`L<N> <bytes>` per line), compares on subsequent runs. Shows per-level byte delta and percentage. Returns exit code 1 on any regression. Tests L1/L3/L6/L9/L12 by default.
