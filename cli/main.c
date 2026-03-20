@@ -1403,6 +1403,83 @@ int main(int argc, char* argv[])
         long long diff = (long long)s2 - (long long)s1;
         printf("\nDelta: %+lld bytes (%s)\n", diff,
                diff < 0 ? "B is smaller ✓" : diff > 0 ? "A is smaller ✓" : "identical size");
+
+        /* Decompress both and compare content byte-by-byte */
+        if (i1.original_size > 0 && i2.original_size > 0) {
+            uint8_t* d1 = (uint8_t*)malloc((size_t)i1.original_size);
+            uint8_t* d2 = (uint8_t*)malloc((size_t)i2.original_size);
+            if (d1 && d2) {
+                size_t ds1 = mcx_decompress(d1, (size_t)i1.original_size, f1, s1);
+                size_t ds2 = mcx_decompress(d2, (size_t)i2.original_size, f2, s2);
+                if (!mcx_is_error(ds1) && !mcx_is_error(ds2)) {
+                    if (ds1 == ds2 && memcmp(d1, d2, ds1) == 0) {
+                        printf("\nContent: identical ✓\n");
+                    } else {
+                        /* Find and display first differences */
+                        size_t min_sz = ds1 < ds2 ? ds1 : ds2;
+                        size_t ndiffs = 0;
+                        size_t first_diff = (size_t)-1;
+                        for (size_t i = 0; i < min_sz; i++) {
+                            if (d1[i] != d2[i]) {
+                                ndiffs++;
+                                if (first_diff == (size_t)-1) first_diff = i;
+                            }
+                        }
+                        ndiffs += (ds1 > ds2) ? ds1 - ds2 : ds2 - ds1;
+                        printf("\nContent: %zu byte(s) differ", ndiffs);
+                        if (ds1 != ds2)
+                            printf(" (sizes: %zu vs %zu)", ds1, ds2);
+                        printf("\n");
+
+                        /* Hex dump around first difference */
+                        if (first_diff != (size_t)-1) {
+                            size_t ctx_start = first_diff >= 16 ? first_diff - 16 : 0;
+                            /* Align to 16-byte boundary */
+                            ctx_start &= ~(size_t)0xF;
+                            size_t ctx_end = first_diff + 48;
+                            if (ctx_end > min_sz) ctx_end = min_sz;
+
+                            printf("\nFirst difference at offset 0x%zx (%zu):\n", first_diff, first_diff);
+                            printf("\n  File A:\n");
+                            for (size_t row = ctx_start; row < ctx_end; row += 16) {
+                                printf("  %08zx: ", row);
+                                for (size_t col = 0; col < 16 && row + col < ctx_end && row + col < ds1; col++) {
+                                    size_t off = row + col;
+                                    if (off < min_sz && d1[off] != d2[off])
+                                        printf(">%02x", d1[off]);
+                                    else
+                                        printf(" %02x", d1[off]);
+                                }
+                                printf("  |");
+                                for (size_t col = 0; col < 16 && row + col < ctx_end && row + col < ds1; col++) {
+                                    uint8_t c = d1[row + col];
+                                    printf("%c", (c >= 32 && c < 127) ? c : '.');
+                                }
+                                printf("|\n");
+                            }
+                            printf("\n  File B:\n");
+                            for (size_t row = ctx_start; row < ctx_end; row += 16) {
+                                printf("  %08zx: ", row);
+                                for (size_t col = 0; col < 16 && row + col < ctx_end && row + col < ds2; col++) {
+                                    size_t off = row + col;
+                                    if (off < min_sz && d1[off] != d2[off])
+                                        printf(">%02x", d2[off]);
+                                    else
+                                        printf(" %02x", d2[off]);
+                                }
+                                printf("  |");
+                                for (size_t col = 0; col < 16 && row + col < ctx_end && row + col < ds2; col++) {
+                                    uint8_t c = d2[row + col];
+                                    printf("%c", (c >= 32 && c < 127) ? c : '.');
+                                }
+                                printf("|\n");
+                            }
+                        }
+                    }
+                }
+            }
+            free(d1); free(d2);
+        }
         free(f1); free(f2);
         return 0;
 
