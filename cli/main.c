@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <dirent.h>
+#include <unistd.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
 #include "../lib/optimizer/genetic.h"
@@ -935,13 +936,75 @@ static double bench_time(void) {
 }
 #endif
 
-static int cmd_bench(const char* input, int specific_level)
+/* Run an external compressor and return compressed size, or 0 on failure */
+static size_t run_external_compressor(const char* cmd_fmt, const char* input, double* elapsed)
+{
+    char cmd[1024];
+    char tmpfile[] = "/tmp/mcx_bench_XXXXXX";
+    int fd = mkstemp(tmpfile);
+    if (fd < 0) return 0;
+    close(fd);
+
+    snprintf(cmd, sizeof(cmd), cmd_fmt, input, tmpfile);
+
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    int ret = system(cmd);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+
+    if (elapsed) *elapsed = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+
+    size_t size = 0;
+    if (ret == 0) {
+        FILE* f = fopen(tmpfile, "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            size = ftell(f);
+            fclose(f);
+        }
+    }
+    unlink(tmpfile);
+    return size;
+}
+
+static int cmd_bench(const char* input, int specific_level, int compare)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
     if (!src) return 1;
 
     printf("Benchmarking '%s' (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
+
+    /* Run external compressors first if --compare */
+    if (compare) {
+        printf("%-12s %10s %10s %8s %10s\n",
+               "Compressor", "Compressed", "Ratio", "Saving", "Time (s)");
+        printf("──────────────────────────────────────────────────────\n");
+
+        struct { const char* name; const char* cmd; } externals[] = {
+            {"gzip -6",   "gzip  -6 -c '%s' > '%s'"},
+            {"gzip -9",   "gzip  -9 -c '%s' > '%s'"},
+            {"bzip2 -9",  "bzip2 -9 -c '%s' > '%s'"},
+            {"xz -6",     "xz    -6 -c '%s' > '%s'"},
+            {"xz -9",     "xz    -9 -c '%s' > '%s'"},
+        };
+        int n_ext = sizeof(externals) / sizeof(externals[0]);
+
+        for (int i = 0; i < n_ext; i++) {
+            double elapsed = 0;
+            size_t csize = run_external_compressor(externals[i].cmd, input, &elapsed);
+            if (csize > 0) {
+                double ratio = (double)src_size / csize;
+                double saving = 100.0 * (1.0 - (double)csize / src_size);
+                printf("%-12s %10zu %9.2fx %7.1f%% %9.2f\n",
+                       externals[i].name, csize, ratio, saving, elapsed);
+            } else {
+                printf("%-12s %10s\n", externals[i].name, "(not found)");
+            }
+        }
+        printf("\n");
+    }
+
     printf("%-6s %10s %10s %8s %10s %10s\n",
            "Level", "Compressed", "Ratio", "Saving", "Comp MB/s", "Dec MB/s");
     printf("─────────────────────────────────────────────────────────────\n");
@@ -1791,8 +1854,9 @@ int main(int argc, char* argv[])
             fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] <file>\n");
             return 1;
         }
-        /* Parse optional -l/--level flag */
+        /* Parse optional -l/--level and --compare flags */
         int bench_level = 0; /* 0 = all levels */
+        int bench_compare = 0;
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
@@ -1801,15 +1865,17 @@ int main(int argc, char* argv[])
                     fprintf(stderr, "Error: level must be %d-%d\n", MCX_LEVEL_MIN, MCX_LEVEL_MAX);
                     return 1;
                 }
+            } else if (strcmp(argv[i], "--compare") == 0) {
+                bench_compare = 1;
             } else if (!bench_file) {
                 bench_file = argv[i];
             }
         }
         if (!bench_file) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] <file>\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] <file>\n");
             return 1;
         }
-        return cmd_bench(bench_file, bench_level);
+        return cmd_bench(bench_file, bench_level, bench_compare);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
