@@ -54,7 +54,7 @@ static void print_usage(void)
         "  mcx verify     <file.mcx> [original]   # verify integrity\n"
         "  mcx diff       <a.mcx> <b.mcx>         # compare two archives\n"
         "  mcx info       <input.mcx>\n"
-        "  mcx ls         <file.mcx> [file2.mcx ...]\n"
+        "  mcx ls/list    <file.mcx> [file2.mcx ...]\n"
         "  mcx stat       <file>                     # file statistics (entropy, bytes)\n"
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
@@ -1335,7 +1335,7 @@ int main(int argc, char* argv[])
         }
         return cmd_info(argv[2]);
 
-    } else if (strcmp(argv[1], "ls") == 0) {
+    } else if (strcmp(argv[1], "ls") == 0 || strcmp(argv[1], "list") == 0) {
         return cmd_ls(argc, argv);
 
     } else if (strcmp(argv[1], "cat") == 0) {
