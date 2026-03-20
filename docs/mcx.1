@@ -17,6 +17,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-preserve\-mtime\fR]
 [\fB\-\-keep\-broken\fR]
 [\fB\-\-exclude\fR \fIGLOB\fR]
+[\fB\-\-decompress\-check\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -415,6 +416,17 @@ For \fBbench\fR (directory input): show aggregate totals (total input
 size, total output size, overall compression ratio) alongside per\-file
 results. Useful for comparing overall performance across compressors on
 a corpus.
+.TP
+.BR \-\-decompress\-check
+For \fBcompress\fR: after compressing, decompress the output in\-memory
+and verify the CRC matches the original data. Stronger than \fB\-\-verify\fR
+(which re\-compresses): this catches encoder bugs that produce valid but
+incorrect compressed streams.
+.TP
+.BR \-\-no\-header
+For \fBbench\fR: suppress column headers in output. Useful for piping
+benchmark results into other tools. Combines well with \fB\-\-brief\fR for
+minimal machine\-readable output.
 .TP
 .BR \-\-keep\-broken
 For \fBcompress\fR: keep partial output on error instead of deleting.
