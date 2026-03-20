@@ -243,3 +243,34 @@ jobs:
           print(f'Version: {maxcomp.version()}')
           print(f'Bound(1MB): {maxcomp.compress_bound(1048576)}')
           "
+
+  doxygen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Doxygen
+        run: sudo apt-get update && sudo apt-get install -y doxygen
+
+      - name: Generate API docs
+        run: doxygen Doxyfile
+
+      - name: Check for undocumented public functions
+        run: |
+          # Extract public function declarations from header
+          grep -oP 'MCXAPI\s+\S+\s+\K(mcx_\w+)' include/maxcomp/maxcomp.h | sort > /tmp/public_funcs.txt
+          echo "Public functions:"
+          cat /tmp/public_funcs.txt
+          # Check Doxygen warnings for undocumented members
+          if doxygen Doxyfile 2>&1 | grep -i "not documented"; then
+            echo "WARNING: Some public symbols are undocumented"
+          else
+            echo "All public symbols documented"
+          fi
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-docs
+          path: docs/api/html
+          retention-days: 30
