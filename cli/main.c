@@ -330,8 +330,9 @@ static double compute_entropy(const uint8_t* data, size_t size) {
  *  Low entropy (text/structured): L12 (BWT, best ratio)
  *  Very low entropy (very repetitive): L12 with large blocks
  */
-static int adaptive_pick_level(const uint8_t* data, size_t size) {
+static int adaptive_pick_level_ex(const uint8_t* data, size_t size, double* out_entropy) {
     double entropy = compute_entropy(data, size);
+    if (out_entropy) *out_entropy = entropy;
     
     /* Also check for long runs (repetitive data benefits from BWT) */
     int long_runs = 0;
@@ -350,6 +351,10 @@ static int adaptive_pick_level(const uint8_t* data, size_t size) {
     if (entropy > 7.8) return 3;       /* Near-random: fast LZ barely helps */
     if (long_runs > 50) return 12;     /* Very repetitive: BWT shines */
     return 12;                          /* BWT wins on nearly all real data (tested on full Silesia) */
+}
+
+static int adaptive_pick_level(const uint8_t* data, size_t size) {
+    return adaptive_pick_level_ex(data, size, NULL);
 }
 
 /* ─── Recursive directory traversal ──────────────────────────────────── */
@@ -636,9 +641,9 @@ static int cmd_compress(const char* input, const char* output, int level)
         
         /* --adaptive-level: analyze entropy and pick optimal level */
         if (g_adaptive_level) {
-            int picked = adaptive_pick_level(src_buf, src_size);
+            double ent = 0;
+            int picked = adaptive_pick_level_ex(src_buf, src_size, &ent);
             if (!g_quiet) {
-                double ent = compute_entropy(src_buf, src_size);
                 printf("  Entropy: %.2f bits/byte → auto-selected L%d\n", ent, picked);
                 /* Per-block entropy analysis when verbose */
                 if (g_verbose && src_size > 262144) {
@@ -648,8 +653,8 @@ static int cmd_compress(const char* input, const char* output, int level)
                     while (off < src_size) {
                         size_t rem = src_size - off;
                         size_t bsz = (rem < blk) ? rem : blk;
-                        double bent = compute_entropy(src_buf + off, bsz);
-                        int bpick = adaptive_pick_level(src_buf + off, bsz);
+                        double bent = 0;
+                        int bpick = adaptive_pick_level_ex(src_buf + off, bsz, &bent);
                         printf("    Block %d (%zu bytes): %.2f bits/byte → L%d\n", bi, bsz, bent, bpick);
                         off += bsz;
                         bi++;
