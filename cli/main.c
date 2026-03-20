@@ -64,7 +64,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] <input|dir>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -2763,6 +2763,7 @@ int main(int argc, char* argv[])
         int bench_brief = 0;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
+        const char* bench_exclude = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
                 bench_level = atoi(argv[++i]);
@@ -2835,6 +2836,8 @@ int main(int argc, char* argv[])
                     fprintf(stderr, "Error: --filter must be auto, delta, nibble, or none\n");
                     return 1;
                 }
+            } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
+                bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
                 const char* fmt = argv[++i];
                 if (strcmp(fmt, "csv") == 0) { bench_csv = 1; bench_json = 0; }
@@ -2858,6 +2861,28 @@ int main(int argc, char* argv[])
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
+        if (is_directory(bench_file)) {
+            /* Directory mode: benchmark each file in directory */
+            file_list_t fl = {NULL, 0, 0};
+            collect_files_recursive(bench_file, &fl, ".mcx", bench_exclude);
+            if (fl.count == 0) {
+                fprintf(stderr, "Error: no files found in '%s'\n", bench_file);
+                return 1;
+            }
+            int ret = 0;
+            for (size_t f = 0; f < fl.count; f++) {
+                if (fl.count > 1)
+                    printf("=== %s ===\n", fl.paths[f]);
+                if (bench_histogram)
+                    ret |= cmd_bench_histogram(fl.paths[f], bench_level);
+                else
+                    ret |= cmd_bench(fl.paths[f], bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief);
+                if (f + 1 < fl.count && !bench_csv && !bench_json)
+                    printf("\n");
+            }
+            file_list_free(&fl);
+            return ret;
+        }
         if (bench_histogram)
             return cmd_bench_histogram(bench_file, bench_level);
         return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief);
