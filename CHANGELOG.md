@@ -4,6 +4,16 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 20)
+- **L2 vs L3 differentiation** — L2 now uses lazy depth 1 (check ip+1), L3 uses lazy depth 2 (check ip+1 and ip+2). L3 produces 66950 vs L2 67226 on alice29 (+0.4% ratio, -4% speed).
+- **`mcx bench --format`** — unified output format flag: `table` (default), `csv`, `json`, or `markdown`. Replaces separate `--csv` and `--json` flags (still accepted as aliases).
+- **L6 vs L12 Silesia profiling** — L12 (BWT) wins all 12 files avg 33.4% smaller than L6 (LZ-HC). Best: nci +66.8%, xml +50.7%. Worst: sao +12.8%. No crossover point — BWT always wins on ratio, LZ-HC on speed.
+- **Integration tests** — coverage for `--histogram` flag (block size labels and ratio columns) and `--format` flag (markdown/csv output).
+- **Man page + completions update** — `--histogram` and `--format` documented across man page, Bash, Zsh, and Fish completions.
+
+### Skipped (Batch 20)
+- **Compress `--dict` flag** — needs format flag to signal dict-compressed frames to decoder; all 8 flag bits used, deferred to v3.0.
+
 ### Added (Batch 19)
 - **`mcx bench --histogram`** — show compressed size distribution across block sizes, useful for analyzing adaptive block behavior.
 - **`--exclude` integration test** — verifies that `--exclude '*.log'` correctly skips matching files during recursive compression.
