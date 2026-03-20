@@ -63,6 +63,7 @@ typedef enum {
 #define MCX_FLAG_INT_DELTA       0x10  /* Sorted integer delta preprocessing applied */
 #define MCX_FLAG_INT_DELTA_W4    0x20  /* Int-delta width: 0=16-bit, 1=32-bit */
 #define MCX_FLAG_LZP             0x40  /* LZP preprocessing applied (repeated block removal) */
+#define MCX_FLAG_NIBBLE_SPLIT    0x80  /* Nibble-split preprocessing (high/low nibble streams) */
 
 typedef struct {
     uint32_t magic;

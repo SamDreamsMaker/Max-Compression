@@ -1080,6 +1080,33 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     }
 skip_e8e9:
 
+    /* ── Nibble-split trial (L20+, structured binary data) ──
+     * Split bytes into high/low nibble streams before compression.
+     * Groups similar value ranges, improving BWT on structured binary
+     * (databases, spreadsheets, binary records with fixed-width fields).
+     * Skip on text (destroys ASCII patterns) and high-entropy data. */
+    if (level == 20 &&
+        analysis.type != MCX_DTYPE_TEXT_ASCII &&
+        analysis.type != MCX_DTYPE_TEXT_UTF8 &&
+        analysis.type != MCX_DTYPE_STRUCTURED &&
+        analysis.type != MCX_DTYPE_HIGH_ENTROPY &&
+        src_size >= 512) {
+        uint8_t* ns_buf = (uint8_t*)malloc(src_size);
+        uint8_t* ns_dst = (uint8_t*)malloc(dst_cap);
+        if (ns_buf && ns_dst) {
+            mcx_nibble_split_encode(ns_buf, in, src_size);
+            size_t ns_size = mcx_compress(ns_dst, dst_cap, ns_buf, src_size, 21);
+            if (!mcx_is_error(ns_size) && ns_size < offset) {
+                memcpy(dst, ns_dst, ns_size);
+                ((uint8_t*)dst)[5] |= MCX_FLAG_NIBBLE_SPLIT;
+                offset = ns_size;
+            }
+        }
+        if (ns_buf) free(ns_buf);
+        if (ns_dst) free(ns_dst);
+    }
+skip_nibble_split:
+
     /* ── LZP trial (L12+, mixed code/text with repeated blocks) ──
      * LZP (LZ-Prediction) removes long repeated sequences before BWT.
      * Particularly effective on files with duplicated sections (code,
@@ -1227,9 +1254,12 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
         }
         memcpy(out, in + offset, orig_size);
-        /* Apply E8/E9 inverse if flag is set */
+        /* Apply inverse preprocessing if flags are set */
+        if (header.flags & MCX_FLAG_NIBBLE_SPLIT) {
+            uint8_t* tmp = (uint8_t*)malloc(orig_size);
+            if (tmp) { mcx_nibble_split_decode(tmp, out, orig_size); memcpy(out, tmp, orig_size); free(tmp); }
+        }
         if (header.flags & MCX_FLAG_E8E9) mcx_e8e9_decode(out, orig_size);
-        /* Apply integer delta inverse if flag is set */
         if (header.flags & MCX_FLAG_INT_DELTA) {
             int iw = (header.flags & MCX_FLAG_INT_DELTA_W4) ? 4 : 2;
             mcx_int_delta_decode(out, orig_size, iw);
@@ -1731,9 +1761,12 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
             return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
         }
 
-        /* Apply E8/E9 inverse if flag is set */
+        /* Apply inverse preprocessing if flags are set */
+        if (header.flags & MCX_FLAG_NIBBLE_SPLIT) {
+            uint8_t* tmp = (uint8_t*)malloc(orig_size);
+            if (tmp) { mcx_nibble_split_decode(tmp, out, orig_size); memcpy(out, tmp, orig_size); free(tmp); }
+        }
         if (header.flags & MCX_FLAG_E8E9) mcx_e8e9_decode(out, orig_size);
-        /* Apply integer delta inverse if flag is set */
         if (header.flags & MCX_FLAG_INT_DELTA) {
             int iw = (header.flags & MCX_FLAG_INT_DELTA_W4) ? 4 : 2;
             mcx_int_delta_decode(out, orig_size, iw);

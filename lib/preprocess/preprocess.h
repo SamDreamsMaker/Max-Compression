@@ -78,6 +78,23 @@ size_t mcx_rle_encode(uint8_t* dst, size_t dst_cap,
 size_t mcx_rle_decode(uint8_t* dst, size_t dst_cap,
                       const uint8_t* src, size_t src_size);
 
+/* ─── Nibble-Split Preprocessing ─────────────────────────────────────── */
+
+/**
+ * Split bytes into high/low nibble streams (size-preserving).
+ * Groups similar value ranges together to improve BWT on binary data.
+ *
+ * @param dst   Output buffer (must be at least size bytes)
+ * @param src   Input data
+ * @param size  Data size in bytes
+ */
+void mcx_nibble_split_encode(uint8_t* dst, const uint8_t* src, size_t size);
+
+/**
+ * Reverse nibble-split: recombine high/low nibble streams.
+ */
+void mcx_nibble_split_decode(uint8_t* dst, const uint8_t* src, size_t size);
+
 /* ─── LZP (LZ-Prediction) Preprocessing ──────────────────────────────── */
 
 /**
