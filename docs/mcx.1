@@ -20,6 +20,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-decompress\-check\fR]
 [\fB\-\-priority\fR \fIMODE\fR]
 [\fB\-\-adaptive\-level\fR]
+[\fB\-\-memory\-limit\fR \fISIZE\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -97,6 +98,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-cold\fR]
 [\fB\-\-output\fR \fIFILE\fR]
 [\fB\-\-compare\-self\fR \fIREF\fR]
+[\fB\-\-delta\fR \fIBASELINE\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -341,6 +343,13 @@ MATCH (identical size), IMPROVED (smaller), or REGRESSION (larger) with
 byte delta and percentage. Returns exit code 1 on regression, making it
 suitable for CI pipelines to detect compression ratio regressions.
 .TP
+.BR \-\-delta =\fIBASELINE\fR
+For \fBbench\fR: multi\-level regression detection. On first run, saves
+compressed sizes to \fIBASELINE\fR (format: \fIL<N> <bytes>\fR per line).
+On subsequent runs, compares current sizes against baseline at each level
+(L1/L3/L6/L9/L12 by default, or specific level with \fB\-l\fR). Shows byte
+delta and percentage per level. Returns exit code 1 on any regression.
+.TP
 .BR \-\-blocks
 For \fBinfo\fR: show per\-block details (offset, compressed size,
 original size, strategy, flags) in tabular format.
@@ -478,6 +487,12 @@ compression level. Entropy thresholds: >7.5 bits/byte selects L1
 selects L12 (text/structured data). Uses O(n) Shannon entropy
 calculation — instant analysis, no trial compression needed.
 Overrides \fB\-l\fR if specified.
+.TP
+.BR \-\-memory\-limit =\fISIZE\fR
+For \fBcompress\fR: cap peak memory usage by adjusting BWT block size.
+Calculates block_size = (\fISIZE\fR \- 32MB overhead) / 10, since BWT
+peak RSS ≈ block_size × 10 (suffix array + LF\-mapping). Minimum 64M.
+Accepts K/M/G suffixes. Example: \fB\-\-memory\-limit 256M\fR → 22MB blocks.
 .TP
 .BR \-\-keep\-broken
 For \fBcompress\fR: keep partial output on error instead of deleting.
