@@ -133,3 +133,27 @@ cmake -S . -B build && cd build && make -j$(nproc)
 - Timing excludes I/O (internal clock_gettime)
 - Each measurement is a single run (Atom CPU too slow for averaging)
 - Corpus files from standard Canterbury and Silesia benchmark sets
+
+## L1 vs L3 Profiling (Silesia Corpus, 3 iterations averaged)
+
+L3 uses lazy matching (check next position before emitting); L1 is greedy.
+
+| File     | L1 Ratio | L3 Ratio | Ratio Gain | L1 C MB/s | L3 C MB/s | Speed Cost | L3 D MB/s |
+|----------|----------|----------|------------|-----------|-----------|------------|-----------|
+| dickens  | 2.08x    | 2.18x    | +4.8%      | 13.7      | 10.8      | -21%       | 93.3      |
+| mozilla  | 2.35x    | 2.42x    | +3.0%      | 13.5      | 12.0      | -11%       | 103.3     |
+| mr       | 2.43x    | 2.48x    | +2.1%      | 14.0      | 12.0      | -14%       | 101.2     |
+| nci      | 7.32x    | 7.99x    | +9.1%      | 43.5      | 38.6      | -11%       | 254.0     |
+| ooffice  | 1.73x    | 1.77x    | +2.3%      | 10.1      | 8.7       | -14%       | 81.2      |
+| osdb     | 2.59x    | 2.68x    | +3.5%      | 14.9      | 13.3      | -11%       | 131.6     |
+| reymont  | 2.52x    | 2.67x    | +6.0%      | 16.1      | 14.0      | -13%       | 106.4     |
+| samba    | 3.25x    | 3.42x    | +5.2%      | 20.2      | 17.8      | -12%       | 157.7     |
+| sao      | 1.24x    | 1.25x    | +0.8%      | 7.4       | 6.6       | -11%       | 75.0      |
+| webster  | 2.60x    | 2.78x    | +6.9%      | 16.3      | 13.5      | -17%       | 116.8     |
+| xml      | 4.66x    | 5.50x    | +18.0%     | 28.2      | 26.9      | -5%        | 208.1     |
+| x-ray    | 1.30x    | 1.30x    | +0.1%      | 7.1       | 6.2       | -13%       | 70.8      |
+
+**Summary:** L3 lazy matching wins on all 12 files (avg +5.2% ratio) at ~13% speed cost.
+L3 decompress is also ~3-5% faster (fewer literals, longer matches → less overhead).
+Lazy matching at L3 is a good default: significant ratio improvement at modest speed cost.
+Binary/unstructured data (sao, x-ray) sees minimal ratio gain but still no regression.
