@@ -13,7 +13,7 @@ _mcx() {
             return 0
             ;;
         compress)
-            COMPREPLY=( $(compgen -W "-l -o -q -v -f -r -c -t --level -T --output --quiet --verbose --force --recursive --stdout --fast --default --best --delete --verify --threads --strategy --block-size --dry-run --estimate --level-scan --no-trials --filter --split --preserve-mtime --min-ratio --atomic" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "-l -o -q -v -f -r -c -t --level -T --output --quiet --verbose --force --recursive --stdout --fast --default --best --delete --verify --threads --strategy --block-size --dry-run --estimate --level-scan --no-trials --filter --split --preserve-mtime --min-ratio --atomic --keep-broken" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         decompress|extract|x|d)
@@ -29,7 +29,7 @@ _mcx() {
             return 0
             ;;
         bench|compare)
-            COMPREPLY=( $(compgen -W "-l --level --compare --csv --warmup --json --decode-only --iterations --size --memory --all-levels --ratio-only --sort --top -t -T --threads" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "-l --level --compare --csv --warmup --json --decode-only --iterations --size --memory --all-levels --ratio-only --sort --top --median -t -T --threads" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         diff)
