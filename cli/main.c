@@ -345,10 +345,10 @@ static int adaptive_pick_level(const uint8_t* data, size_t size) {
         }
     }
     
-    if (entropy > 7.8) return 1;       /* Near-random: minimal compression possible */
-    if (entropy > 7.5) return 3;       /* Very high entropy: fast LZ */
+    if (entropy > 7.9) return 1;       /* Near-random: minimal compression possible */
+    if (entropy > 7.8) return 3;       /* Near-random: fast LZ barely helps */
     if (long_runs > 50) return 12;     /* Very repetitive: BWT shines */
-    return 12;                          /* BWT wins on nearly all data ≤7.5 bits/byte */
+    return 12;                          /* BWT wins on nearly all real data (tested on full Silesia) */
 }
 
 /* ─── Recursive directory traversal ──────────────────────────────────── */
