@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 25)
+- **Range coder precision profiling** — tested 16-bit vs 24-bit precision for LZRC: 652331 vs 652110 (+0.03% worse), identical speed (0.3/10.5 MB/s). Normalize fires more often but probability resolution suffers. Not worth changing in either direction.
+- **`mcx bench --aggregate`** — when benchmarking a directory, show aggregate totals (total input size, total output size, overall ratio) alongside per-file results.
+- **`--fast-decode` for LZRC blocks** — when `--fast-decode` is specified at L26, use HC match finder (L24-style) instead of BT for faster compression with negligible ratio loss.
+- **`--fast-decode` profiling** — on alice29 L12: 0.10s vs 0.23s (57% faster, 5.4 vs 21.1 MB RSS, identical 43154 output). On dickens L12: 7.83s vs 8.11s (3.5% faster, identical output). Big win on small files, marginal on large files where CM-rANS early-exit already triggers.
+- **Integration tests** — coverage for `bench --exclude` with directory input and `--aggregate` with structured output formats.
+- **Man page + completions update** — `--aggregate` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 24)
 - **BT match finder depth profiling** — tested depth 16 vs 32 on mozilla 1MB: +260 bytes (+0.04%) worse, <1% faster (2.97s vs 3.01s). BT depth not the bottleneck (range coder is); most matches found within first few traversals. Not worth the code complexity.
 - **`mcx bench --exclude GLOB`** — skip files matching pattern when benchmarking a directory. Also added directory input support for `mcx bench` (compress each file in dir individually).
