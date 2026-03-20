@@ -124,3 +124,8 @@ set_tests_properties(streaming_decompress PROPERTIES TIMEOUT 120)
 add_test(NAME multifile_roundtrip
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_multifile.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(multifile_roundtrip PROPERTIES TIMEOUT 30)
+
+# CLI flags + pipe mode integration test
+add_test(NAME cli_flags_pipe
+    COMMAND ${CMAKE_SOURCE_DIR}/tests/test_cli_flags.sh ${CMAKE_BINARY_DIR}/bin/mcx)
+set_tests_properties(cli_flags_pipe PROPERTIES TIMEOUT 60)

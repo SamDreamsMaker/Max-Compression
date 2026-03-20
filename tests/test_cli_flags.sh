@@ -39,5 +39,20 @@ $MCX test > /dev/null && echo "  test: OK"
 # Version command
 $MCX version > /dev/null 2>&1 && echo "  version: OK" || echo "  version: no subcommand (OK)"
 
+# Pipe mode roundtrip
+cat "$TMP/input.txt" | $MCX pipe -l 3 | $MCX pipe -d > "$TMP/pipe.txt"
+diff "$TMP/input.txt" "$TMP/pipe.txt" && echo "  pipe roundtrip: OK"
+
+# Pipe mode with larger data
+dd if=/dev/urandom bs=1024 count=16 of="$TMP/random.bin" 2>/dev/null
+cat "$TMP/random.bin" | $MCX pipe -l 1 | $MCX pipe -d > "$TMP/pipe_random.txt"
+diff "$TMP/random.bin" "$TMP/pipe_random.txt" && echo "  pipe roundtrip (16KB random): OK"
+
+# Upgrade --in-place
+$MCX compress -l 3 "$TMP/input.txt" -o "$TMP/upgrade_test.mcx"
+$MCX upgrade --in-place -l 6 "$TMP/upgrade_test.mcx"
+$MCX decompress "$TMP/upgrade_test.mcx" -o "$TMP/upgrade_out.txt"
+diff "$TMP/input.txt" "$TMP/upgrade_out.txt" && echo "  upgrade --in-place: OK"
+
 echo ""
 echo "All CLI flag tests passed!"
