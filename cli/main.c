@@ -95,7 +95,7 @@ static void print_usage(void)
         "  -q, --quiet     Suppress non-error output\n"
         "  -v, --verbose   Show extra info (peak memory usage)\n"
         "  -s, --strategy  Force strategy: lz, bwt, cm, smart, lzrc\n"
-        "  -t, --threads N Use N threads (default: auto)\n"
+        "  -t, -T, --threads N  Use N threads (default: all cores)\n"
         "      --block-size SIZE  Override block size (e.g. 1M, 4M, 32M)\n"
         "  -n, --dry-run   Analyze file without compressing\n"
         "\n"
@@ -1548,7 +1548,7 @@ int main(int argc, char* argv[])
                 g_dryrun = 1;
             } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
                 g_verbose = 1;
-            } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threads") == 0) {
+            } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (strcmp(argv[i], "--block-size") == 0 && i + 1 < argc) {
                 /* Parse block size with optional K/M suffix */
@@ -1647,6 +1647,8 @@ int main(int argc, char* argv[])
                 g_recursive = 1;
             } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
                 g_verbose = 1;
+            } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
+                if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (argv[i][0] != '-') {
                 if (n_inputs < 256) inputs[n_inputs++] = argv[i];
             }
@@ -1656,6 +1658,9 @@ int main(int argc, char* argv[])
             fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file> [file2 ...]\n", argv[1]);
             return 1;
         }
+#ifdef _OPENMP
+        if (g_threads > 0) omp_set_num_threads(g_threads);
+#endif
         /* Expand directories if --recursive */
         file_list_t dec_expanded;
         file_list_init(&dec_expanded);
@@ -1938,6 +1943,8 @@ int main(int argc, char* argv[])
                 }
             } else if (strcmp(argv[i], "--compare") == 0) {
                 bench_compare = 1;
+            } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
+                if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
                 bench_file = argv[i];
             }
@@ -1946,6 +1953,9 @@ int main(int argc, char* argv[])
             fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] <file>\n");
             return 1;
         }
+#ifdef _OPENMP
+        if (g_threads > 0) omp_set_num_threads(g_threads);
+#endif
         return cmd_bench(bench_file, bench_level, bench_compare);
 
     } else if (strcmp(argv[1], "test") == 0) {

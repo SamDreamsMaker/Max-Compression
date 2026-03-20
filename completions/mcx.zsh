@@ -38,6 +38,7 @@ _mcx() {
         '--recursive[Recurse into directories]'
         '-t[Thread count]:threads:'
         '--threads[Thread count]:threads:'
+        '-T[Thread count]:threads:'
         '*:input:_files'
     )
 

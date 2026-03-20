@@ -13,7 +13,7 @@ _mcx() {
             return 0
             ;;
         compress)
-            COMPREPLY=( $(compgen -W "-l -o -q -v -f -r -c -t --level --output --quiet --verbose --force --recursive --stdout --fast --default --best --delete --verify --threads" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "-l -o -q -v -f -r -c -t --level -T --output --quiet --verbose --force --recursive --stdout --fast --default --best --delete --verify --threads" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         decompress|extract|x|d)
@@ -36,7 +36,7 @@ _mcx() {
             COMPREPLY=( $(compgen -f -- "${cur}") )
             return 0
             ;;
-        -t|--threads)
+        -t|-T|--threads)
             COMPREPLY=( $(compgen -W "1 2 4 8" -- "${cur}") )
             return 0
             ;;

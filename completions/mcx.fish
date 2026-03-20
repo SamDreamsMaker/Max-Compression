@@ -33,6 +33,7 @@ complete -c mcx -n '__fish_seen_subcommand_from compress' -s k -l keep    -d 'Ke
 complete -c mcx -n '__fish_seen_subcommand_from compress' -l delete       -d 'Delete source after success'
 complete -c mcx -n '__fish_seen_subcommand_from compress' -s r -l recursive -d 'Recurse into directories'
 complete -c mcx -n '__fish_seen_subcommand_from compress' -s t -l threads -x -d 'Thread count'
+complete -c mcx -n "__fish_seen_subcommand_from compress" -s T -x -d "Thread count"
 complete -c mcx -n '__fish_seen_subcommand_from compress' -F -d 'Input file'
 
 # decompress/extract/x/d options
@@ -56,3 +57,7 @@ complete -c mcx -n '__fish_seen_subcommand_from diff' -F -d '.mcx file'
 
 # ls — accept .mcx files
 complete -c mcx -n '__fish_seen_subcommand_from ls' -F -d '.mcx file'
+complete -c mcx -n "__fish_seen_subcommand_from decompress extract" -s t -l threads -x -d "Thread count"
+complete -c mcx -n "__fish_seen_subcommand_from decompress extract" -s T -x -d "Thread count"
+complete -c mcx -n "__fish_seen_subcommand_from bench" -s t -l threads -x -d "Thread count"
+complete -c mcx -n "__fish_seen_subcommand_from bench" -s T -x -d "Thread count"
