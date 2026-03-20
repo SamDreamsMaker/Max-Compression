@@ -80,14 +80,49 @@ message(STATUS "║  Build type:      ${CMAKE_BUILD_TYPE}")
 message(STATUS "╚══════════════════════════════════════════════╝")
 message(STATUS "")
 # ─── Install targets ─────────────────────────────────────────────────
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/maxcomp DESTINATION include)
-install(TARGETS maxcomp_static ARCHIVE DESTINATION lib)
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
+
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/maxcomp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(TARGETS maxcomp_static
+    EXPORT MaxCompressionTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
 if(BUILD_SHARED_LIBS)
-    install(TARGETS maxcomp_shared LIBRARY DESTINATION lib)
+    install(TARGETS maxcomp_shared
+        EXPORT MaxCompressionTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
 endif()
 if(MCX_BUILD_CLI)
-    install(TARGETS mcx RUNTIME DESTINATION bin)
+    install(TARGETS mcx RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
+
+# ─── CMake package config (find_package support) ─────────────────────
+install(EXPORT MaxCompressionTargets
+    FILE MaxCompressionTargets.cmake
+    NAMESPACE MaxCompression::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MaxCompression
+)
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/MaxCompressionConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/MaxCompressionConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MaxCompression
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/MaxCompressionConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/MaxCompressionConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/MaxCompressionConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MaxCompression
+)
 
 # ─── pkg-config ──────────────────────────────────────────────────────
 configure_file(
@@ -95,4 +130,4 @@ configure_file(
     ${CMAKE_CURRENT_BINARY_DIR}/maxcomp.pc
     @ONLY
 )
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/maxcomp.pc DESTINATION lib/pkgconfig)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/maxcomp.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)

@@ -1,4 +1,5 @@
 # ─── MaxCompression Library ──────────────────────────────────────────
+include(GNUInstallDirs)
 
 # Collect all source files
 set(MCX_LIB_SOURCES
@@ -40,7 +41,9 @@ preprocess/nibble_split.c
 # ─── Static library (always built) ──────────────────────────────────
 add_library(maxcomp_static STATIC ${MCX_LIB_SOURCES})
 target_include_directories(maxcomp_static
-    PUBLIC  ${PROJECT_SOURCE_DIR}/include
+    PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/external/divsufsort
 )
@@ -70,7 +73,9 @@ endif()
 if(BUILD_SHARED_LIBS)
     add_library(maxcomp_shared SHARED ${MCX_LIB_SOURCES})
     target_include_directories(maxcomp_shared
-        PUBLIC  ${PROJECT_SOURCE_DIR}/include
+        PUBLIC
+            $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/external/divsufsort
     )
@@ -91,12 +96,4 @@ if(BUILD_SHARED_LIBS)
 endif()
 
 # ─── Installation Directives (Required for Cargo / cmake-rs) ────────
-install(TARGETS maxcomp_static
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin
-)
-
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/maxcomp
-    DESTINATION include
-)
+# Note: install(EXPORT) is handled in top-level CMakeLists.txt
