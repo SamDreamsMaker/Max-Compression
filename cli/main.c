@@ -315,7 +315,15 @@ static const char* fmt_mem(long kb, char* buf, size_t bufsz) {
 static double compute_entropy(const uint8_t* data, size_t size) {
     if (size == 0) return 0.0;
     uint32_t freq[256] = {0};
-    for (size_t i = 0; i < size; i++) freq[data[i]]++;
+    /* Unrolled 4× to reduce loop overhead */
+    size_t i = 0;
+    for (; i + 3 < size; i += 4) {
+        freq[data[i]]++;
+        freq[data[i+1]]++;
+        freq[data[i+2]]++;
+        freq[data[i+3]]++;
+    }
+    for (; i < size; i++) freq[data[i]]++;
     double entropy = 0.0;
     for (int s = 0; s < 256; s++) {
         if (freq[s] == 0) continue;
