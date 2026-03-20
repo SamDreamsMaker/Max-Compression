@@ -109,6 +109,7 @@ static void print_usage(void)
         "      --estimate  Estimate compressed size via sample (faster)\n"
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
         "      --fast-decode Prefer fast decoders (skip Adaptive AC)\n"
+        "      --priority P  Optimization goal: speed|ratio|balanced\n"
         "      --level-scan Try L1-L20, pick best ratio automatically\n"
         "      --level-range LO-HI Try a range of levels (e.g. 1-6, L3-L12) and pick best\n"
         "      --filter F  Force preprocessing filter: auto, delta, nibble, none\n"
@@ -2336,6 +2337,23 @@ int main(int argc, char* argv[])
             } else if (strcmp(argv[i], "--fast-decode") == 0) {
                 extern int mcx_fast_decode;
                 mcx_fast_decode = 1;
+            } else if (strcmp(argv[i], "--priority") == 0 && i + 1 < argc) {
+                const char* pval = argv[++i];
+                extern int mcx_no_trials;
+                extern int mcx_fast_decode;
+                if (strcmp(pval, "speed") == 0) {
+                    mcx_fast_decode = 1;
+                    mcx_no_trials = 1;
+                } else if (strcmp(pval, "ratio") == 0) {
+                    mcx_fast_decode = 0;
+                    mcx_no_trials = 0;
+                } else if (strcmp(pval, "balanced") == 0) {
+                    mcx_fast_decode = 1;
+                    mcx_no_trials = 0;
+                } else {
+                    fprintf(stderr, "Error: --priority must be speed, ratio, or balanced\n");
+                    return 1;
+                }
             } else if (strcmp(argv[i], "--level-scan") == 0) {
                 g_level_scan = 1;
             } else if (strcmp(argv[i], "--level-range") == 0 && i + 1 < argc) {
