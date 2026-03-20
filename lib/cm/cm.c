@@ -156,10 +156,14 @@ static inline void smap_update(smap_t *s, uint32_t c, int bit) {
     
     /* Rate based on count: tuned curve */
     int rate;
-    if (count < 2) rate = 80;
+    if (count < 2) rate = 96;
+    else if (count < 4) rate = 64;
     else if (count < 8) rate = 48;
+    else if (count < 16) rate = 36;
     else if (count < 32) rate = 28;
+    else if (count < 64) rate = 22;
     else if (count < 128) rate = 16;
+    else if (count < 256) rate = 12;
     else if (count < 512) rate = 8;
     else rate = 5;
     
