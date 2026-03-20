@@ -2037,7 +2037,7 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
 
 /* ─── Bench --chart: ASCII bar chart of compression ratios ────────────── */
 
-static int cmd_bench_chart(const char* input) {
+static int cmd_bench_chart(const char* input, int all_levels) {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
     if (!src) { fprintf(stderr, "Error: cannot read '%s'\n", input); return 1; }
@@ -2045,9 +2045,12 @@ static int cmd_bench_chart(const char* input) {
     uint8_t* dst = (uint8_t*)malloc(dst_cap);
     if (!dst) { free(src); return 1; }
 
-    int levels[] = {1, 2, 3, 6, 9, 12, 20};
-    int n_levels = 7;
-    double ratios[7];
+    int default_levels[] = {1, 2, 3, 6, 9, 12, 20};
+    int all_level_list[26];
+    for (int i = 0; i < 26; i++) all_level_list[i] = i + 1;
+    int* levels = all_levels ? all_level_list : default_levels;
+    int n_levels = all_levels ? 26 : 7;
+    double ratios[26];
     double max_ratio = 0;
 
     for (int li = 0; li < n_levels; li++) {
@@ -3445,7 +3448,7 @@ int main(int argc, char* argv[])
                 if (fl.count > 1)
                     printf("=== %s ===\n", fl.paths[f]);
                 if (bench_chart)
-                    ret |= cmd_bench_chart(fl.paths[f]);
+                    ret |= cmd_bench_chart(fl.paths[f], bench_all_levels);
                 else if (bench_histogram)
                     ret |= cmd_bench_histogram(fl.paths[f], bench_level);
                 else
@@ -3510,7 +3513,7 @@ int main(int argc, char* argv[])
             return r;
         }
         if (bench_chart) {
-            int r = cmd_bench_chart(bench_file);
+            int r = cmd_bench_chart(bench_file, bench_all_levels);
             if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return r;
         }
