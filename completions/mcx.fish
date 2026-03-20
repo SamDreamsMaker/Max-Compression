@@ -134,6 +134,7 @@ complete -c mcx -n '__fish_seen_subcommand_from bench compare' -F -d 'Input file
 # info — accept files + --json + --blocks
 complete -c mcx -n '__fish_seen_subcommand_from info' -l json -d 'JSON output'
 complete -c mcx -n '__fish_seen_subcommand_from info' -l blocks -d 'Show per-block details'
+complete -c mcx -n '__fish_seen_subcommand_from info' -l entropy -d 'Show Shannon entropy of original data'
 complete -c mcx -n '__fish_seen_subcommand_from info' -F -d 'Input file'
 
 # stat — accept files + --json

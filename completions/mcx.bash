@@ -69,7 +69,7 @@ _mcx() {
             return 0
             ;;
         info)
-            COMPREPLY=( $(compgen -W "--json --blocks" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "--json --blocks --entropy" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         stat|ls|list)
