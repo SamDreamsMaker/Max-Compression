@@ -10,7 +10,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="License"></a>
     <img src="https://img.shields.io/badge/language-C99-orange?style=flat-square" alt="C99">
     <img src="https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-lightgrey?style=flat-square" alt="Platform">
-    <img src="https://img.shields.io/badge/version-2.1.1-purple?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/version-2.1.2-purple?style=flat-square" alt="Version">
   </p>
 </p>
 
