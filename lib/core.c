@@ -828,6 +828,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
             uint64_t pidx64 = 0;
             int double_bwt = 0; /* Will be set to 1 if double-BWT wins */
+            int _cprof = mcx_profile();
+            struct timespec _cp0, _cp1, _cp2, _cp3, _cp4;
+            if (_cprof) clock_gettime(CLOCK_MONOTONIC, &_cp0);
             if (genome.use_bwt) {
                 size_t primary_idx;
                 size_t bwt_result = mcx_bwt_forward(buf1, &primary_idx, stage_in, stage_size);
@@ -871,6 +874,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 }
             }
             
+            if (_cprof) clock_gettime(CLOCK_MONOTONIC, &_cp1);
             uint32_t rle32 = (uint32_t)stage_size;
             if (genome.use_mtf_rle) {
                 if (stage_in != buf1) {
@@ -934,6 +938,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 genome.cm_learning = 5;
             }
             
+            if (_cprof) clock_gettime(CLOCK_MONOTONIC, &_cp2);
             /* Write genome byte now (after all RLE2/double-BWT flags have been set) */
             out1[0] = mcx_encode_genome(&genome);
 
@@ -992,6 +997,22 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 entropy_size = mcx_huffman_compress(out1 + payload_offset, max_out - payload_offset, stage_in, stage_size, NULL);
             }
             
+            if (_cprof) {
+                clock_gettime(CLOCK_MONOTONIC, &_cp3);
+                #pragma omp critical
+                {
+                    double bwt_ms = (_cp1.tv_sec - _cp0.tv_sec)*1e3 + (_cp1.tv_nsec - _cp0.tv_nsec)*1e-6;
+                    double mtf_rle_ms = (_cp2.tv_sec - _cp1.tv_sec)*1e3 + (_cp2.tv_nsec - _cp1.tv_nsec)*1e-6;
+                    double ent_ms = (_cp3.tv_sec - _cp2.tv_sec)*1e3 + (_cp3.tv_nsec - _cp2.tv_nsec)*1e-6;
+                    double total_ms = (_cp3.tv_sec - _cp0.tv_sec)*1e3 + (_cp3.tv_nsec - _cp0.tv_nsec)*1e-6;
+                    fprintf(stderr, "[PROFILE] Compress block %u (%zu bytes):\n", b, block_src_sizes_arr ? block_src_sizes_arr[b] : src_size);
+                    fprintf(stderr, "  BWT forward:    %7.2f ms (%.0f%%)\n", bwt_ms, bwt_ms/total_ms*100);
+                    fprintf(stderr, "  MTF+RLE encode: %7.2f ms (%.0f%%)\n", mtf_rle_ms, mtf_rle_ms/total_ms*100);
+                    fprintf(stderr, "  Entropy encode: %7.2f ms (%.0f%%)\n", ent_ms, ent_ms/total_ms*100);
+                    fprintf(stderr, "  TOTAL:          %7.2f ms\n", total_ms);
+                }
+            }
+
             if (MCX_IS_ERROR(entropy_size)) {
                 #pragma omp critical
                 { omp_err = 1; }
