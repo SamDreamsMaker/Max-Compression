@@ -65,6 +65,7 @@ mcx \- high\-ratio lossless data compression tool
 .br
 .B mcx stat
 [\fB\-\-json\fR]
+[\fB\-\-compare\fR \fIFILE2\fR]
 \fIINPUT\fR
 .br
 .B mcx hash
@@ -153,7 +154,8 @@ Decompress to stdout (equivalent to \fBdecompress \-c\fR).
 .B stat
 Display file statistics without compressing: entropy, byte distribution,
 run\-length analysis, and content type detection. Use \fB\-\-json\fR
-for machine\-readable output.
+for machine\-readable output. Use \fB\-\-compare\fR with two files for
+side\-by\-side comparison showing entropy, size, byte distribution deltas.
 .TP
 .B hash
 Show CRC32 and FNV\-1a 64\-bit hashes of decompressed content from MCX

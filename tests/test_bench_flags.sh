@@ -732,4 +732,19 @@ if [ "$BL_EXIT" -ne 1 ]; then
 fi
 echo "OK: --baseline-dir exits 1 on regression"
 
+# Test stat --compare
+echo "Different content for compare test" > "$TMPDIR/compare2.txt"
+STAT_CMP=$("$MCX" stat --compare "$TMPDIR/input.txt" "$TMPDIR/compare2.txt" 2>/dev/null)
+if ! echo "$STAT_CMP" | grep -q "Entropy"; then
+    echo "FAIL: stat --compare should show Entropy"
+    echo "$STAT_CMP"
+    exit 1
+fi
+if ! echo "$STAT_CMP" | grep -q "Delta"; then
+    echo "FAIL: stat --compare should show Delta column"
+    echo "$STAT_CMP"
+    exit 1
+fi
+echo "OK: stat --compare shows side-by-side comparison"
+
 echo "=== All bench flags tests passed ==="

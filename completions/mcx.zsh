@@ -164,7 +164,7 @@ _mcx() {
             pipe) _arguments $pipe_opts ;;
             bench|compare) _arguments $bench_opts ;;
             info) _arguments '--json[JSON output]' '--blocks[Show per-block details]' '--entropy[Show Shannon entropy of original data]' '*:input:_files' ;;
-            stat) _arguments '--json[JSON output]' '*:input:_files' ;;
+            stat) _arguments '--json[JSON output]' '--compare[Compare two files]' '*:input:_files' ;;
             ls|list) _arguments '--json[JSON output]' '*:input:_files -g "*.mcx"' ;;
             version) _arguments '--build[Show build details]' ;;
             cat) _files ;;

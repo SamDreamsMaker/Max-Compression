@@ -73,7 +73,7 @@ _mcx() {
             return 0
             ;;
         stat|ls|list)
-            COMPREPLY=( $(compgen -W "--json" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "--json --compare" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         cat|hash|checksum|verify)
