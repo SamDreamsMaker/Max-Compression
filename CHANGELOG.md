@@ -2,6 +2,36 @@
 
 All notable changes to MaxCompression are documented in this file.
 
+## [2.2.0] — 2026-03-20
+
+### Added
+- **`mcx upgrade` command** — re-compress an `.mcx` file at a different level (decompress+recompress in one step) with roundtrip verification. Alias: `mcx recompress`.
+- **`mcx pipe` command** — compress/decompress stdin→stdout (`mcx pipe [-l LEVEL]` / `mcx pipe -d`), like gzip without arguments.
+- **`--estimate` flag** — estimate compressed size by compressing a 128KB sample, faster than `--dry-run`. Reports predicted ratio, savings, and estimated compression time.
+- **`--threads/-T` flag** — explicit OpenMP thread control for CLI commands.
+- **`mcx ls --json`** — machine-readable JSON archive listing.
+- **`mcx list` alias** — consistency with common CLI tools (`mcx list` = `mcx ls`).
+- **`mcx compare` alias** — `mcx compare` = `mcx bench` for convenience.
+- **`--delete` flag** — remove source file after successful compress/decompress.
+- **`--verbose/-v` flag** — show peak memory usage during compress/decompress.
+- **WASM build target** — Emscripten build for browser/Node.js usage.
+- **Valgrind CI job** — memcheck on full test suite (Linux).
+- **C example program** (`examples/simple.c`) — compress/decompress API usage.
+- **`mcx bench --level`** — benchmark specific levels instead of all.
+- **Memory usage reporting** — peak RSS tracking with `--verbose`.
+
+### Changed
+- **L6 compress speed +8%** — reduced hash table from 1M to 256K entries for L4-L6, improving cache locality (5.1→5.5 MB/s on alice29.txt). L7+ retains 1M table for max ratio.
+- **L6 decompress speed +13%** — 85.6→96.8 MB/s on alice29.txt from reduced memory footprint.
+
+### Performance
+- **L20 vs L26 benchmark** — L20 matches or beats L26 on all Silesia files; LZRC (L24/L26) only worthwhile for specific binary patterns.
+- **Bash/Zsh/Fish completions** — updated with all new commands and flags.
+
+### Documentation
+- **`mcx diff` hex dump** — byte-level visual differences when archives differ.
+- Updated man page, README, and completions for all new commands.
+
 ## [2.1.2] — 2026-03-20
 
 ### Added
