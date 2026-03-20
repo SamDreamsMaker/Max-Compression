@@ -127,6 +127,7 @@ _mcx() {
         '--compare-self[Compare against reference .mcx file]:ref:_files'
         '--delta[Compare against baseline file]:baseline:_files'
         '--save-baseline[Save current results as baseline]:file:_files'
+        '--diff[Compare ratio and speed against baseline]:baseline:_files'
         '--decode-only[Benchmark decompression only]'
         '--iterations[Number of iterations]:iterations:'
         '--size[Benchmark on truncated prefix]:size:'
