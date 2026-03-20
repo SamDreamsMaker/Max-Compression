@@ -133,6 +133,7 @@ _mcx() {
         '--filter[Force preprocessing filter]:filter:(delta nibble none)'
         '--format[Output format]:format:(table csv json markdown)'
         '--exclude[Skip files matching glob (directory input)]:pattern:'
+        '--aggregate[Show aggregate totals for directory benchmarks]'
         '-t[Thread count]:threads:'
         '-T[Thread count]:threads:'
         '*:input:_files'
