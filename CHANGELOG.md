@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 9)
+- **`mcx bench --json`** — machine-readable JSON benchmark output for CI/scripting.
+- **`mcx bench --decode-only`** — pre-compress once, then time decode only (3 iterations averaged).
+- **2-byte context rANS** — `ctx2_hash(prev2, prev1) = (prev2*31)^prev1` trialed alongside 1-byte context; auto-pick best per block.
+- **`--level-scan` includes L20** — scan now covers L1-L12 and L20 for maximum ratio discovery.
+- **L1 accelerating skip** — LZ4-style skip on misses + lazy secondary hash update for faster fast-mode compression (ratio unchanged on real data).
+- **Man page + completions update** — all Batch 9 flags documented.
+
 ### Added (Batch 8)
 - **`mcx bench --warmup`** — run one warmup iteration before timing to reduce cold-cache variance.
 - **`mcx compress --no-trials`** — skip multi-strategy trial at L20+ (use first strategy, faster).
