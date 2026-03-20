@@ -4,6 +4,16 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 22)
+- **`mcx bench --worst N`** — show worst N results by ratio (useful for identifying hard-to-compress files in a batch).
+- **L9 decompress profiling** — L9 is 8× slower than L6 on dickens (13 vs 105 MB/s). Trial system picks Adaptive AC (0xAE) for L9 vs rANS (0xA8) for L6. Adaptive AC has serial dependency chains and per-symbol model updates — inherently slow decode. On small files (alice29), both use rANS and decode equally fast (~90 MB/s).
+- **Integration tests** — coverage for `--level-range` edge cases (single-level L6-L6, multi-level L1-L3) and `--worst` flag verification.
+- **Man page + completions update** — `--worst` documented across man page, Bash, Zsh, and Fish completions.
+
+### Skipped (Batch 22)
+- **2× unrolled LZ decode loop** — each LZ token has variable-length components (0xFF extension chains); second token start depends on fully parsing first. Branch prediction already near-perfect (~1 cycle overhead vs ~50+ cycles per token). At 104 MB/s decode on alice29, bottleneck is memory bandwidth, not branches.
+- **Compress `--resume` flag** — MCX single-frame format can't append blocks to partial output; all 8 flag bits used, no way to signal partial frames. Deferred to v3.0.
+
 ### Added (Batch 21)
 - **L2 vs L3 Silesia profiling** — L3 wins all 12 files avg +0.43% ratio (max +2.13% on xml), ~4% slower compress. Lazy depth 2 is worthwhile.
 - **`mcx bench --brief`** — compact one-line-per-level output (e.g. `L6: 2.38x 6.4/87.2 MB/s`) for scripting and quick comparisons.
