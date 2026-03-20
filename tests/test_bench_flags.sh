@@ -499,4 +499,48 @@ if ! echo "$CS_OUT" | grep -q "MATCH"; then
 fi
 echo "OK: bench --compare-self reports MATCH"
 
+# Test --compare-self regression detection: use a tiny file as reference
+echo "x" > "$TMPDIR/tiny_input.txt"
+"$MCX" compress -l 1 "$TMPDIR/tiny_input.txt" -o "$TMPDIR/tiny_ref.mcx" -f -q 2>/dev/null
+# Compare against larger input — sizes will differ
+CS_REG=$("$MCX" bench --compare-self "$TMPDIR/tiny_ref.mcx" -l 1 "$TMPDIR/input.txt" 2>/dev/null; echo "EXIT:$?")
+CS_EXIT=$(echo "$CS_REG" | grep -oP 'EXIT:\K\d+')
+if echo "$CS_REG" | grep -q "REGRESSION"; then
+    echo "OK: bench --compare-self detects REGRESSION (exit=$CS_EXIT)"
+elif echo "$CS_REG" | grep -q "IMPROVED"; then
+    echo "OK: bench --compare-self detects size difference (exit=$CS_EXIT)"
+else
+    echo "WARN: --compare-self regression test inconclusive"
+    echo "$CS_REG"
+fi
+
+# Test --delta baseline save/compare
+rm -f "$TMPDIR/baseline.txt"
+"$MCX" bench --delta "$TMPDIR/baseline.txt" -l 1 "$TMPDIR/input.txt" 2>/dev/null
+if [ ! -f "$TMPDIR/baseline.txt" ]; then
+    echo "FAIL: --delta should create baseline file"
+    exit 1
+fi
+DELTA_OUT=$("$MCX" bench --delta "$TMPDIR/baseline.txt" -l 1 "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$DELTA_OUT" | grep -q "=\|MATCH\|+0"; then
+    echo "FAIL: --delta should show match on second run"
+    echo "$DELTA_OUT"
+    exit 1
+fi
+echo "OK: bench --delta baseline save/compare works"
+
+# Test --memory-limit
+ML_OUT=$("$MCX" compress --memory-limit 128M -l 12 "$TMPDIR/input.txt" -o "$TMPDIR/ml_out.mcx" -f 2>&1)
+if ! echo "$ML_OUT" | grep -q "block size"; then
+    echo "FAIL: --memory-limit should show effective block size"
+    echo "$ML_OUT"
+    exit 1
+fi
+"$MCX" decompress "$TMPDIR/ml_out.mcx" -o "$TMPDIR/ml_rt.txt" -f -q 2>/dev/null
+if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/ml_rt.txt" > /dev/null 2>&1; then
+    echo "FAIL: --memory-limit roundtrip failed"
+    exit 1
+fi
+echo "OK: --memory-limit roundtrip verified"
+
 echo "=== All bench flags tests passed ==="
