@@ -142,6 +142,37 @@ print(f"Max compressed size for {len(data)} bytes: {max_size} bytes")
 # Useful for pre-allocating buffers in performance-critical code
 ```
 
+### Verifying compressed data
+
+```python
+import maxcomp
+
+data = b"Important data" * 100
+compressed = maxcomp.compress(data, level=6)
+
+# Basic integrity check
+result = maxcomp.verify(compressed)
+print(f"Valid: {result['valid']}, ratio: {result['ratio']:.2f}×")
+
+# Roundtrip verification (checks decompress matches original)
+result = maxcomp.verify(compressed, original=data)
+print(f"Roundtrip OK: {result['roundtrip_ok']}")
+```
+
+### Comparing compressed archives
+
+```python
+import maxcomp
+
+data = b"Hello, World! " * 10000
+fast = maxcomp.compress(data, level=3)
+best = maxcomp.compress(data, level=20)
+
+diff = maxcomp.diff(fast, best)
+print(f"Size delta: {diff['size_delta']:+,} bytes")
+# Negative delta = second archive is smaller
+```
+
 ### Error handling
 
 ```python
@@ -214,6 +245,28 @@ Return the maximum possible compressed size for a given input size. Useful for p
 | `size` | `int` | Input data size in bytes |
 
 **Returns:** Upper bound on compressed output size.
+
+### `maxcomp.verify(compressed, original=None) → dict`
+
+Verify integrity of compressed data. If `original` is provided, also checks roundtrip correctness.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `compressed` | `bytes \| bytearray` | — | MCX compressed data |
+| `original` | `bytes \| bytearray \| None` | `None` | Original data for roundtrip check |
+
+**Returns:** Dictionary with keys: `valid` (bool), `original_size` (int), `compressed_size` (int), `ratio` (float), and optionally `roundtrip_ok` (bool).
+
+### `maxcomp.diff(compressed_a, compressed_b) → dict`
+
+Compare two MCX compressed archives, showing differences in size, ratio, and strategy.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `compressed_a` | `bytes \| bytearray` | First MCX archive |
+| `compressed_b` | `bytes \| bytearray` | Second MCX archive |
+
+**Returns:** Dictionary with comparison details: sizes, ratios, levels, strategies, and size delta.
 
 ### `maxcomp.version() → str`
 
