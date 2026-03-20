@@ -109,6 +109,7 @@ static void print_usage(void)
         "      --estimate  Estimate compressed size via sample (faster)\n"
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
         "      --level-scan Try L1-L20, pick best ratio automatically\n"
+        "      --level-range LO-HI Try a range of levels (e.g. 1-6, L3-L12) and pick best\n"
         "      --filter F  Force preprocessing filter: auto, delta, nibble, none\n"
         "      --min-ratio N     Only write output if ratio >= N (else skip)\n"
         "      --atomic          Write to temp file, rename on success (crash-safe)\n"
@@ -233,6 +234,8 @@ static int g_dryrun = 0;    /* Dry-run: analyze only, don't compress */
 static int g_force_filter = 0; /* 0=auto, 1=delta, 2=nibble, 3=none */
 static int g_estimate = 0;  /* Estimate compressed size via sample compress */
 static int g_level_scan = 0; /* Try L1-L12, pick best ratio automatically */
+static int g_level_range_lo = 0; /* --level-range lower bound (0=unused) */
+static int g_level_range_hi = 0; /* --level-range upper bound */
 static size_t g_split_size = 0; /* Split output into chunks of this size (0=disabled) */
 static int g_preserve_mtime = 0; /* Preserve source file mtime on output */
 static double g_min_ratio = 0.0; /* Minimum ratio threshold (0=disabled) */
@@ -524,12 +527,23 @@ static int cmd_compress(const char* input, const char* output, int level)
 
         size_t comp_size;
         
-        if (g_level_scan) {
-            /* --level-scan: try multiple levels, pick best ratio */
+        if (g_level_scan || g_level_range_lo > 0) {
+            /* --level-scan or --level-range: try multiple levels, pick best ratio */
             int scan_levels[] = {1, 3, 6, 9, 12, 20};
-            int n_scan = sizeof(scan_levels) / sizeof(scan_levels[0]);
+            int range_levels[MCX_LEVEL_MAX + 1];
+            int n_scan;
+            if (g_level_range_lo > 0) {
+                /* --level-range: try every level in range */
+                n_scan = 0;
+                for (int lv = g_level_range_lo; lv <= g_level_range_hi && n_scan < MCX_LEVEL_MAX; lv++)
+                    range_levels[n_scan++] = lv;
+            } else {
+                n_scan = sizeof(scan_levels) / sizeof(scan_levels[0]);
+                for (int si = 0; si < n_scan; si++) range_levels[si] = scan_levels[si];
+            }
+            int *levels_to_scan = (g_level_range_lo > 0) ? range_levels : scan_levels;
             size_t best_size = SIZE_MAX;
-            int best_level = scan_levels[0];
+            int best_level = levels_to_scan[0];
             
             if (!g_quiet) {
                 printf("Scanning levels for '%s' (%zu bytes)...\n", input, src_size);
@@ -545,7 +559,7 @@ static int cmd_compress(const char* input, const char* output, int level)
             }
             
             for (int si = 0; si < n_scan; si++) {
-                int lv = scan_levels[si];
+                int lv = levels_to_scan[si];
                 size_t sz = mcx_compress(scan_buf, dst_cap, src_buf, src_size, lv);
                 if (!mcx_is_error(sz)) {
                     if (!g_quiet) {
@@ -2269,6 +2283,24 @@ int main(int argc, char* argv[])
                 mcx_no_trials = 1;
             } else if (strcmp(argv[i], "--level-scan") == 0) {
                 g_level_scan = 1;
+            } else if (strcmp(argv[i], "--level-range") == 0 && i + 1 < argc) {
+                /* Parse range like "1-6", "L1-L6", "3-12" */
+                const char* range = argv[++i];
+                int lo = 0, hi = 0;
+                if (range[0] == 'L' || range[0] == 'l') range++;
+                lo = atoi(range);
+                const char* dash = strchr(range, '-');
+                if (dash) {
+                    dash++;
+                    if (*dash == 'L' || *dash == 'l') dash++;
+                    hi = atoi(dash);
+                }
+                if (lo < MCX_LEVEL_MIN || hi < lo || hi > MCX_LEVEL_MAX) {
+                    fprintf(stderr, "Error: --level-range must be LO-HI (e.g. 1-6, L3-L12)\n");
+                    return 1;
+                }
+                g_level_range_lo = lo;
+                g_level_range_hi = hi;
             } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
                 g_verbose = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
