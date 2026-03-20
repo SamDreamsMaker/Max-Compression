@@ -18,18 +18,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <time.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <sys/resource.h>
 #include <dirent.h>
 #include <unistd.h>
 #include <utime.h>
 #include <fnmatch.h>
+#endif
+#include <time.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
 #include "../lib/optimizer/genetic.h"
 #include "../lib/analyzer/analyzer.h"
 #include "../lib/babel/babel_stride.h"
+#include "../lib/compat.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -37,12 +40,17 @@
 /* ─── Timing ─────────────────────────────────────────────────────────── */
 
 static double get_time_sec(void) {
-#if defined(CLOCK_MONOTONIC)
+#if defined(_WIN32)
+    LARGE_INTEGER freq, cnt;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&cnt);
+    return (double)cnt.QuadPart / (double)freq.QuadPart;
+#elif defined(__APPLE__)
+    return (double)mach_absolute_time() / 1e9;
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
-#else
-    return (double)clock() / CLOCKS_PER_SEC;
 #endif
 }
 
@@ -64,7 +72,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] [--no-header] [--repeat N] <input|dir>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--warmup-iterations N] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] [--no-header] [--repeat N] <input|dir>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -291,9 +299,15 @@ static void file_list_free(file_list_t* fl) {
 
 static int is_directory(const char* path) {
     struct stat st;
-    return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+    if (stat(path, &st) != 0) return 0;
+#ifdef _WIN32
+    return (st.st_mode & _S_IFDIR) != 0;
+#else
+    return S_ISDIR(st.st_mode);
+#endif
 }
 
+#ifndef _WIN32
 static void collect_files_recursive(const char* dir_path, file_list_t* fl,
                                      const char* skip_ext,
                                      const char* exclude_pattern) {
@@ -324,6 +338,7 @@ static void collect_files_recursive(const char* dir_path, file_list_t* fl,
     }
     closedir(dir);
 }
+#endif /* !_WIN32 */
 
 /* Remove partial output on error (unless --keep-broken) */
 static void cleanup_partial(const char* path) {
@@ -1367,24 +1382,18 @@ static int cmd_info(const char* input, int json, int show_blocks)
 
 /* ─── Bench command ──────────────────────────────────────────────────── */
 
-#ifdef _WIN32
-#include <windows.h>
-static double bench_time(void) {
-    LARGE_INTEGER freq, count;
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&count);
-    return (double)count.QuadPart / freq.QuadPart;
-}
-#else
-#include <time.h>
-static double bench_time(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec + ts.tv_nsec * 1e-9;
-}
-#endif
+/* bench_time() — reuse get_time_sec() defined above */
+#define bench_time get_time_sec
 
 /* Run an external compressor and return compressed size, or 0 on failure */
+#ifdef _WIN32
+static size_t run_external_compressor(const char* cmd_fmt, const char* input, double* elapsed)
+{
+    (void)cmd_fmt; (void)input;
+    if (elapsed) *elapsed = 0;
+    return 0; /* External compressors not supported on Windows */
+}
+#else
 static size_t run_external_compressor(const char* cmd_fmt, const char* input, double* elapsed)
 {
     char cmd[1024];
@@ -1395,12 +1404,11 @@ static size_t run_external_compressor(const char* cmd_fmt, const char* input, do
 
     snprintf(cmd, sizeof(cmd), cmd_fmt, input, tmpfile);
 
-    struct timespec t0, t1;
-    clock_gettime(CLOCK_MONOTONIC, &t0);
+    double t0 = bench_time();
     int ret = system(cmd);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
+    double t1 = bench_time();
 
-    if (elapsed) *elapsed = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+    if (elapsed) *elapsed = t1 - t0;
 
     size_t size = 0;
     if (ret == 0) {
@@ -1414,6 +1422,7 @@ static size_t run_external_compressor(const char* cmd_fmt, const char* input, do
     unlink(tmpfile);
     return size;
 }
+#endif /* !_WIN32 */
 
 static size_t parse_size_suffix(const char* s) {
     char* end = NULL;
@@ -1617,11 +1626,14 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
     for (int i = 0; i < n_levels; i++) {
         int level = levels[i];
 
-        /* Warmup iteration (reduces cold-cache variance) */
+        /* Warmup iterations (reduce cold-cache variance) */
         if ((warmup || decode_only) && !ratio_only) {
-            size_t ws = mcx_compress(comp, comp_cap, src, src_size, level);
-            if (!mcx_is_error(ws))
-                mcx_decompress(dec, src_size + 64, comp, ws);
+            int warmup_count = warmup > 1 ? warmup : 1;
+            for (int wi = 0; wi < warmup_count; wi++) {
+                size_t ws = mcx_compress(comp, comp_cap, src, src_size, level);
+                if (!mcx_is_error(ws))
+                    mcx_decompress(dec, src_size + 64, comp, ws);
+            }
         }
 
         /* Determine iteration counts */
@@ -2844,6 +2856,9 @@ int main(int argc, char* argv[])
                 bench_json = 1;
             } else if (strcmp(argv[i], "--warmup") == 0) {
                 bench_warmup = 1;
+            } else if (strcmp(argv[i], "--warmup-iterations") == 0 && i + 1 < argc) {
+                bench_warmup = atoi(argv[++i]);
+                if (bench_warmup < 1) bench_warmup = 1;
             } else if (strcmp(argv[i], "--decode-only") == 0) {
                 bench_decode_only = 1;
             } else if (strcmp(argv[i], "--iterations") == 0 && i + 1 < argc) {
