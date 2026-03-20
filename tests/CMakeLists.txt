@@ -147,3 +147,7 @@ set_tests_properties(preserve_mtime PROPERTIES TIMEOUT 30)
 add_test(NAME bench_flags
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_bench_flags.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(bench_flags PROPERTIES TIMEOUT 120)
+
+add_test(NAME decompress_check
+    COMMAND ${CMAKE_SOURCE_DIR}/tests/test_decompress_check.sh ${CMAKE_BINARY_DIR}/bin/mcx)
+set_tests_properties(decompress_check PROPERTIES TIMEOUT 60)
