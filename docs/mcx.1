@@ -101,6 +101,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-delta\fR \fIBASELINE\fR]
 [\fB\-\-save\-baseline\fR \fIFILE\fR]
 [\fB\-\-diff\fR \fIBASELINE\fR]
+[\fB\-\-profile\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -366,6 +367,13 @@ compress/decompress speeds alongside ratio. Baseline format includes
 timing data (\fIL<N> <bytes> <comp_mbs> <dec_mbs>\fR). Speed variance
 of 5\-10% between runs is normal due to system load and thermals.
 Returns exit code 1 on ratio regression.
+.TP
+.BR \-\-profile
+For \fBbench\fR: show per\-phase time breakdown for each block during
+compress and decompress. Shows BWT forward, MTF+RLE encode, and entropy
+encode times (with percentages) for compression, and rANS decode,
+RLE2 decode, MTF decode, and BWT inverse times for decompression.
+Useful for identifying performance bottlenecks.
 .TP
 .BR \-\-blocks
 For \fBinfo\fR: show per\-block details (offset, compressed size,
