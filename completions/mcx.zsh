@@ -125,6 +125,7 @@ _mcx() {
         '--top[Show top N results by ratio]:count:'
         '--median[Report median instead of mean]'
         '--percentile[Report p5/p50/p95 speed distribution]'
+        '--histogram[Show compressed size distribution across block sizes]'
         '-t[Thread count]:threads:'
         '-T[Thread count]:threads:'
         '*:input:_files'

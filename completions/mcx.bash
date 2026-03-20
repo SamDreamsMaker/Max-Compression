@@ -29,7 +29,7 @@ _mcx() {
             return 0
             ;;
         bench|compare)
-            COMPREPLY=( $(compgen -W "-l --level --compare --csv --warmup --json --decode-only --iterations --size --memory --all-levels --ratio-only --sort --top --median --percentile -t -T --threads" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "-l --level --compare --csv --warmup --json --decode-only --iterations --size --memory --all-levels --ratio-only --sort --top --median --percentile --histogram -t -T --threads" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         diff)

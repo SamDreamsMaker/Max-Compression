@@ -104,6 +104,7 @@ complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l sort -x -a 'ra
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l top -x -d 'Show top N results by ratio'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l median -d 'Report median instead of mean'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l percentile -d 'Report p5/p50/p95 speed distribution'
+complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l histogram -d 'Show compressed size distribution across block sizes'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -s t -l threads -x -d 'Thread count'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -s T -x -d 'Thread count'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -F -d 'Input file'
