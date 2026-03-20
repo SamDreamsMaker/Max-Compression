@@ -35,6 +35,7 @@
 #include <fnmatch.h>
 #endif
 #include <time.h>
+#include <math.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
 #include "../lib/optimizer/genetic.h"
@@ -127,6 +128,7 @@ static void print_usage(void)
         "      --fast-decode Prefer fast decoders (skip Adaptive AC)\n"
         "      --priority P  Optimization goal: speed|ratio|balanced\n"
         "      --level-scan Try L1-L20, pick best ratio automatically\n"
+        "      --adaptive-level Analyze entropy and auto-pick optimal level\n"
         "      --level-range LO-HI Try a range of levels (e.g. 1-6, L3-L12) and pick best\n"
         "      --filter F  Force preprocessing filter: auto, delta, nibble, none\n"
         "      --min-ratio N     Only write output if ratio >= N (else skip)\n"
@@ -319,11 +321,10 @@ static int adaptive_pick_level(const uint8_t* data, size_t size) {
     }
     
     if (entropy > 7.5) return 1;       /* Near-random: minimal compression possible */
-    if (entropy > 6.5) return 3;       /* High entropy: fast LZ */
-    if (entropy > 5.0) return 6;       /* Medium: balanced LZ-HC */
-    if (entropy > 3.5) return 9;       /* Medium-low: deep LZ-HC */
-    if (long_runs > 50) return 12;     /* Very repetitive: BWT */
-    return 12;                          /* Low entropy: BWT */
+    if (entropy > 7.0) return 3;       /* High entropy: fast LZ */
+    if (entropy > 6.0) return 6;       /* Medium-high: balanced LZ-HC */
+    if (long_runs > 50) return 12;     /* Very repetitive: BWT shines */
+    return 12;                          /* Text/structured: BWT best ratio */
 }
 
 /* ─── Recursive directory traversal ──────────────────────────────────── */
