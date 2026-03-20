@@ -239,49 +239,80 @@ static void mixer_learn(mixer_t *mx, float *s, int bit, float lr) {
         mx->w[i] += lr * err * s[i];
 }
 
+/* ── Hash ──────────────────────────────────────────────────────── */
+
+static inline uint32_t h32(uint32_t a) {
+    a = (a ^ 61) ^ (a >> 16); a += (a << 3);
+    a ^= (a >> 4); a *= 0x27d4eb2d; a ^= (a >> 15);
+    return a;
+}
+
 /* ── Match Model ───────────────────────────────────────────────── */
 
-#define MATCH_HASH_SIZE (1 << 22)
+#define MATCH_HASH4 (1 << 22)  /* 4M entries for 4-byte matches */
+#define MATCH_HASH8 (1 << 20)  /* 1M entries for 8-byte matches */
 
 typedef struct {
-    uint32_t *tab;
+    uint32_t *tab4;   /* 4-byte context hash → position */
+    uint32_t *tab8;   /* 8-byte context hash → position */
     const uint8_t *data;
     uint32_t mpos, mlen;
     int active;
 } match_t;
 
 static void match_init(match_t *m, const uint8_t *data) {
-    m->tab = (uint32_t*)calloc(MATCH_HASH_SIZE, sizeof(uint32_t));
-    memset(m->tab, 0xFF, MATCH_HASH_SIZE * sizeof(uint32_t));
+    m->tab4 = (uint32_t*)malloc(MATCH_HASH4 * sizeof(uint32_t));
+    m->tab8 = (uint32_t*)malloc(MATCH_HASH8 * sizeof(uint32_t));
+    memset(m->tab4, 0xFF, MATCH_HASH4 * sizeof(uint32_t));
+    memset(m->tab8, 0xFF, MATCH_HASH8 * sizeof(uint32_t));
     m->data = data; m->active = 0; m->mlen = 0;
 }
-static void match_free(match_t *m) { free(m->tab); }
+static void match_free(match_t *m) { free(m->tab4); free(m->tab8); }
 
 static uint16_t match_predict(match_t *m, uint32_t pos, int bp) {
     if (!m->active || m->mpos >= pos) return PROB_HALF;
     int pred = (m->data[m->mpos] >> (7 - bp)) & 1;
-    int conf = m->mlen > 64 ? 64 : (int)m->mlen;
-    int delta = (conf * 1800) / 64;
+    int conf = m->mlen > 128 ? 128 : (int)m->mlen;
+    /* Stronger confidence curve */
+    int delta = (conf * 1900) / 128;
     return pred ? (PROB_HALF - delta) : (PROB_HALF + delta);
 }
 
 static void match_update(match_t *m, uint32_t pos) {
-    if (pos < 4) return;
+    if (pos < 8) return;
     if (m->active && m->mpos < pos) {
         if (m->data[m->mpos] == m->data[pos-1]) { m->mpos++; m->mlen++; }
         else { m->active = 0; m->mlen = 0; }
     }
     if (!m->active) {
-        uint32_t h = (m->data[pos-1] | ((uint32_t)m->data[pos-2]<<8) |
-                      ((uint32_t)m->data[pos-3]<<16) | ((uint32_t)m->data[pos-4]<<24));
-        h = (h * 2654435761u) >> (32 - 22);
-        uint32_t ref = m->tab[h];
-        if (ref != 0xFFFFFFFF && ref >= 4 && ref + 4 <= pos &&
-            m->data[ref-1]==m->data[pos-1] && m->data[ref-2]==m->data[pos-2] &&
-            m->data[ref-3]==m->data[pos-3] && m->data[ref-4]==m->data[pos-4]) {
-            m->active = 1; m->mpos = ref; m->mlen = 4;
+        /* Try 8-byte match first (higher priority) */
+        uint32_t h8 = h32(m->data[pos-1] | ((uint32_t)m->data[pos-2]<<8) |
+                         ((uint32_t)m->data[pos-3]<<16) | ((uint32_t)m->data[pos-4]<<24));
+        h8 = h32(h8 ^ (m->data[pos-5] | ((uint32_t)m->data[pos-6]<<8) |
+                       ((uint32_t)m->data[pos-7]<<16) | ((uint32_t)m->data[pos-8]<<24)));
+        h8 %= MATCH_HASH8;
+        uint32_t ref8 = m->tab8[h8];
+        if (ref8 != 0xFFFFFFFF && ref8 >= 8 && ref8 + 8 <= pos &&
+            m->data[ref8-1]==m->data[pos-1] && m->data[ref8-2]==m->data[pos-2] &&
+            m->data[ref8-3]==m->data[pos-3] && m->data[ref8-4]==m->data[pos-4]) {
+            m->active = 1; m->mpos = ref8; m->mlen = 8;
+            /* Extend match forward from ref8 */
         }
-        m->tab[h] = pos;
+        m->tab8[h8] = pos;
+        
+        /* Fall back to 4-byte match */
+        if (!m->active) {
+            uint32_t h4 = (m->data[pos-1] | ((uint32_t)m->data[pos-2]<<8) |
+                          ((uint32_t)m->data[pos-3]<<16) | ((uint32_t)m->data[pos-4]<<24));
+            h4 = (h4 * 2654435761u) >> (32 - 22);
+            uint32_t ref4 = m->tab4[h4];
+            if (ref4 != 0xFFFFFFFF && ref4 >= 4 && ref4 + 4 <= pos &&
+                m->data[ref4-1]==m->data[pos-1] && m->data[ref4-2]==m->data[pos-2] &&
+                m->data[ref4-3]==m->data[pos-3] && m->data[ref4-4]==m->data[pos-4]) {
+                m->active = 1; m->mpos = ref4; m->mlen = 4;
+            }
+            m->tab4[h4] = pos;
+        }
     }
 }
 
@@ -319,14 +350,6 @@ static void sse_update(sse_t *s, int ctx, uint16_t prob, int bit) {
     else          s->t[c][b] = p - (p >> 5);
 }
 
-/* ── Hash ──────────────────────────────────────────────────────── */
-
-static inline uint32_t h32(uint32_t a) {
-    a = (a ^ 61) ^ (a >> 16); a += (a << 3);
-    a ^= (a >> 4); a *= 0x27d4eb2d; a ^= (a >> 15);
-    return a;
-}
-
 static inline uint8_t char_class(uint8_t c) {
     if (c >= 'a' && c <= 'z') return 1;
     if (c >= 'A' && c <= 'Z') return 2;
@@ -338,7 +361,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 20
+#define N_MODELS 21
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -346,6 +369,7 @@ typedef struct {
     smap_t charclass, nibble;
     smap_t indirect, o2_word, gap15;
     smap_t delta, o1_nibble;
+    smap_t o8;              /* order-8 */
     match_t match;
     sse_t sse;
     mixer_t mx1[256], mx2[8], mx3[8];
@@ -379,6 +403,7 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     smap_init(&cm->gap15, 1<<20);
     smap_init(&cm->delta, 1<<20);
     smap_init(&cm->o1_nibble, 1<<16);
+    smap_init(&cm->o8, 1<<24);
     match_init(&cm->match, data);
     sse_init(&cm->sse);
     for (int i = 0; i < 256; i++) mixer_init(&cm->mx1[i], N_MODELS);
@@ -398,6 +423,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->charclass); smap_free(&cm->nibble);
     smap_free(&cm->indirect); smap_free(&cm->o2_word); smap_free(&cm->gap15);
     smap_free(&cm->delta); smap_free(&cm->o1_nibble);
+    smap_free(&cm->o8);
     match_free(&cm->match);
     if (cm->ictx) free(cm->ictx);
 }
@@ -429,6 +455,8 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[16] = h32(((uint32_t)p[0]<<8)|p[4]) ^ par;
     ctx[17] = h32(((uint32_t)(uint8_t)(p[0]-p[1])<<8)|((uint8_t)(p[1]-p[2]))) ^ par;
     ctx[18] = ((uint32_t)(p[0]>>4)<<8) | ((uint32_t)(p[1]>>4)<<4) | (par & 0xF);
+    /* Order-8 */
+    ctx[19] = h32(h32(h0123) ^ h32(((uint32_t)p[4]<<24)|((uint32_t)p[5]<<16)|((uint32_t)p[6]<<8)|p[7])) ^ par;
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
@@ -455,7 +483,8 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[16] = smap_get(&cm->gap15, ctx[16]);
     preds[17] = smap_get(&cm->delta, ctx[17]);
     preds[18] = smap_get(&cm->o1_nibble, ctx[18]);
-    preds[19] = match_predict(&cm->match, pos, bp);
+    preds[19] = smap_get(&cm->o8, ctx[19]);
+    preds[20] = match_predict(&cm->match, pos, bp);
     
     for (int i = 0; i < N_MODELS; i++) {
         if (preds[i] == PROB_HALF) str[i] = 0.0f;
@@ -499,6 +528,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->gap15, ctx[16], bit);
     smap_update(&cm->delta, ctx[17], bit);
     smap_update(&cm->o1_nibble, ctx[18], bit);
+    smap_update(&cm->o8, ctx[19], bit);
     
     /* Adaptive mixer learning rate: fast early, slow later */
     float lr = cm->total_bits < 2000 ? 0.05f :
