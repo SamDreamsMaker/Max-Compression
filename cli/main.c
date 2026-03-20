@@ -1085,7 +1085,7 @@ static int cmd_hash(int argc, char** argv)
         free(src);
 
         if (mcx_is_error(dsz)) {
-            fprintf(stderr, "Error: decompression failed for '%s'\n", argv[i]);
+            fprintf(stderr, "Error: decompression failed for '%s': %s\n", argv[i], mcx_get_error_name(dsz));
             free(dec); errors++; continue;
         }
 
@@ -1528,7 +1528,7 @@ int main(int argc, char* argv[])
         if (!dec) { fprintf(stderr, "Error: out of memory\n"); free(src); return 1; }
         size_t dsz = mcx_decompress(dec, (size_t)orig + 1024, src, src_size);
         free(src);
-        if (mcx_is_error(dsz)) { fprintf(stderr, "Error: decompression failed\n"); free(dec); return 1; }
+        if (mcx_is_error(dsz)) { fprintf(stderr, "Error: decompression failed for '%s': %s\n", argv[2], mcx_get_error_name(dsz)); free(dec); return 1; }
         fwrite(dec, 1, dsz, stdout);
         free(dec);
         return 0;
@@ -1558,7 +1558,7 @@ int main(int argc, char* argv[])
         free(src);
         
         if (mcx_is_error(dsz)) {
-            fprintf(stderr, "FAIL: decompression error\n");
+            fprintf(stderr, "FAIL: decompression error for '%s': %s\n", argv[2], mcx_get_error_name(dsz));
             free(dec); return 1;
         }
         
