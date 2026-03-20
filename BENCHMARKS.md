@@ -180,5 +180,28 @@ Binary/unstructured data (sao, x-ray) sees minimal ratio gain but still no regre
 | x-ray    | 6,498,338 | 6,497,184 | +0.02%     | 1.304x   | 1.304x   |
 
 **Summary:** L3 lazy depth 2 wins on all 12 files (avg +0.43% ratio, max +2.13% on xml).
+
+## L1 vs L6 Decompress Speed (Silesia Corpus)
+
+| File     | L1 Dec MB/s | L6 Dec MB/s | L6 Faster |
+|----------|-------------|-------------|-----------|
+| dickens  | 93.5        | 105.8       | +13%      |
+| mozilla  | 102.9       | 112.9       | +10%      |
+| mr       | 105.7       | 114.1       | +8%       |
+| nci      | 268.8       | 315.3       | +17%      |
+| ooffice  | 82.1        | 87.8        | +7%       |
+| osdb     | 134.6       | 141.9       | +5%       |
+| reymont  | 107.7       | 129.5       | +20%      |
+| samba    | 164.7       | 177.5       | +8%       |
+| sao      | 79.2        | 83.1        | +5%       |
+| webster  | 108.7       | 132.6       | +22%      |
+| xml      | 195.3       | 251.9       | +29%      |
+| x-ray    | 75.4        | 76.1        | +1%       |
+
+**Summary:** L6 decompresses 5-29% faster than L1 on all 12 files (avg +12%). L6 uses
+HC match finder producing longer, fewer matches → fewer LZ tokens to process → faster
+decode. Text-heavy/structured data benefits most (xml +29%, webster +22%, reymont +20%).
+Binary data (x-ray, sao) sees minimal improvement. L6 is strictly better than L1 for
+both ratio and decompress speed; L1 only wins on compress speed.
 Speed: L3 ~4% slower compress (7.5 vs 7.8 MB/s on alice29), negligible decompress difference.
 Best gains on text-heavy/structured data (xml, nci, reymont). Minimal on binary (sao, x-ray).
