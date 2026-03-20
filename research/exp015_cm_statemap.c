@@ -551,7 +551,12 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
     
-    uint16_t final = sse_map(&cm->sse, ((cm->prev[0] >> 4) << 5 | (cm->partial & 0xF) << 1 | (bp >> 2)) & (SSE_CTXS-1), mp);
+    int sse_ctx = ((cm->prev[0] >> 4) << 5 | (cm->partial & 0xF) << 1 | (bp >> 2)) & (SSE_CTXS-1);
+    uint16_t sse_p = sse_map(&cm->sse, sse_ctx, mp);
+    if (sse_p < 1) sse_p = 1; if (sse_p > PROB_MAX-1) sse_p = PROB_MAX-1;
+    
+    /* Second stage: blend SSE output with mixer output */
+    uint16_t final = (sse_p + mp * 3) / 4;  /* 75% SSE, 25% raw mixer */
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
