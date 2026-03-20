@@ -4,6 +4,15 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 29)
+- **Huffman decode unroll** — unrolled to 2 symbols per iteration with `HUFF_DECODE_ONE` macro, reducing loop overhead. No measurable speed change on dickens L6 (106.8 MB/s) — Huffman decode is not the bottleneck in LZ decompress path.
+- **`mcx bench --cold`** — flush filesystem cache (sync + drop_caches) between each compress/decompress iteration for realistic cold-cache benchmarks. Linux only, requires root, falls back silently.
+- **`--adaptive-level` block analysis** — with `--verbose`, shows per-block entropy and auto-selected level for 256KB analysis windows across the file.
+- **`--adaptive-level` threshold fix** — raised entropy thresholds based on full Silesia profiling. BWT (L12) wins ALL 12 files including sao (7.53 bits/byte). Previous >6.0→L6 threshold caused up to +64.7% ratio gap on x-ray. New thresholds: >7.8→L1, >7.5→L3, ≤7.5→L12.
+- **Integration tests** — coverage for `--adaptive-level` entropy categories (random→L1, text→L12) and `--cold` flag acceptance.
+- **Man page + completions update** — `--cold` and updated `--adaptive-level` documented across man page, Bash, Zsh, and Fish completions.
+- **Complete README rewrite** — restructured for v2.2.0 with updated benchmarks, feature list, and usage examples.
+
 ### Added (Batch 28)
 - **6-bit context for multi-table rANS** — implemented `mt_compress_ctx6()` with 64-entry ctx_map (saves 192 bytes header vs 8-bit). New 0xA0 format flag, encode+decode paths. Auto-trialed alongside existing modes; 8-bit context still wins on text like alice29 but 6-bit may help on small blocks.
 - **`mcx bench --warmup-iterations N`** — run N warmup iterations instead of default 1 for more stable cold-start elimination. Useful for SSDs with caching or systems with variable turbo boost.
