@@ -538,6 +538,16 @@ static int cmd_compress(const char* input, const char* output, int level)
             printf("Dry-run analysis for '%s' (%zu bytes)\n\n", input, src_size);
             printf("  Data type:    %s\n", type_str);
             printf("  Entropy:      %.2f bits/byte (%.1f%% of maximum)\n", a.entropy, a.entropy / 8.0 * 100.0);
+            if (g_adaptive_level) {
+                int auto_level = adaptive_pick_level(sample_buf, nr);
+                printf("  Adaptive:     L%d (auto-selected from entropy)\n", auto_level);
+                level = auto_level;
+                /* Re-compute strategy for adaptive level */
+                if (level <= 3) strat_str = "LZ77 fast";
+                else if (level <= 9) strat_str = "LZ77 lazy + rANS";
+                else if (level <= 14) strat_str = "BWT + MTF + rANS";
+                else strat_str = "Smart (auto-select)";
+            }
             printf("  Level:        %d\n", level);
             printf("  Strategy:     %s\n", strat_str);
             if (stride > 0)
