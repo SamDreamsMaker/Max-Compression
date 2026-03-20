@@ -2814,7 +2814,11 @@ int main(int argc, char* argv[])
                     size_t dec = mcx_decompress(orig, try_size, comp, comp_size);
                     if (!mcx_is_error(dec) && dec > 0) {
                         double ent = compute_entropy(orig, dec);
-                        printf("Entropy:          %.2f bits/byte (%.1f%% of maximum)\n", ent, ent / 8.0 * 100);
+                        if (json_flag) {
+                            printf("{\"entropy_bpb\": %.4f, \"entropy_pct\": %.2f}\n", ent, ent / 8.0 * 100);
+                        } else {
+                            printf("Entropy:          %.2f bits/byte (%.1f%% of maximum)\n", ent, ent / 8.0 * 100);
+                        }
                     }
                     free(orig);
                 }
