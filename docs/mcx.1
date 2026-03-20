@@ -16,6 +16,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-split\fR \fISIZE\fR]
 [\fB\-\-preserve\-mtime\fR]
 [\fB\-\-keep\-broken\fR]
+[\fB\-\-exclude\fR \fIGLOB\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -84,6 +85,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-all\-levels\fR]
 [\fB\-\-ratio\-only\fR]
 [\fB\-\-median\fR]
+[\fB\-\-percentile\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -352,6 +354,17 @@ backup and archival workflows.
 .BR \-\-median
 For \fBbench\fR: report median instead of mean when \fB\-\-iterations\fR > 1.
 More robust to outliers than arithmetic mean.
+.TP
+.BR \-\-percentile
+For \fBbench\fR: report p5/p50/p95 speed distribution when
+\fB\-\-iterations\fR >= 5. Shows the 5th, 50th (median), and 95th
+percentile of compress and decompress speeds. Useful for understanding
+benchmark variance.
+.TP
+.BR \-\-exclude =\fIGLOB\fR
+For \fBcompress \-r\fR: skip files matching the given glob pattern.
+Example: \fB\-\-exclude '*.log'\fR skips all .log files. Uses
+\fBfnmatch\fR(3) pattern matching on filenames (not paths).
 .TP
 .BR \-\-keep\-broken
 For \fBcompress\fR: keep partial output on error instead of deleting.
