@@ -62,7 +62,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--csv] <input>  # benchmark levels\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--warmup] <input>  # benchmark levels\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1156,7 +1156,7 @@ static size_t run_external_compressor(const char* cmd_fmt, const char* input, do
     return size;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv)
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -1237,6 +1237,14 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
 
     for (int i = 0; i < n_levels; i++) {
         int level = levels[i];
+
+        /* Warmup iteration (reduces cold-cache variance) */
+        size_t warmup_size = 0;
+        if (warmup) {
+            warmup_size = mcx_compress(comp, comp_cap, src, src_size, level);
+            if (!mcx_is_error(warmup_size))
+                mcx_decompress(dec, src_size + 64, comp, warmup_size);
+        }
 
         /* Compress */
         double t0 = bench_time();
@@ -2093,6 +2101,7 @@ int main(int argc, char* argv[])
         int bench_level = 0; /* 0 = all levels */
         int bench_compare = 0;
         int bench_csv = 0;
+        int bench_warmup = 0;
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
@@ -2105,6 +2114,8 @@ int main(int argc, char* argv[])
                 bench_compare = 1;
             } else if (strcmp(argv[i], "--csv") == 0) {
                 bench_csv = 1;
+            } else if (strcmp(argv[i], "--warmup") == 0) {
+                bench_warmup = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
@@ -2112,13 +2123,13 @@ int main(int argc, char* argv[])
             }
         }
         if (!bench_file) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] <file>\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--warmup] <file>\n");
             return 1;
         }
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
