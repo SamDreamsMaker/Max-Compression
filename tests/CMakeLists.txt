@@ -129,3 +129,8 @@ set_tests_properties(multifile_roundtrip PROPERTIES TIMEOUT 30)
 add_test(NAME cli_flags_pipe
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_cli_flags.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(cli_flags_pipe PROPERTIES TIMEOUT 60)
+
+# Silesia corpus roundtrip integration test
+add_test(NAME silesia_roundtrip
+    COMMAND ${CMAKE_SOURCE_DIR}/tests/test_silesia_roundtrip.sh ${CMAKE_BINARY_DIR}/bin/mcx)
+set_tests_properties(silesia_roundtrip PROPERTIES TIMEOUT 600)
