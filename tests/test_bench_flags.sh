@@ -110,4 +110,30 @@ if [ "$TOP_LINES" -ne 3 ]; then
 fi
 echo "OK: --top 3 produces exactly 3 lines"
 
+# Test --median with --iterations 3: should produce output (median timing)
+MEDIAN_OUT=$("$MCX" bench -l 1 --iterations 3 --median "$TMPDIR/input.txt" 2>&1)
+if ! echo "$MEDIAN_OUT" | grep -q "^L1"; then
+    echo "FAIL: --median should produce L1 output"
+    echo "$MEDIAN_OUT"
+    exit 1
+fi
+echo "OK: --median with --iterations 3 produces output"
+
+# Test --percentile with --iterations 5: should show p5/p50/p95
+PCTILE_OUT=$("$MCX" bench -l 1 --iterations 5 --percentile "$TMPDIR/input.txt" 2>&1)
+if ! echo "$PCTILE_OUT" | grep -q "p5="; then
+    echo "FAIL: --percentile should show p5= in output"
+    echo "$PCTILE_OUT"
+    exit 1
+fi
+if ! echo "$PCTILE_OUT" | grep -q "p50="; then
+    echo "FAIL: --percentile should show p50= in output"
+    exit 1
+fi
+if ! echo "$PCTILE_OUT" | grep -q "p95="; then
+    echo "FAIL: --percentile should show p95= in output"
+    exit 1
+fi
+echo "OK: --percentile with --iterations 5 shows p5/p50/p95"
+
 echo "=== All bench flags tests passed ==="
