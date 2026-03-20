@@ -51,6 +51,7 @@ mcx \- high\-ratio lossless data compression tool
 .B mcx info
 [\fB\-\-json\fR]
 [\fB\-\-blocks\fR]
+[\fB\-\-entropy\fR]
 \fIINPUT\fR
 .br
 .B mcx cat
@@ -378,6 +379,11 @@ Useful for identifying performance bottlenecks.
 .BR \-\-blocks
 For \fBinfo\fR: show per\-block details (offset, compressed size,
 original size, strategy, flags) in tabular format.
+.TP
+.BR \-\-entropy
+For \fBinfo\fR: decompress the file and compute Shannon entropy of the
+original data. Displays bits/byte and percentage of maximum (8.0 bits/byte).
+Requires enough memory to hold the decompressed data (up to 512MB).
 .TP
 .BR \-\-json
 For \fBinfo\fR, \fBstat\fR, \fBls\fR, \fBbench\fR: machine\-readable JSON output.
