@@ -150,6 +150,7 @@ static void print_usage(void)
         "      --priority P  Optimization goal: speed|ratio|balanced\n"
         "      --level-scan Try L1-L20, pick best ratio automatically\n"
         "      --adaptive-level Analyze entropy and auto-pick optimal level\n"
+        "                       (combine with --level-scan to verify choice)\n"
         "      --level-range LO-HI Try a range of levels (e.g. 1-6, L3-L12) and pick best\n"
         "      --filter F  Force preprocessing filter: auto, delta, nibble, none\n"
         "      --min-ratio N     Only write output if ratio >= N (else skip)\n"
