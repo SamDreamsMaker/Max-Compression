@@ -229,4 +229,30 @@ if [ "$WORST_LINES" -ne 3 ]; then
 fi
 echo "OK: --worst 3 shows exactly 3 result lines"
 
+# Test --worst with --sort speed: worst by speed (slowest compressors)
+WORST_SPEED_OUT=$("$MCX" bench --all-levels --sort speed --worst 2 "$TMPDIR/input.txt" 2>&1)
+WORST_SPEED_LINES=$(echo "$WORST_SPEED_OUT" | grep "^L[0-9]" | wc -l)
+if [ "$WORST_SPEED_LINES" -ne 2 ]; then
+    echo "FAIL: --worst 2 --sort speed should show exactly 2 result lines, got $WORST_SPEED_LINES"
+    exit 1
+fi
+echo "OK: --worst 2 --sort speed shows exactly 2 result lines"
+
+# Test --filter with bench: force none filter
+FILTER_OUT=$("$MCX" bench --filter none -l 1 "$TMPDIR/input.txt" 2>&1)
+if ! echo "$FILTER_OUT" | grep -q "^L1"; then
+    echo "FAIL: bench --filter none -l 1 should produce L1 result"
+    exit 1
+fi
+echo "OK: bench --filter none produces results"
+
+# Test --fast-decode roundtrip
+"$MCX" compress --fast-decode -l 9 "$TMPDIR/input.txt" -o "$TMPDIR/fast_decode.mcx"
+"$MCX" decompress "$TMPDIR/fast_decode.mcx" -o "$TMPDIR/fast_decode_out.txt"
+if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/fast_decode_out.txt" >/dev/null 2>&1; then
+    echo "FAIL: --fast-decode roundtrip mismatch"
+    exit 1
+fi
+echo "OK: --fast-decode roundtrip verified"
+
 echo "=== All bench flags tests passed ==="
