@@ -1224,7 +1224,7 @@ static size_t run_external_compressor(const char* cmd_fmt, const char* input, do
     return size;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json)
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -1320,32 +1320,42 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         int level = levels[i];
 
         /* Warmup iteration (reduces cold-cache variance) */
-        size_t warmup_size = 0;
-        if (warmup) {
-            warmup_size = mcx_compress(comp, comp_cap, src, src_size, level);
-            if (!mcx_is_error(warmup_size))
-                mcx_decompress(dec, src_size + 64, comp, warmup_size);
+        if (warmup || decode_only) {
+            size_t ws = mcx_compress(comp, comp_cap, src, src_size, level);
+            if (!mcx_is_error(ws))
+                mcx_decompress(dec, src_size + 64, comp, ws);
         }
 
-        /* Compress */
-        double t0 = bench_time();
-        size_t comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
-        double t1 = bench_time();
+        /* Compress (or use pre-compressed data in decode-only mode) */
+        double comp_time = 0;
+        size_t comp_size;
+        if (decode_only) {
+            /* Pre-compress once (not timed) */
+            comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
+        } else {
+            double t0 = bench_time();
+            comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
+            double t1 = bench_time();
+            comp_time = t1 - t0;
+        }
 
         if (mcx_is_error(comp_size)) {
             printf("L%-5d  ERROR: %s\n", level, mcx_get_error_name(comp_size));
             continue;
         }
 
-        double comp_time = t1 - t0;
-        double comp_speed = src_size / comp_time / 1048576.0;
+        double comp_speed = (comp_time > 0) ? src_size / comp_time / 1048576.0 : 0;
 
-        /* Decompress */
-        t0 = bench_time();
-        size_t dec_size = mcx_decompress(dec, src_size + 64, comp, comp_size);
-        t1 = bench_time();
+        /* Decompress — run multiple iterations in decode-only mode */
+        int dec_iters = decode_only ? 3 : 1;
+        double t0 = bench_time();
+        size_t dec_size = 0;
+        for (int di = 0; di < dec_iters; di++) {
+            dec_size = mcx_decompress(dec, src_size + 64, comp, comp_size);
+        }
+        double t1 = bench_time();
 
-        double dec_time = t1 - t0;
+        double dec_time = (t1 - t0) / dec_iters;
         double dec_speed = src_size / dec_time / 1048576.0;
 
         /* Verify */
@@ -2202,6 +2212,7 @@ int main(int argc, char* argv[])
         int bench_csv = 0;
         int bench_warmup = 0;
         int bench_json = 0;
+        int bench_decode_only = 0;
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
@@ -2218,6 +2229,8 @@ int main(int argc, char* argv[])
                 bench_json = 1;
             } else if (strcmp(argv[i], "--warmup") == 0) {
                 bench_warmup = 1;
+            } else if (strcmp(argv[i], "--decode-only") == 0) {
+                bench_decode_only = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
@@ -2225,13 +2238,13 @@ int main(int argc, char* argv[])
             }
         }
         if (!bench_file) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--json] [--warmup] <file>\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] <file>\n");
             return 1;
         }
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
