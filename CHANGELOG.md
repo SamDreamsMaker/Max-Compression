@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 24)
+- **BT match finder depth profiling** — tested depth 16 vs 32 on mozilla 1MB: +260 bytes (+0.04%) worse, <1% faster (2.97s vs 3.01s). BT depth not the bottleneck (range coder is); most matches found within first few traversals. Not worth the code complexity.
+- **`mcx bench --exclude GLOB`** — skip files matching pattern when benchmarking a directory. Also added directory input support for `mcx bench` (compress each file in dir individually).
+- **`--fast-decode` for BWT blocks** — skip CM-rANS trial (prefer simpler rANS) when `--fast-decode` is specified, improving decompress speed for BWT-compressed blocks.
+- **L24 vs L26 profiling** — L24 (HC depth 8): 652831 bytes, 1.6 MB/s compress. L26 (BT depth 32): 652110 bytes, 1.1 MB/s compress (-0.11% smaller, 38% slower). Decompress identical (10.3-10.4 MB/s). HC is much faster with negligible ratio loss.
+- **Integration tests** — coverage for `--fast-decode` with L12 (BWT path), verifying decompress speed is not degraded.
+- **Man page + completions update** — `--exclude` (bench) documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 23)
 - **Decompress-speed-aware entropy trial** — penalize Adaptive AC when ratio gain is <5% over rANS, fixing the L9 8× decompress slowdown on files like dickens. Trial system now considers decode speed cost, not just ratio.
 - **`mcx bench --filter`** — benchmark with a forced preprocessing filter (delta/nibble/none) to measure filter impact on specific data.
