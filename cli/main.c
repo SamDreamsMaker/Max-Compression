@@ -63,7 +63,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] <input>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1373,6 +1373,8 @@ typedef struct {
     double saving;
     double comp_speed;
     double dec_speed;
+    double comp_p5, comp_p50, comp_p95;  /* percentile speeds (MB/s) */
+    double dec_p5, dec_p50, dec_p95;     /* percentile speeds (MB/s) */
     long peak_rss;
     int ok;
 } BenchResult;
@@ -1396,7 +1398,19 @@ static int cmp_double(const void* a, const void* b) {
     return (da > db) - (da < db);
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n, int use_median)
+/* Helper: get percentile from sorted array (0-100) */
+static double percentile_val(const double* sorted, int n, double p) {
+    if (n <= 0) return 0;
+    if (n == 1) return sorted[0];
+    double idx = p / 100.0 * (n - 1);
+    int lo = (int)idx;
+    int hi = lo + 1;
+    if (hi >= n) return sorted[n - 1];
+    double frac = idx - lo;
+    return sorted[lo] * (1.0 - frac) + sorted[hi] * frac;
+}
+
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n, int use_median, int show_percentile)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -1415,9 +1429,12 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
     } else if (csv) {
         /* CSV header */
         if (show_memory)
-            printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs,peak_rss_kb\n");
+            printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs,peak_rss_kb");
         else
-            printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs\n");
+            printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs");
+        if (show_percentile)
+            printf(",comp_p5,comp_p50,comp_p95,dec_p5,dec_p50,dec_p95");
+        printf("\n");
     } else {
         printf("Benchmarking '%s' (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
     }
@@ -1532,11 +1549,12 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         /* Compress (or use pre-compressed data in decode-only mode) */
         double comp_time = 0;
         size_t comp_size;
+        double comp_p5 = 0, comp_p50 = 0, comp_p95 = 0;
         if (decode_only || ratio_only) {
             /* Pre-compress once (not timed) */
             comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
-        } else if (use_median && comp_iters > 1) {
-            /* Per-iteration timing for median */
+        } else if ((use_median || show_percentile) && comp_iters > 1) {
+            /* Per-iteration timing for median/percentile */
             double* ctimes = (double*)malloc(comp_iters * sizeof(double));
             for (int ci = 0; ci < comp_iters; ci++) {
                 double t0 = bench_time();
@@ -1545,7 +1563,16 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
                 ctimes[ci] = t1 - t0;
             }
             qsort(ctimes, comp_iters, sizeof(double), cmp_double);
-            comp_time = ctimes[comp_iters / 2];
+            comp_time = ctimes[comp_iters / 2]; /* median */
+            if (show_percentile && comp_iters >= 5) {
+                double mb = src_size / 1048576.0;
+                double t5 = percentile_val(ctimes, comp_iters, 5);
+                double t50 = percentile_val(ctimes, comp_iters, 50);
+                double t95 = percentile_val(ctimes, comp_iters, 95);
+                comp_p5  = (t5  > 0) ? mb / t5  : 0;
+                comp_p50 = (t50 > 0) ? mb / t50 : 0;
+                comp_p95 = (t95 > 0) ? mb / t95 : 0;
+            }
             free(ctimes);
         } else {
             double t0 = bench_time();
@@ -1565,11 +1592,12 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         /* Decompress — run multiple iterations */
         double dec_time = 0;
         double dec_speed = 0;
+        double dec_p5 = 0, dec_p50 = 0, dec_p95 = 0;
         size_t dec_size = 0;
         int ok = 1;
         if (!ratio_only) {
-            if (use_median && dec_iter_count > 1) {
-                /* Per-iteration timing for median */
+            if ((use_median || show_percentile) && dec_iter_count > 1) {
+                /* Per-iteration timing for median/percentile */
                 double* dtimes = (double*)malloc(dec_iter_count * sizeof(double));
                 for (int di = 0; di < dec_iter_count; di++) {
                     double t0 = bench_time();
@@ -1578,7 +1606,16 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
                     dtimes[di] = t1 - t0;
                 }
                 qsort(dtimes, dec_iter_count, sizeof(double), cmp_double);
-                dec_time = dtimes[dec_iter_count / 2];
+                dec_time = dtimes[dec_iter_count / 2]; /* median */
+                if (show_percentile && dec_iter_count >= 5) {
+                    double mb = src_size / 1048576.0;
+                    double t5 = percentile_val(dtimes, dec_iter_count, 5);
+                    double t50 = percentile_val(dtimes, dec_iter_count, 50);
+                    double t95 = percentile_val(dtimes, dec_iter_count, 95);
+                    dec_p5  = (t5  > 0) ? mb / t5  : 0;
+                    dec_p50 = (t50 > 0) ? mb / t50 : 0;
+                    dec_p95 = (t95 > 0) ? mb / t95 : 0;
+                }
                 free(dtimes);
             } else {
                 double t0 = bench_time();
@@ -1607,6 +1644,12 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         results[n_results].saving = saving;
         results[n_results].comp_speed = comp_speed;
         results[n_results].dec_speed = dec_speed;
+        results[n_results].comp_p5 = comp_p5;
+        results[n_results].comp_p50 = comp_p50;
+        results[n_results].comp_p95 = comp_p95;
+        results[n_results].dec_p5 = dec_p5;
+        results[n_results].dec_p50 = dec_p50;
+        results[n_results].dec_p95 = dec_p95;
         results[n_results].peak_rss = peak_rss;
         results[n_results].ok = ok;
         n_results++;
@@ -1632,22 +1675,39 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
                    r->level, r->comp_size, r->ratio, r->saving, r->comp_speed, r->dec_speed,
                    r->ok ? "true" : "false");
             if (show_memory) printf(", \"peak_rss_kb\": %ld", r->peak_rss);
+            if (show_percentile && r->comp_p5 > 0) {
+                printf(", \"comp_p5\": %.1f, \"comp_p50\": %.1f, \"comp_p95\": %.1f",
+                       r->comp_p5, r->comp_p50, r->comp_p95);
+                printf(", \"dec_p5\": %.1f, \"dec_p50\": %.1f, \"dec_p95\": %.1f",
+                       r->dec_p5, r->dec_p50, r->dec_p95);
+            }
             printf("}");
         } else if (csv) {
             if (show_memory) {
-                printf("%s,%zu,mcx,%d,%zu,%.4f,%.2f,%.1f,%.1f,%ld\n",
+                printf("%s,%zu,mcx,%d,%zu,%.4f,%.2f,%.1f,%.1f,%ld",
                        input, src_size, r->level, r->comp_size, r->ratio, r->saving,
                        r->comp_speed, r->dec_speed, r->peak_rss);
             } else {
-                printf("%s,%zu,mcx,%d,%zu,%.4f,%.2f,%.1f,%.1f\n",
+                printf("%s,%zu,mcx,%d,%zu,%.4f,%.2f,%.1f,%.1f",
                        input, src_size, r->level, r->comp_size, r->ratio, r->saving,
                        r->comp_speed, r->dec_speed);
             }
+            if (show_percentile && r->comp_p5 > 0)
+                printf(",%.1f,%.1f,%.1f,%.1f,%.1f,%.1f",
+                       r->comp_p5, r->comp_p50, r->comp_p95,
+                       r->dec_p5, r->dec_p50, r->dec_p95);
+            printf("\n");
         } else {
             char membuf[32];
             if (ratio_only) {
                 printf("L%-5d %10zu %9.2fx %7.1f%%\n",
                        r->level, r->comp_size, r->ratio, r->saving);
+            } else if (show_percentile && r->comp_p5 > 0) {
+                printf("L%-5d %10zu %9.2fx %7.1f%% C[p5=%.1f p50=%.1f p95=%.1f] D[p5=%.1f p50=%.1f p95=%.1f] %s\n",
+                       r->level, r->comp_size, r->ratio, r->saving,
+                       r->comp_p5, r->comp_p50, r->comp_p95,
+                       r->dec_p5, r->dec_p50, r->dec_p95,
+                       r->ok ? "" : " FAIL!");
             } else if (show_memory) {
                 printf("L%-5d %10zu %9.2fx %7.1f%% %9.1f %9.1f %10s %s\n",
                        r->level, r->comp_size, r->ratio, r->saving, r->comp_speed, r->dec_speed,
@@ -2534,6 +2594,7 @@ int main(int argc, char* argv[])
         int bench_sort_mode = BENCH_SORT_LEVEL; /* default: sort by level */
         int bench_top_n = 0; /* 0 = show all results */
         int bench_median = 0;
+        int bench_percentile = 0;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
@@ -2585,6 +2646,8 @@ int main(int argc, char* argv[])
                 }
             } else if (strcmp(argv[i], "--median") == 0) {
                 bench_median = 1;
+            } else if (strcmp(argv[i], "--percentile") == 0) {
+                bench_percentile = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
@@ -2598,7 +2661,7 @@ int main(int argc, char* argv[])
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_median);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_median, bench_percentile);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
