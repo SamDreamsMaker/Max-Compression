@@ -10,7 +10,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-verify\fR]
 [\fB\-\-dry\-run\fR]
 [\fB\-\-estimate\fR]
-[\fB\-\-level\-scan\fR]
+[\fB\-\-level\-scan\fR | \fB\-\-best\fR]
 [\fB\-\-no\-trials\fR]
 [\fB\-\-filter\fR \fINAME\fR]
 [\fB\-\-split\fR \fISIZE\fR]
@@ -286,10 +286,10 @@ Analyze and print predicted strategy/level without actually compressing.
 Report estimated compressed size without full compression (faster than
 \fB\-\-dry\-run\fR).
 .TP
-.BR \-\-level\-scan
-Try levels L1\-L12 and automatically pick the one with the best
+.BR \-\-level\-scan ", " \-\-best
+Try levels L1\-L12 (and L20) and automatically pick the one with the best
 compression ratio. Slower than a single level but finds the optimal
-speed/ratio tradeoff.
+speed/ratio tradeoff. \fB\-\-best\fR is an alias familiar to gzip/bzip2 users.
 .TP
 .BR \-\-level\-range =\fIL\fRstart\fB\-L\fRend
 Try a contiguous range of levels and pick the one with the best

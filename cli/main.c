@@ -150,7 +150,7 @@ static void print_usage(void)
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
         "      --fast-decode Prefer fast decoders (skip Adaptive AC)\n"
         "      --priority P  Optimization goal: speed|ratio|balanced\n"
-        "      --level-scan Try L1-L20, pick best ratio automatically\n"
+        "      --level-scan, --best  Try L1-L20, pick best ratio automatically\n"
         "      --adaptive-level Analyze entropy and auto-pick optimal level\n"
         "                       (combine with --level-scan to verify choice)\n"
         "      --level-range LO-HI Try a range of levels (e.g. 1-6, L3-L12) and pick best\n"
@@ -2728,7 +2728,7 @@ int main(int argc, char* argv[])
                     fprintf(stderr, "Error: --priority must be speed, ratio, or balanced\n");
                     return 1;
                 }
-            } else if (strcmp(argv[i], "--level-scan") == 0) {
+            } else if (strcmp(argv[i], "--level-scan") == 0 || strcmp(argv[i], "--best") == 0) {
                 g_level_scan = 1;
             } else if (strcmp(argv[i], "--level-range") == 0 && i + 1 < argc) {
                 /* Parse range like "1-6", "L1-L6", "3-12" */
