@@ -631,4 +631,22 @@ if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/auto_bs_rt.txt" > /dev/null 2>&1; then
 fi
 echo "OK: --block-size auto roundtrip verified"
 
+# Test --diff regression detection (tampered baseline)
+echo "L1 1 100.0 500.0" > "$TMPDIR/tampered_diff.txt"
+"$MCX" bench --diff "$TMPDIR/tampered_diff.txt" -l 1 "$TMPDIR/input.txt" > /dev/null 2>&1 && DIFF_REG_EXIT=0 || DIFF_REG_EXIT=$?
+if [ "$DIFF_REG_EXIT" -ne 1 ]; then
+    echo "FAIL: --diff should exit 1 on regression, got $DIFF_REG_EXIT"
+    exit 1
+fi
+echo "OK: --diff regression detection works (exit code 1)"
+
+# Test --profile flag
+PROF_OUT=$("$MCX" bench -l 1 --profile --brief "$TMPDIR/input.txt" 2>&1)
+if ! echo "$PROF_OUT" | grep -q "L1:"; then
+    echo "FAIL: --profile should produce benchmark output"
+    echo "$PROF_OUT"
+    exit 1
+fi
+echo "OK: bench --profile flag accepted"
+
 echo "=== All bench flags tests passed ==="
