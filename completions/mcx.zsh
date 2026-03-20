@@ -116,6 +116,7 @@ _mcx() {
         '--size[Benchmark on truncated prefix]:size:'
         '--memory[Report peak RSS memory usage]'
         '--all-levels[Benchmark every level 1-26]'
+        '--ratio-only[Measure ratio only, skip timing]'
         '-t[Thread count]:threads:'
         '-T[Thread count]:threads:'
         '*:input:_files'
