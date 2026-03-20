@@ -56,7 +56,7 @@ static void print_usage(void)
         "  mcx decompress [-q] <input.mcx> [-o output]\n"
         "  mcx verify     <file.mcx> [original]   # verify integrity\n"
         "  mcx diff       <a.mcx> <b.mcx>         # compare two archives\n"
-        "  mcx info       <input.mcx>\n"
+        "  mcx info       [--blocks] <input.mcx>    # show frame header (--blocks for per-block details)\n"
         "  mcx ls/list    [--json] <file.mcx> [file2.mcx ...]\n"
         "  mcx stat       <file>                     # file statistics (entropy, bytes)\n"
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
@@ -932,7 +932,7 @@ static void json_print_string(const char* s)
     putchar('"');
 }
 
-static int cmd_info(const char* input, int json)
+static int cmd_info(const char* input, int json, int show_blocks)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -990,24 +990,29 @@ static int cmd_info(const char* input, int json)
                         if (info.flags & MCX_FLAG_ADAPTIVE_BLOCKS)
                             offset += (size_t)num_blocks * 4;
 
-                        printf("  \"blocks\": [\n");
-                        for (uint32_t b = 0; b < num_blocks; b++) {
-                            if (offset < src_size) {
-                                mcx_genome g = mcx_decode_genome(src[offset]);
-                                printf("    {\"id\": %u, \"compressed_size\": %u, "
-                                       "\"bwt\": %s, \"mtf\": %s, \"delta\": %s, "
-                                       "\"entropy\": \"%s\", \"cm_learning\": %u}%s\n",
-                                       b, bsizes[b],
-                                       g.use_bwt ? "true" : "false",
-                                       g.use_mtf_rle ? "true" : "false",
-                                       g.use_delta ? "true" : "false",
-                                       entropy_coder_name(g.entropy_coder),
-                                       g.cm_learning,
-                                       (b + 1 < num_blocks) ? "," : "");
+                        if (show_blocks) {
+                            printf("  \"blocks\": [\n");
+                            for (uint32_t b = 0; b < num_blocks; b++) {
+                                if (offset < src_size) {
+                                    mcx_genome g = mcx_decode_genome(src[offset]);
+                                    printf("    {\"id\": %u, \"compressed_size\": %u, "
+                                           "\"bwt\": %s, \"mtf\": %s, \"delta\": %s, "
+                                           "\"entropy\": \"%s\", \"cm_learning\": %u}%s\n",
+                                           b, bsizes[b],
+                                           g.use_bwt ? "true" : "false",
+                                           g.use_mtf_rle ? "true" : "false",
+                                           g.use_delta ? "true" : "false",
+                                           entropy_coder_name(g.entropy_coder),
+                                           g.cm_learning,
+                                           (b + 1 < num_blocks) ? "," : "");
+                                }
+                                offset += bsizes[b];
                             }
-                            offset += bsizes[b];
+                            printf("  ],\n");
+                        } else {
+                            for (uint32_t b = 0; b < num_blocks; b++)
+                                offset += bsizes[b];
                         }
-                        printf("  ]\n");
                         has_blocks = 1;
                         free(bsizes);
                     }
@@ -1074,26 +1079,30 @@ static int cmd_info(const char* input, int json)
                     }
 
                     /* Parse each block's genome byte */
-                    printf("\n  %-6s %10s  %-6s %-5s %-5s %-7s %-8s\n",
-                           "Block", "Comp.Size", "BWT", "MTF", "Delta", "Entropy", "CM-LR");
-                    printf("  ──────────────────────────────────────────────────────────\n");
+                    if (show_blocks) {
+                        printf("\n  %-6s %10s  %-6s %-5s %-5s %-7s %-8s\n",
+                               "Block", "Comp.Size", "BWT", "MTF", "Delta", "Entropy", "CM-LR");
+                        printf("  ──────────────────────────────────────────────────────────\n");
+                    }
 
                     for (uint32_t b = 0; b < num_blocks; b++) {
                         if (offset < src_size) {
                             mcx_genome g = mcx_decode_genome(src[offset]);
-                            const char* ent = entropy_coder_name(g.entropy_coder);
-                            /* cm_learning=6 means multi-table rANS, 7 means RLE2 pre-pass */
-                            const char* note = "";
-                            if (g.cm_learning == 6) note = "+multi";
-                            else if (g.cm_learning == 7) note = "+rle2";
+                            if (show_blocks) {
+                                const char* ent = entropy_coder_name(g.entropy_coder);
+                                /* cm_learning=6 means multi-table rANS, 7 means RLE2 pre-pass */
+                                const char* note = "";
+                                if (g.cm_learning == 6) note = "+multi";
+                                else if (g.cm_learning == 7) note = "+rle2";
 
-                            printf("  %-6u %10u  %-6s %-5s %-5s %-7s %u%s\n",
-                                   b, bsizes[b],
-                                   g.use_bwt ? "yes" : "no",
-                                   g.use_mtf_rle ? "yes" : "no",
-                                   g.use_delta ? "yes" : "no",
-                                   ent,
-                                   g.cm_learning, note);
+                                printf("  %-6u %10u  %-6s %-5s %-5s %-7s %u%s\n",
+                                       b, bsizes[b],
+                                       g.use_bwt ? "yes" : "no",
+                                       g.use_mtf_rle ? "yes" : "no",
+                                       g.use_delta ? "yes" : "no",
+                                       ent,
+                                       g.cm_learning, note);
+                            }
                         }
                         offset += bsizes[b];
                     }
@@ -1872,16 +1881,18 @@ int main(int argc, char* argv[])
 
     } else if (strcmp(argv[1], "info") == 0) {
         int json_flag = 0;
+        int blocks_flag = 0;
         const char* info_input = NULL;
         for (int i = 2; i < argc; i++) {
             if (strcmp(argv[i], "--json") == 0) json_flag = 1;
+            else if (strcmp(argv[i], "--blocks") == 0) blocks_flag = 1;
             else info_input = argv[i];
         }
         if (!info_input) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s [--json] <file>\n", argv[1]);
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s [--json] [--blocks] <file>\n", argv[1]);
             return 1;
         }
-        return cmd_info(info_input, json_flag);
+        return cmd_info(info_input, json_flag, blocks_flag);
 
     } else if (strcmp(argv[1], "ls") == 0 || strcmp(argv[1], "list") == 0) {
         int ls_json = 0;
