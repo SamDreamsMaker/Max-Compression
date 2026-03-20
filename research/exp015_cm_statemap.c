@@ -272,9 +272,13 @@ static void match_free(match_t *m) { free(m->tab4); free(m->tab8); }
 static uint16_t match_predict(match_t *m, uint32_t pos, int bp) {
     if (!m->active || m->mpos >= pos) return PROB_HALF;
     int pred = (m->data[m->mpos] >> (7 - bp)) & 1;
-    int conf = m->mlen > 128 ? 128 : (int)m->mlen;
-    /* Stronger confidence curve */
-    int delta = (conf * 1900) / 128;
+    int len = m->mlen > 256 ? 256 : (int)m->mlen;
+    /* Nonlinear confidence: fast ramp for short matches, saturates near max */
+    int delta;
+    if (len < 8) delta = len * 180;         /* 0-1440 */
+    else if (len < 32) delta = 1440 + (len-8) * 20; /* 1440-1920 */
+    else delta = 1920 + (len-32) * 2;       /* 1920-2048 cap */
+    if (delta > 2000) delta = 2000;
     return pred ? (PROB_HALF - delta) : (PROB_HALF + delta);
 }
 
