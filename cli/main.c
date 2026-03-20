@@ -285,6 +285,7 @@ static int g_keep_broken = 0;   /* Keep partial output on error (for debugging) 
 static const char* g_exclude_pattern = NULL; /* Glob pattern for --exclude */
 static int g_decompress_check = 0; /* In-memory decompress+verify after compress */
 static int g_adaptive_level = 0; /* Analyze entropy and pick optimal level per-block */
+static FILE* g_bench_out = NULL; /* Bench output file (NULL = stdout) */
 
 /** Get peak RSS in KB. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -2967,6 +2968,7 @@ int main(int argc, char* argv[])
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         const char* bench_exclude = NULL;
+        const char* bench_output_file = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
                 bench_level = atoi(argv[++i]);
@@ -3051,6 +3053,8 @@ int main(int argc, char* argv[])
                 if (bench_repeat < 1) bench_repeat = 1;
             } else if (strcmp(argv[i], "--cold") == 0) {
                 bench_cold = 1;
+            } else if ((strcmp(argv[i], "--output") == 0 || strcmp(argv[i], "-o") == 0) && i + 1 < argc) {
+                bench_output_file = argv[++i];
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -3076,6 +3080,17 @@ int main(int argc, char* argv[])
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
+        /* Redirect bench output to file if --output specified */
+        FILE* saved_stdout = NULL;
+        if (bench_output_file) {
+            FILE* of = fopen(bench_output_file, "a");
+            if (!of) {
+                fprintf(stderr, "Error: cannot open output file '%s'\n", bench_output_file);
+                return 1;
+            }
+            saved_stdout = stdout;
+            stdout = of;
+        }
         if (is_directory(bench_file)) {
             /* Directory mode: benchmark each file in directory */
             file_list_t fl = {NULL, 0, 0};
@@ -3141,12 +3156,18 @@ int main(int argc, char* argv[])
                            fl.count, agg_total_input, lvl, agg_total_output, ratio, saving);
             }
             file_list_free(&fl);
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return ret;
         }
-        if (bench_histogram)
-            return cmd_bench_histogram(bench_file, bench_level);
+        if (bench_histogram) {
+            int r = cmd_bench_histogram(bench_file, bench_level);
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            return r;
+        }
         if (bench_repeat <= 1) {
-            return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header, bench_cold);
+            int r = cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header, bench_cold);
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            return r;
         } else {
             /* --repeat N: run entire benchmark N times, show per-run timing */
             int ret = 0;
@@ -3173,6 +3194,7 @@ int main(int argc, char* argv[])
                 printf("  Min: %.3fs  Max: %.3fs  Avg: %.3fs\n", tmin, tmax, tavg);
             }
             free(run_times);
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return ret;
         }
 
