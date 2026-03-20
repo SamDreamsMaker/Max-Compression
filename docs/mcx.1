@@ -95,6 +95,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-repeat\fR \fIN\fR]
 [\fB\-\-warmup\-iterations\fR \fIN\fR]
 [\fB\-\-cold\fR]
+[\fB\-\-output\fR \fIFILE\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -326,6 +327,11 @@ iteration using \fBsync\fR(2) and writing to
 \fI/proc/sys/vm/drop_caches\fR. Provides realistic cold\-cache
 benchmarks. Linux only, requires root privileges. Falls back silently
 if cache flushing is not available.
+.TP
+.BR \-\-output =\fIFILE\fR
+For \fBbench\fR: write benchmark results to \fIFILE\fR in append mode.
+Useful for collecting results over time across multiple runs or builds.
+Each invocation appends to the file without overwriting existing content.
 .TP
 .BR \-\-blocks
 For \fBinfo\fR: show per\-block details (offset, compressed size,
