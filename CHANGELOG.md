@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 30)
+- **Huffman uint64 bit buffer** — widened bit buffer from uint32_t to uint64_t, raising refill threshold to 56 bits. Reduces refill frequency but no measurable speed change on dickens L6 (106.7 MB/s) — LZ token parsing dominates.
+- **`mcx bench --output FILE`** — write benchmark results to a file in append mode, useful for collecting results over time and comparing across builds.
+- **`--adaptive-level` speed optimization** — refactored to `adaptive_pick_level_ex()` returning entropy via output parameter, eliminating redundant `compute_entropy()` call in verbose mode.
+- **Mozilla L12 profiling** — 51MB at L12: 42.96s compress (1.1 MB/s), 571.4 MB peak RSS, decompress 9.09s (5.4 MB/s). Consistent with dickens — BWT throughput ~1.1 MB/s regardless of content type.
+- **Integration tests** — coverage for `--cold --iterations 2` and `--output FILE` append mode.
+- **Man page + completions update** — `--output` (bench) documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 29)
 - **Huffman decode unroll** — unrolled to 2 symbols per iteration with `HUFF_DECODE_ONE` macro, reducing loop overhead. No measurable speed change on dickens L6 (106.8 MB/s) — Huffman decode is not the bottleneck in LZ decompress path.
 - **`mcx bench --cold`** — flush filesystem cache (sync + drop_caches) between each compress/decompress iteration for realistic cold-cache benchmarks. Linux only, requires root, falls back silently.
