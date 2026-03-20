@@ -62,7 +62,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] <input>  # benchmark all (or specific) levels\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--csv] <input>  # benchmark levels\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1124,19 +1124,26 @@ static size_t run_external_compressor(const char* cmd_fmt, const char* input, do
     return size;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare)
+static int cmd_bench(const char* input, int specific_level, int compare, int csv)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
     if (!src) return 1;
 
-    printf("Benchmarking '%s' (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
+    if (csv) {
+        /* CSV header */
+        printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs\n");
+    } else {
+        printf("Benchmarking '%s' (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
+    }
 
     /* Run external compressors first if --compare */
     if (compare) {
-        printf("%-12s %10s %10s %8s %10s\n",
-               "Compressor", "Compressed", "Ratio", "Saving", "Time (s)");
-        printf("──────────────────────────────────────────────────────\n");
+        if (!csv) {
+            printf("%-12s %10s %10s %8s %10s\n",
+                   "Compressor", "Compressed", "Ratio", "Saving", "Time (s)");
+            printf("──────────────────────────────────────────────────────\n");
+        }
 
         struct { const char* name; const char* cmd; } externals[] = {
             {"gzip -6",   "gzip  -6 -c '%s' > '%s'"},
@@ -1153,18 +1160,25 @@ static int cmd_bench(const char* input, int specific_level, int compare)
             if (csize > 0) {
                 double ratio = (double)src_size / csize;
                 double saving = 100.0 * (1.0 - (double)csize / src_size);
-                printf("%-12s %10zu %9.2fx %7.1f%% %9.2f\n",
-                       externals[i].name, csize, ratio, saving, elapsed);
-            } else {
+                if (csv) {
+                    printf("%s,%zu,%s,0,%zu,%.4f,%.2f,0,0\n",
+                           input, src_size, externals[i].name, csize, ratio, saving);
+                } else {
+                    printf("%-12s %10zu %9.2fx %7.1f%% %9.2f\n",
+                           externals[i].name, csize, ratio, saving, elapsed);
+                }
+            } else if (!csv) {
                 printf("%-12s %10s\n", externals[i].name, "(not found)");
             }
         }
-        printf("\n");
+        if (!csv) printf("\n");
     }
 
-    printf("%-6s %10s %10s %8s %10s %10s\n",
-           "Level", "Compressed", "Ratio", "Saving", "Comp MB/s", "Dec MB/s");
-    printf("─────────────────────────────────────────────────────────────\n");
+    if (!csv) {
+        printf("%-6s %10s %10s %8s %10s %10s\n",
+               "Level", "Compressed", "Ratio", "Saving", "Comp MB/s", "Dec MB/s");
+        printf("─────────────────────────────────────────────────────────────\n");
+    }
 
     int all_levels[] = {1, 3, 6, 9, 12, 20, 24, 26};
     int n_all = sizeof(all_levels) / sizeof(all_levels[0]);
@@ -1220,12 +1234,18 @@ static int cmd_bench(const char* input, int specific_level, int compare)
         double ratio = (double)src_size / comp_size;
         double saving = 100.0 * (1.0 - (double)comp_size / src_size);
 
-        printf("L%-5d %10zu %9.2fx %7.1f%% %9.1f %9.1f %s\n",
-               level, comp_size, ratio, saving, comp_speed, dec_speed,
-               ok ? "" : " FAIL!");
+        if (csv) {
+            printf("%s,%zu,mcx,%d,%zu,%.4f,%.2f,%.1f,%.1f\n",
+                   input, src_size, level, comp_size, ratio, saving,
+                   comp_speed, dec_speed);
+        } else {
+            printf("L%-5d %10zu %9.2fx %7.1f%% %9.1f %9.1f %s\n",
+                   level, comp_size, ratio, saving, comp_speed, dec_speed,
+                   ok ? "" : " FAIL!");
+        }
     }
 
-    printf("\n");
+    if (!csv) printf("\n");
     free(src); free(comp); free(dec);
     return 0;
 }
@@ -2035,9 +2055,10 @@ int main(int argc, char* argv[])
             fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] <file>\n");
             return 1;
         }
-        /* Parse optional -l/--level and --compare flags */
+        /* Parse optional -l/--level, --compare, and --csv flags */
         int bench_level = 0; /* 0 = all levels */
         int bench_compare = 0;
+        int bench_csv = 0;
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
@@ -2048,6 +2069,8 @@ int main(int argc, char* argv[])
                 }
             } else if (strcmp(argv[i], "--compare") == 0) {
                 bench_compare = 1;
+            } else if (strcmp(argv[i], "--csv") == 0) {
+                bench_csv = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
@@ -2055,13 +2078,13 @@ int main(int argc, char* argv[])
             }
         }
         if (!bench_file) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] <file>\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] <file>\n");
             return 1;
         }
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_bench(bench_file, bench_level, bench_compare);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
