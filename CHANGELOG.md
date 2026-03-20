@@ -4,6 +4,17 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 14)
+- **`mcx bench --all-levels`** — benchmark every compression level 1-26.
+- **`mcx bench --ratio-only`** — measure compression ratio only, skip timing (faster for ratio comparisons).
+- **Integration tests** — coverage for `--all-levels` (verifies 26 levels) and `--ratio-only` (no speed columns).
+- **L6 compress profiling** — 8.3 MB/s compress, 109 MB/s decompress on alice29. Bottleneck is HC chain walking in match finder, not entropy encode. Hash table already reduced to 256K entries.
+- **Man page + completions update** — `--all-levels` documented across man page, Bash, Zsh, and Fish completions.
+
+### Skipped (Batch 14)
+- **16-bit CRC in LZ token stream** — requires format change (all 8 flag bits used), deferred to v3.0.
+- **Compress `--comment` flag** — frame header has no reserved bytes for variable-length data; needs v3.0 format extension.
+
 ### Added (Batch 13)
 - **`mcx bench --all-levels`** — benchmark every level 1-26 (not just the default subset of 8 representative levels).
 - **`--preserve-mtime` decompress fix** — flag was only parsed in compress command; now also works for decompress/extract.
