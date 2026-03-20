@@ -350,42 +350,52 @@ size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
         } \
     } while (0)
 
+    /* Decode one symbol from fast table; returns 0 on success, -1 on error */
+    #define HUFF_DECODE_ONE() do { \
+        uint32_t idx_ = (bit_buf >> (bit_cnt - HUFF_FAST_BITS)) & (HUFF_FAST_SIZE - 1); \
+        if (bit_cnt < HUFF_FAST_BITS) \
+            idx_ = (bit_buf << (HUFF_FAST_BITS - bit_cnt)) & (HUFF_FAST_SIZE - 1); \
+        uint32_t e_ = fast_table[idx_]; \
+        uint8_t  l_ = HUFF_ENTRY_LEN(e_); \
+        if (l_ != 0 && l_ != HUFF_SENTINEL) { \
+            dst[di++] = (uint8_t)HUFF_ENTRY_SYM(e_); \
+            bit_cnt -= l_; \
+        } else if (l_ == HUFF_SENTINEL) { \
+            bit_cnt -= HUFF_FAST_BITS; \
+            int node_ = (int)HUFF_ENTRY_SYM(e_); \
+            while (nodes[node_].symbol < 0) { \
+                HUFF_REFILL(); \
+                if (bit_cnt < 1) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); \
+                int bit_ = (bit_buf >> (bit_cnt - 1)) & 1; \
+                bit_cnt--; \
+                node_ = bit_ ? nodes[node_].right : nodes[node_].left; \
+                if (node_ < 0) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); \
+            } \
+            dst[di++] = (uint8_t)nodes[node_].symbol; \
+        } else { \
+            return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); \
+        } \
+    } while (0)
+
+    /* Unrolled 2-symbol-per-iteration fast path.
+     * Refill guarantees 32 bits in buffer; with max 15-bit codes,
+     * 2 symbols consume at most 30 bits before next refill. */
+    while (di + 1 < orig_size) {
+        HUFF_REFILL();
+        if (bit_cnt < 2) break;
+        HUFF_DECODE_ONE();
+        /* Second symbol: enough bits remain for most codes */
+        if (di < orig_size && bit_cnt >= 1) {
+            HUFF_DECODE_ONE();
+        }
+    }
+    /* Tail: one remaining symbol */
     while (di < orig_size) {
         HUFF_REFILL();
         if (bit_cnt < 1) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
-
-        /* Peek top HUFF_FAST_BITS from bit buffer */
-        int peek_bits = (bit_cnt >= HUFF_FAST_BITS) ? HUFF_FAST_BITS : bit_cnt;
-        uint32_t idx = (bit_buf >> (bit_cnt - HUFF_FAST_BITS)) & (HUFF_FAST_SIZE - 1);
-        /* If we have fewer bits, shift up to fill HUFF_FAST_BITS width */
-        if (peek_bits < HUFF_FAST_BITS)
-            idx = (bit_buf << (HUFF_FAST_BITS - peek_bits)) & (HUFF_FAST_SIZE - 1);
-
-        uint32_t entry = fast_table[idx];
-        uint8_t  len   = HUFF_ENTRY_LEN(entry);
-
-        if (len != 0 && len != HUFF_SENTINEL) {
-            /* Fast path: symbol decoded in one lookup */
-            dst[di++] = (uint8_t)HUFF_ENTRY_SYM(entry);
-            bit_cnt -= len;
-        } else if (len == HUFF_SENTINEL) {
-            /* Slow path: code longer than HUFF_FAST_BITS, finish via tree */
-            bit_cnt -= HUFF_FAST_BITS;
-            int node = (int)HUFF_ENTRY_SYM(entry);
-
-            while (nodes[node].symbol < 0) {
-                HUFF_REFILL();
-                if (bit_cnt < 1) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
-                int bit = (bit_buf >> (bit_cnt - 1)) & 1;
-                bit_cnt--;
-                node = bit ? nodes[node].right : nodes[node].left;
-                if (node < 0) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
-            }
-            dst[di++] = (uint8_t)nodes[node].symbol;
-        } else {
-            return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
-        }
+        HUFF_DECODE_ONE();
     }
+    #undef HUFF_DECODE_ONE
 
     #undef HUFF_REFILL
     return orig_size;
