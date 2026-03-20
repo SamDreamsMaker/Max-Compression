@@ -168,4 +168,38 @@ if ! echo "$FMT_CSV" | grep -q "^file,original_bytes"; then
 fi
 echo "OK: --format csv produces CSV output"
 
+# Test --brief: should produce compact one-line output
+BRIEF_OUT=$("$MCX" bench -l 6 --brief "$TMPDIR/input.txt" 2>&1)
+if ! echo "$BRIEF_OUT" | grep -q "^L6:"; then
+    echo "FAIL: --brief should produce 'L6:' compact output"
+    echo "$BRIEF_OUT"
+    exit 1
+fi
+# Should NOT contain "Benchmarking" header
+if echo "$BRIEF_OUT" | grep -q "Benchmarking"; then
+    echo "FAIL: --brief should not show Benchmarking header"
+    exit 1
+fi
+echo "OK: --brief produces compact one-line output"
+
+# Test L2 vs L3 differentiation: L3 should produce <= L2 output
+# Create a larger test file (text-like) where lazy depth 2 can help
+python3 -c "import random; random.seed(42); print(''.join(random.choice('abcdefghij ') for _ in range(10000)))" > "$TMPDIR/l2l3test.txt"
+L2_SIZE=$("$MCX" compress -l 2 -c "$TMPDIR/l2l3test.txt" | wc -c)
+L3_SIZE=$("$MCX" compress -l 3 -c "$TMPDIR/l2l3test.txt" | wc -c)
+if [ "$L3_SIZE" -gt "$L2_SIZE" ]; then
+    echo "FAIL: L3 ($L3_SIZE) should be <= L2 ($L2_SIZE)"
+    exit 1
+fi
+echo "OK: L3 ($L3_SIZE) <= L2 ($L2_SIZE) — lazy depth 2 works"
+
+# Test --level-range: compress with range, verify roundtrip
+"$MCX" compress --level-range 1-6 "$TMPDIR/input.txt" -o "$TMPDIR/range.mcx"
+"$MCX" decompress "$TMPDIR/range.mcx" -o "$TMPDIR/range_out.txt"
+if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/range_out.txt" > /dev/null 2>&1; then
+    echo "FAIL: --level-range roundtrip failed"
+    exit 1
+fi
+echo "OK: --level-range 1-6 roundtrip verified"
+
 echo "=== All bench flags tests passed ==="
