@@ -355,11 +355,11 @@ size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
     /* Decode one symbol from fast table; returns 0 on success, -1 on error */
     #define HUFF_DECODE_ONE() do { \
         uint64_t idx_ = (bit_buf >> (bit_cnt - HUFF_FAST_BITS)) & (HUFF_FAST_SIZE - 1); \
-        if (bit_cnt < HUFF_FAST_BITS) \
+        if (__builtin_expect(bit_cnt < HUFF_FAST_BITS, 0)) \
             idx_ = (bit_buf << (HUFF_FAST_BITS - bit_cnt)) & (HUFF_FAST_SIZE - 1); \
         uint32_t e_ = fast_table[idx_]; \
         uint8_t  l_ = HUFF_ENTRY_LEN(e_); \
-        if (l_ != 0 && l_ != HUFF_SENTINEL) { \
+        if (__builtin_expect(l_ != 0 && l_ != HUFF_SENTINEL, 1)) { \
             dst[di++] = (uint8_t)HUFF_ENTRY_SYM(e_); \
             bit_cnt -= l_; \
         } else if (l_ == HUFF_SENTINEL) { \
