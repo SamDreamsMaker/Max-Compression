@@ -227,6 +227,7 @@ static int g_dryrun = 0;    /* Dry-run: analyze only, don't compress */
 static int g_force_filter = 0; /* 0=auto, 1=delta, 2=nibble, 3=none */
 static int g_estimate = 0;  /* Estimate compressed size via sample compress */
 static int g_level_scan = 0; /* Try L1-L12, pick best ratio automatically */
+static size_t g_split_size = 0; /* Split output into chunks of this size (0=disabled) */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -559,8 +560,45 @@ static int cmd_compress(const char* input, const char* output, int level)
             return 1;
         }
 
-        fwrite(dst_buf, 1, comp_size, fout);
-        total_out = comp_size;
+        if (g_split_size > 0 && !g_stdout && comp_size > g_split_size) {
+            /* Split output into multiple chunk files */
+            fclose(fout); /* Close the main output file, we'll write chunks instead */
+            remove(output); /* Remove the empty main file */
+            
+            size_t offset = 0;
+            int chunk_num = 1;
+            int n_chunks = (int)((comp_size + g_split_size - 1) / g_split_size);
+            
+            while (offset < comp_size) {
+                size_t chunk_len = comp_size - offset;
+                if (chunk_len > g_split_size) chunk_len = g_split_size;
+                
+                char chunk_name[1088];
+                snprintf(chunk_name, sizeof(chunk_name), "%s.%03d", output, chunk_num);
+                
+                FILE* fc = fopen(chunk_name, "wb");
+                if (!fc) {
+                    fprintf(stderr, "Error: cannot create chunk '%s': %s\n", chunk_name, strerror(errno));
+                    free(dst_buf);
+                    fclose(fin);
+                    return 1;
+                }
+                fwrite(dst_buf + offset, 1, chunk_len, fc);
+                fclose(fc);
+                
+                if (!g_quiet) {
+                    printf("  Chunk %d/%d: %s (%zu bytes)\n", chunk_num, n_chunks, chunk_name, chunk_len);
+                }
+                
+                offset += chunk_len;
+                chunk_num++;
+            }
+            total_out = comp_size;
+            fout = NULL; /* Already closed */
+        } else {
+            fwrite(dst_buf, 1, comp_size, fout);
+            total_out = comp_size;
+        }
         free(dst_buf);
     } else {
         /* ── Streaming compression (for very large files or empty files) ── */
@@ -657,7 +695,7 @@ static int cmd_compress(const char* input, const char* output, int level)
     }
 
     fclose(fin);
-    fclose(fout);
+    if (fout) fclose(fout);
 
     /* Verify: decompress the output and compare with original */
     if (g_verify && !g_stdout && output) {
@@ -1866,6 +1904,12 @@ int main(int argc, char* argv[])
                 } else {
                     fprintf(stderr, "Error: unknown strategy '%s'\n"
                             "  Available: lz, bwt, cm, smart, lzrc\n", sname);
+                    return 1;
+                }
+            } else if (strcmp(argv[i], "--split") == 0 && i + 1 < argc) {
+                g_split_size = parse_size_suffix(argv[++i]);
+                if (g_split_size == 0) {
+                    fprintf(stderr, "Error: --split size must be > 0 (e.g. 1M, 10M)\n");
                     return 1;
                 }
             } else if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
