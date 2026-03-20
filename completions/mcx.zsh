@@ -126,6 +126,7 @@ _mcx() {
         '--output[Write results to file (append mode)]:file:_files'
         '--compare-self[Compare against reference .mcx file]:ref:_files'
         '--delta[Compare against baseline file]:baseline:_files'
+        '--save-baseline[Save current results as baseline]:file:_files'
         '--decode-only[Benchmark decompression only]'
         '--iterations[Number of iterations]:iterations:'
         '--size[Benchmark on truncated prefix]:size:'
