@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 10)
+- **`mcx bench --iterations N`** — run N compress/decompress iterations and average (default: 1, or 3 for --decode-only).
+- **Lazy matching for L2-L3** — check next position's match before emitting current; L2/L3 2.26x vs L1 2.15x on alice29 (+5% ratio, -6% speed tradeoff).
+- **`mcx compress --filter`** — force a specific preprocessing filter (delta, nibble, none) instead of auto-detect.
+- **Integration tests** — coverage for --level-scan, --no-trials, --decode-only, --json bench, --iterations, --filter flags.
+- **L12 compress profiling** — entropy encode is bottleneck (78%, multi-trial rANS); decompress bottleneck is BWT inverse (56%).
+- **Man page + completions update** — all Batch 10 flags documented.
+
 ### Added (Batch 9)
 - **`mcx bench --json`** — machine-readable JSON benchmark output for CI/scripting.
 - **`mcx bench --decode-only`** — pre-compress once, then time decode only (3 iterations averaged).
