@@ -54,5 +54,35 @@ $MCX upgrade --in-place -l 6 "$TMP/upgrade_test.mcx"
 $MCX decompress "$TMP/upgrade_test.mcx" -o "$TMP/upgrade_out.txt"
 diff "$TMP/input.txt" "$TMP/upgrade_out.txt" && echo "  upgrade --in-place: OK"
 
+# --level-scan
+$MCX compress --level-scan -q "$TMP/input.txt" -o "$TMP/scan.mcx"
+$MCX decompress -q "$TMP/scan.mcx" -o "$TMP/scan.txt"
+diff "$TMP/input.txt" "$TMP/scan.txt" && echo "  --level-scan: OK"
+
+# --no-trials (use L20 to exercise smart mode)
+$MCX compress --no-trials -l 20 -q "$TMP/input.txt" -o "$TMP/notrials.mcx"
+$MCX decompress -q "$TMP/notrials.mcx" -o "$TMP/notrials.txt"
+diff "$TMP/input.txt" "$TMP/notrials.txt" && echo "  --no-trials: OK"
+
+# bench --decode-only
+$MCX bench -l 1 --decode-only "$TMP/input.txt" > /dev/null && echo "  bench --decode-only: OK"
+
+# bench --json
+OUTPUT=$($MCX bench -l 1 --json "$TMP/input.txt")
+echo "$OUTPUT" | grep -q '"ratio"' && echo "  bench --json: OK"
+
+# bench --iterations
+$MCX bench -l 1 --iterations 2 "$TMP/input.txt" > /dev/null && echo "  bench --iterations: OK"
+
+# --filter none
+$MCX compress --filter none -q "$TMP/input.txt" -o "$TMP/filter_none.mcx"
+$MCX decompress -q "$TMP/filter_none.mcx" -o "$TMP/filter_none.txt"
+diff "$TMP/input.txt" "$TMP/filter_none.txt" && echo "  --filter none: OK"
+
+# --filter auto (default)
+$MCX compress --filter auto -q "$TMP/input.txt" -o "$TMP/filter_auto.mcx"
+$MCX decompress -q "$TMP/filter_auto.mcx" -o "$TMP/filter_auto.txt"
+diff "$TMP/input.txt" "$TMP/filter_auto.txt" && echo "  --filter auto: OK"
+
 echo ""
 echo "All CLI flag tests passed!"
