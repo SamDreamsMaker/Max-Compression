@@ -2,6 +2,17 @@
 
 All notable changes to MaxCompression are documented in this file.
 
+## [2.1.2] — 2026-03-20
+
+### Added
+- **`--json` flag** for `mcx info` and `mcx stat` — machine-readable JSON output for scripting/CI.
+- **`mcx checksum` command** — CRC32 of compressed file with header metadata for transfer verification.
+- **Rust bindings** — `version()`, `get_frame_info()`, `check_error()`, `MaxCompressionError` type.
+
+### Changed
+- **Table-based Huffman decoder** — 9-bit lookup table replaces bit-by-bit tree walk; O(1) for codes ≤9 bits.
+- **Better CLI error messages** — decompress errors now include filename and specific error name.
+
 ## [2.1.1] — 2026-03-19
 
 ### Added
