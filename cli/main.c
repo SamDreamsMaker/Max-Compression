@@ -63,7 +63,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] [--all-levels] <input>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1312,7 +1312,7 @@ static size_t parse_size_suffix(const char* s) {
     return val;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory)
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -1395,8 +1395,12 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         }
     }
 
-    int all_levels[] = {1, 3, 6, 9, 12, 20, 24, 26};
-    int n_all = sizeof(all_levels) / sizeof(all_levels[0]);
+    int default_levels[] = {1, 3, 6, 9, 12, 20, 24, 26};
+    int n_default = sizeof(default_levels) / sizeof(default_levels[0]);
+
+    /* Build full level list 1-26 for --all-levels */
+    int full_levels[26];
+    for (int li = 0; li < 26; li++) full_levels[li] = li + 1;
 
     /* If a specific level is requested, bench only that level */
     int* levels;
@@ -1404,9 +1408,12 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
     if (specific_level > 0) {
         levels = &specific_level;
         n_levels = 1;
+    } else if (bench_all_levels) {
+        levels = full_levels;
+        n_levels = 26;
     } else {
-        levels = all_levels;
-        n_levels = n_all;
+        levels = default_levels;
+        n_levels = n_default;
     }
 
     size_t comp_cap = mcx_compress_bound(src_size);
@@ -2363,6 +2370,7 @@ int main(int argc, char* argv[])
         int bench_decode_only = 0;
         int bench_iterations = 0; /* 0 = use default */
         int bench_memory = 0;
+        int bench_all_levels = 0;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
@@ -2393,6 +2401,8 @@ int main(int argc, char* argv[])
                 }
             } else if (strcmp(argv[i], "--memory") == 0) {
                 bench_memory = 1;
+            } else if (strcmp(argv[i], "--all-levels") == 0) {
+                bench_all_levels = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
@@ -2400,13 +2410,13 @@ int main(int argc, char* argv[])
             }
         }
         if (!bench_file) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] [--memory] <file>\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] [--memory] [--all-levels] <file>\n");
             return 1;
         }
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
