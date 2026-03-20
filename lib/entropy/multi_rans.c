@@ -102,6 +102,11 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
                                    const uint8_t* src, size_t src_size,
                                    int max_tables);
 
+/* Internal: context-based table selection (8-bit context → table) */
+static size_t mt_compress_ctx(uint8_t* dst, size_t dst_cap,
+                               const uint8_t* src, size_t src_size,
+                               int max_tables);
+
 size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
                                 const uint8_t* src, size_t src_size)
 {
@@ -150,6 +155,22 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
             if (!mcx_is_error(sz6) && (mcx_is_error(best) || sz6 < best)) {
                 memcpy(dst, alt, sz6);
                 best = sz6;
+            }
+        }
+        /* Try context-based table selection (8-bit context → table) */
+        if (src_size >= 256) {
+            size_t ctx_sz = mt_compress_ctx(alt, dst_cap, src, src_size, lo_tables);
+            if (!mcx_is_error(ctx_sz) && (mcx_is_error(best) || ctx_sz < best)) {
+                memcpy(dst, alt, ctx_sz);
+                best = ctx_sz;
+            }
+            /* Also try context mode with hi_tables */
+            if (hi_tables != lo_tables) {
+                ctx_sz = mt_compress_ctx(alt, dst_cap, src, src_size, hi_tables);
+                if (!mcx_is_error(ctx_sz) && (mcx_is_error(best) || ctx_sz < best)) {
+                    memcpy(dst, alt, ctx_sz);
+                    best = ctx_sz;
+                }
             }
         }
         free(alt);
@@ -415,6 +436,197 @@ static size_t mt_compress_ntables(uint8_t* dst, size_t dst_cap,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  Context-based multi-table rANS (8-bit context → table selection)
+ *
+ *  Instead of fixed 50-byte groups with selector array, use previous byte
+ *  as context to select the frequency table. 256 contexts get clustered
+ *  into N tables via K-means. Header stores 256-byte context→table map.
+ *
+ *  Format: orig_size(4) + (n_tables|0x80)(1) + ctx_map(256) + tables + rANS data
+ *  Flag: n_tables high bit (0x80) signals context mode.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static size_t mt_compress_ctx(uint8_t* dst, size_t dst_cap,
+                               const uint8_t* src, size_t src_size,
+                               int max_tables)
+{
+    if (src_size < 256) return MCX_ERROR(MCX_ERR_GENERIC); /* too small for context mode */
+    
+    init_cost_lut();
+    
+    /* Step 1: Build per-context frequency distributions */
+    uint32_t ctx_freq[256][256];
+    uint32_t ctx_total[256];
+    memset(ctx_freq, 0, sizeof(ctx_freq));
+    memset(ctx_total, 0, sizeof(ctx_total));
+    
+    uint8_t prev = 0;
+    for (size_t i = 0; i < src_size; i++) {
+        ctx_freq[prev][src[i]]++;
+        ctx_total[prev]++;
+        prev = src[i];
+    }
+    
+    /* Normalize context frequencies to MT_SCALE for cost computation */
+    uint16_t ctx_norm[256][256];
+    for (int c = 0; c < 256; c++) {
+        uint32_t raw[256];
+        for (int s = 0; s < 256; s++) raw[s] = ctx_freq[c][s];
+        mt_normalize(raw, ctx_total[c], ctx_norm[c]);
+    }
+    
+    /* Build per-context active symbol lists */
+    uint8_t ctx_active[256][256];
+    uint8_t ctx_n_active[256];
+    for (int c = 0; c < 256; c++) {
+        int n = 0;
+        for (int s = 0; s < 256; s++) {
+            if (ctx_freq[c][s] > 0) ctx_active[c][n++] = (uint8_t)s;
+        }
+        ctx_n_active[c] = (uint8_t)n;
+    }
+    
+    /* Step 2: K-means clustering of 256 contexts into max_tables tables */
+    int n_tables = max_tables;
+    uint16_t tables[MT_MAX_TABLES][256];
+    uint32_t table_raw[MT_MAX_TABLES][256];
+    uint8_t ctx_map[256]; /* context → table assignment */
+    
+    /* Initial assignment: distribute contexts evenly */
+    for (int c = 0; c < 256; c++) ctx_map[c] = (uint8_t)(c * n_tables / 256);
+    
+    for (int iter = 0; iter < 15; iter++) {
+        /* Recompute table frequencies from assignments */
+        memset(table_raw, 0, sizeof(table_raw));
+        for (int c = 0; c < 256; c++) {
+            int t = ctx_map[c];
+            for (int s = 0; s < 256; s++) table_raw[t][s] += ctx_freq[c][s];
+        }
+        
+        /* Normalize */
+        for (int t = 0; t < n_tables; t++) {
+            uint32_t total = 0;
+            for (int s = 0; s < 256; s++) total += table_raw[t][s];
+            mt_normalize(table_raw[t], total, tables[t]);
+        }
+        
+        /* Reassign contexts to closest table */
+        int changed = 0;
+        for (int c = 0; c < 256; c++) {
+            if (ctx_total[c] == 0) continue; /* unused context */
+            uint64_t best_cost = UINT64_MAX;
+            int best_t = 0;
+            for (int t = 0; t < n_tables; t++) {
+                uint64_t cost = group_cost_sparse(ctx_norm[c], ctx_active[c], ctx_n_active[c], tables[t]);
+                if (cost < best_cost) { best_cost = cost; best_t = t; }
+            }
+            if (best_t != ctx_map[c]) { ctx_map[c] = (uint8_t)best_t; changed++; }
+        }
+        if (changed == 0) break;
+    }
+    
+    /* Final table computation */
+    memset(table_raw, 0, sizeof(table_raw));
+    for (int c = 0; c < 256; c++) {
+        int t = ctx_map[c];
+        for (int s = 0; s < 256; s++) table_raw[t][s] += ctx_freq[c][s];
+    }
+    for (int t = 0; t < n_tables; t++) {
+        uint32_t total = 0;
+        for (int s = 0; s < 256; s++) total += table_raw[t][s];
+        mt_normalize(table_raw[t], total, tables[t]);
+    }
+    
+    /* Step 3: Encode header */
+    size_t pos = 0;
+    if (dst_cap < 261 + n_tables * 300) return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
+    
+    uint32_t orig32 = (uint32_t)src_size;
+    memcpy(dst + pos, &orig32, 4); pos += 4;
+    dst[pos++] = (uint8_t)(n_tables | 0x80); /* high bit = context mode */
+    
+    /* Write 256-byte context-to-table mapping */
+    memcpy(dst + pos, ctx_map, 256); pos += 256;
+    
+    /* Write tables (same bitmap+varint format as group mode) */
+    for (int t = 0; t < n_tables; t++) {
+        if (pos + 32 > dst_cap) return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
+        uint8_t bitmap[32];
+        memset(bitmap, 0, 32);
+        int n_active = 0;
+        for (int s = 0; s < 256; s++) {
+            if (tables[t][s] > 0) { bitmap[s >> 3] |= (1 << (s & 7)); n_active++; }
+        }
+        memcpy(dst + pos, bitmap, 32); pos += 32;
+        if (pos + n_active * 2 > dst_cap) return MCX_ERROR(MCX_ERR_DST_TOO_SMALL);
+        for (int s = 0; s < 256; s++) {
+            if (tables[t][s] > 0) {
+                uint16_t f = tables[t][s];
+                if (f < 128) { dst[pos++] = (uint8_t)f; }
+                else { dst[pos++] = (uint8_t)(0x80 | (f >> 8)); dst[pos++] = (uint8_t)(f & 0xFF); }
+            }
+        }
+    }
+    
+    /* Step 4: Encode data with 4-way interleaved rANS, context-based table selection */
+    uint16_t cumfreq[MT_MAX_TABLES][256];
+    for (int t = 0; t < n_tables; t++) {
+        uint16_t cum = 0;
+        for (int s = 0; s < 256; s++) { cumfreq[t][s] = cum; cum += tables[t][s]; }
+    }
+    
+    size_t out16_cap = src_size + 4096;
+    uint16_t* out16 = malloc(out16_cap * sizeof(uint16_t));
+    if (!out16) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+    
+    size_t out16_pos = 0;
+    uint32_t state1 = MT_STATE_LOWER, state2 = MT_STATE_LOWER;
+    uint32_t state3 = MT_STATE_LOWER, state4 = MT_STATE_LOWER;
+    
+    /* Encode backwards */
+    for (size_t i = src_size; i > 0; i--) {
+        uint8_t sym = src[i - 1];
+        uint8_t ctx = (i >= 2) ? src[i - 2] : 0;
+        int t = ctx_map[ctx];
+        uint16_t f = tables[t][sym];
+        uint16_t cf = cumfreq[t][sym];
+        
+        uint32_t* st;
+        switch ((i - 1) & 3) {
+            case 0: st = &state1; break;
+            case 1: st = &state2; break;
+            case 2: st = &state3; break;
+            default: st = &state4; break;
+        }
+        
+        while (*st >= ((uint32_t)f << 16)) {
+            if (out16_pos >= out16_cap) { free(out16); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
+            out16[out16_pos++] = (uint16_t)(*st & 0xFFFF);
+            *st >>= 16;
+        }
+        *st = ((*st / f) << MT_PRECISION) + cf + (*st % f);
+    }
+    
+    /* Write states + bitstream */
+    size_t needed = pos + 16 + out16_pos * 2;
+    if (needed > dst_cap) { free(out16); return MCX_ERROR(MCX_ERR_DST_TOO_SMALL); }
+    
+    memcpy(dst + pos, &state1, 4); pos += 4;
+    memcpy(dst + pos, &state2, 4); pos += 4;
+    memcpy(dst + pos, &state3, 4); pos += 4;
+    memcpy(dst + pos, &state4, 4); pos += 4;
+    
+    for (size_t j = 0; j < out16_pos; j++) {
+        uint16_t val = out16[out16_pos - 1 - j];
+        memcpy(dst + pos + j * 2, &val, 2);
+    }
+    pos += out16_pos * 2;
+    
+    free(out16);
+    return pos;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  Multi-table rANS Decompression
  * ═══════════════════════════════════════════════════════════════════════ */
 
@@ -439,12 +651,22 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
         return mcx_rans_decompress(dst, dst_cap, src, src_size);
     }
     
-    int n_tables = src[pos++];
+    int n_tables_raw = src[pos++];
+    int ctx_mode = (n_tables_raw & 0x80) != 0;
+    int n_tables = n_tables_raw & 0x3F;
     if (n_tables == 0 || n_tables > MT_MAX_TABLES) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
     
-    uint32_t ng32;
-    memcpy(&ng32, src + pos, 4); pos += 4;
-    int num_groups = (int)ng32;
+    /* Context mode: read 256-byte context→table mapping instead of groups */
+    uint8_t ctx_map[256];
+    int num_groups = 0;
+    if (ctx_mode) {
+        if (pos + 256 > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        memcpy(ctx_map, src + pos, 256); pos += 256;
+    } else {
+        uint32_t ng32;
+        memcpy(&ng32, src + pos, 4); pos += 4;
+        num_groups = (int)ng32;
+    }
     
     /* Read sparse tables */
     uint16_t tables[MT_MAX_TABLES][256];
@@ -508,43 +730,46 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
         }
     }
     
-    /* Read compressed selectors */
-    if (pos + 4 > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
-    uint32_t sel_comp_sz;
-    memcpy(&sel_comp_sz, src + pos, 4); pos += 4;
-    
-    if (pos + sel_comp_sz > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
-    
-    uint8_t* sel_raw = malloc(num_groups + 256);
-    if (!sel_raw) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
-    
-    size_t sel_dec = mcx_rans_decompress(sel_raw, num_groups + 256, src + pos, sel_comp_sz);
-    pos += sel_comp_sz;
-    
-    if (mcx_is_error(sel_dec) || sel_dec != (size_t)num_groups) {
-        free(sel_raw);
-        return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
-    }
-    
-    /* MTF decode selectors */
-    int* assign = malloc(num_groups * sizeof(int));
-    if (!assign) { free(sel_raw); return MCX_ERROR(MCX_ERR_ALLOC_FAILED); }
-    
-    {
-        uint8_t sel_mtf[MT_MAX_TABLES];
-        for (int i = 0; i < n_tables; i++) sel_mtf[i] = (uint8_t)i;
-        for (int g = 0; g < num_groups; g++) {
-            int rank = sel_raw[g];
-            if (rank >= n_tables) { free(sel_raw); free(assign); return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); }
-            assign[g] = sel_mtf[rank];
-            if (rank > 0) {
-                uint8_t tmp = sel_mtf[rank];
-                memmove(sel_mtf + 1, sel_mtf, rank);
-                sel_mtf[0] = tmp;
+    /* Read selectors (group mode only — context mode uses ctx_map from header) */
+    int* assign = NULL;
+    if (!ctx_mode) {
+        if (pos + 4 > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        uint32_t sel_comp_sz;
+        memcpy(&sel_comp_sz, src + pos, 4); pos += 4;
+        
+        if (pos + sel_comp_sz > src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        
+        uint8_t* sel_raw = malloc(num_groups + 256);
+        if (!sel_raw) return MCX_ERROR(MCX_ERR_ALLOC_FAILED);
+        
+        size_t sel_dec = mcx_rans_decompress(sel_raw, num_groups + 256, src + pos, sel_comp_sz);
+        pos += sel_comp_sz;
+        
+        if (mcx_is_error(sel_dec) || sel_dec != (size_t)num_groups) {
+            free(sel_raw);
+            return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        }
+        
+        /* MTF decode selectors */
+        assign = malloc(num_groups * sizeof(int));
+        if (!assign) { free(sel_raw); return MCX_ERROR(MCX_ERR_ALLOC_FAILED); }
+        
+        {
+            uint8_t sel_mtf[MT_MAX_TABLES];
+            for (int i = 0; i < n_tables; i++) sel_mtf[i] = (uint8_t)i;
+            for (int g = 0; g < num_groups; g++) {
+                int rank = sel_raw[g];
+                if (rank >= n_tables) { free(sel_raw); free(assign); return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); }
+                assign[g] = sel_mtf[rank];
+                if (rank > 0) {
+                    uint8_t tmp = sel_mtf[rank];
+                    memmove(sel_mtf + 1, sel_mtf, rank);
+                    sel_mtf[0] = tmp;
+                }
             }
         }
+        free(sel_raw);
     }
-    free(sel_raw);
     
     /* Read 4 rANS states */
     if (pos + 16 > src_size) { free(assign); return MCX_ERROR(MCX_ERR_SRC_CORRUPTED); }
@@ -559,18 +784,35 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
     size_t bits_pos = 0;
     size_t max_bits = (src_size - pos) / 2;
     
-    int g = 0;
-    int g_remaining = MT_GROUP_SIZE;
-    int t = assign[0];
-    
-    /* 4-way interleaved decode: state[idx%4].
-     * Unrolled 4-at-a-time for maximum ILP. */
-    {
+    if (ctx_mode) {
+        /* ── Context-based decode: use previous byte to select table ── */
+        size_t i = 0;
+        uint16_t mask = MT_SCALE - 1;
+        uint32_t* states[4] = { &state1, &state2, &state3, &state4 };
+        uint8_t prev_byte = 0;
+        
+        while (i < orig_size) {
+            int t = ctx_map[prev_byte];
+            uint32_t* st = states[i & 3];
+            uint16_t slot = (uint16_t)(*st & mask);
+            uint8_t sym = lookup[t][slot];
+            *st = tables[t][sym] * (*st >> MT_PRECISION) + slot - cum[t][sym];
+            if (*st < MT_STATE_LOWER && bits_pos < max_bits)
+                *st = (*st << 16) | bits[bits_pos++];
+            dst[i] = sym;
+            prev_byte = sym;
+            i++;
+        }
+    } else {
+        /* ── Group-based decode (original algorithm) ── */
+        int g = 0;
+        int g_remaining = MT_GROUP_SIZE;
+        int t = assign[0];
+        
         size_t i = 0;
         uint16_t mask = MT_SCALE - 1;
         uint32_t* states[4] = { &state1, &state2, &state3, &state4 };
         
-        /* Main 4-at-a-time loop */
         while (i + 3 < orig_size) {
             for (int k = 0; k < 4; k++) {
                 uint32_t* st = states[(i + k) & 3];
@@ -585,7 +827,6 @@ size_t mcx_multi_rans_decompress(uint8_t* dst, size_t dst_cap,
             i += 4;
         }
         
-        /* Handle 0-3 trailing symbols */
         while (i < orig_size) {
             uint32_t* st = states[i & 3];
             uint16_t slot = (uint16_t)(*st & mask);
