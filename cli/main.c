@@ -49,7 +49,7 @@ static void print_usage(void)
         "MaxCompression v%s\n"
         "\n"
         "Usage:\n"
-        "  mcx compress   [-l LEVEL] [--fast|--default|--best] [-q] <input> [-o output.mcx]\n"
+        "  mcx compress   [-l LEVEL] [-s STRATEGY] [--fast|--default|--best] [-q] <input> [-o output.mcx]\n"
         "  mcx decompress [-q] <input.mcx> [-o output]\n"
         "  mcx verify     <file.mcx> [original]   # verify integrity\n"
         "  mcx diff       <a.mcx> <b.mcx>         # compare two archives\n"
@@ -91,6 +91,7 @@ static void print_usage(void)
         "  -c, --stdout    Write output to stdout\n"
         "  -q, --quiet     Suppress non-error output\n"
         "  -v, --verbose   Show extra info (peak memory usage)\n"
+        "  -s, --strategy  Force strategy: lz, bwt, cm, smart, lzrc\n"
         "  -t, --threads N Use N threads (default: auto)\n"
         "\n"
         "Examples:\n"
@@ -1427,6 +1428,23 @@ int main(int argc, char* argv[])
                 g_verbose = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
+            } else if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--strategy") == 0) && i + 1 < argc) {
+                const char* sname = argv[++i];
+                if (strcmp(sname, "lz") == 0 || strcmp(sname, "lz77") == 0) {
+                    if (level < 1 || level > 9) level = 6;  /* default LZ level */
+                } else if (strcmp(sname, "bwt") == 0) {
+                    if (level < 10 || level > 14) level = 12;
+                } else if (strcmp(sname, "cm") == 0 || strcmp(sname, "best") == 0) {
+                    if (level < 15 || level > 19) level = 18;
+                } else if (strcmp(sname, "smart") == 0 || strcmp(sname, "auto") == 0) {
+                    level = 20;
+                } else if (strcmp(sname, "lzrc") == 0) {
+                    level = 26;
+                } else {
+                    fprintf(stderr, "Error: unknown strategy '%s'\n"
+                            "  Available: lz, bwt, cm, smart, lzrc\n", sname);
+                    return 1;
+                }
             } else if (argv[i][0] != '-') {
                 if (n_inputs < 256) inputs[n_inputs++] = argv[i];
             }
