@@ -51,3 +51,5 @@ wasm/maxcomp.js
 wasm/maxcomp.wasm
 # WASM build directory
 build-wasm/
+research/exp014/
+research/test_cm/
