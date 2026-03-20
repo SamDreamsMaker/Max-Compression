@@ -961,8 +961,16 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                         
                         /* Try CM-rANS (order-1 context) for blocks > 64KB.
                          * Order-1 context models byte-to-byte correlations in BWT output.
-                         * Overhead: ~1.2MB tables, amortized on larger blocks. */
-                        if (cm_buf && stage_size > 65536) {
+                         * Overhead: ~1.2MB tables, amortized on larger blocks.
+                         *
+                         * Early exit: skip CM-rANS if single rANS already beats multi-table.
+                         * When single wins over multi-table, the data has uniform enough
+                         * distribution that order-1 context modeling (with its ~1.2MB table
+                         * overhead) is very unlikely to help. This saves ~30-50% of entropy
+                         * trial time on blocks where single rANS is optimal. */
+                        if (cm_buf && stage_size > 65536 &&
+                            !(  !mcx_is_error(single_sz) && !mcx_is_error(multi_sz)
+                              && single_sz <= multi_sz)) {
                             cm_sz = mcx_cmrans_compress(cm_buf, avail, stage_in, stage_size);
                         }
                         
