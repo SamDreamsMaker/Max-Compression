@@ -57,7 +57,7 @@ static void print_usage(void)
         "  mcx stat       <file>                     # file statistics (entropy, bytes)\n"
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      <input>                  # benchmark all levels\n"
+        "  mcx bench      [-l LEVEL] <input>       # benchmark all (or specific) levels\n"
         "  mcx test                                # run self-tests\n"
         "  mcx version                             # detailed build info\n"
         "  mcx --version\n"
@@ -813,7 +813,7 @@ static double bench_time(void) {
 }
 #endif
 
-static int cmd_bench(const char* input)
+static int cmd_bench(const char* input, int specific_level)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -824,8 +824,19 @@ static int cmd_bench(const char* input)
            "Level", "Compressed", "Ratio", "Saving", "Comp MB/s", "Dec MB/s");
     printf("─────────────────────────────────────────────────────────────\n");
 
-    int levels[] = {1, 3, 6, 9, 12, 20, 24, 26};
-    int n_levels = sizeof(levels) / sizeof(levels[0]);
+    int all_levels[] = {1, 3, 6, 9, 12, 20, 24, 26};
+    int n_all = sizeof(all_levels) / sizeof(all_levels[0]);
+
+    /* If a specific level is requested, bench only that level */
+    int* levels;
+    int n_levels;
+    if (specific_level > 0) {
+        levels = &specific_level;
+        n_levels = 1;
+    } else {
+        levels = all_levels;
+        n_levels = n_all;
+    }
 
     size_t comp_cap = mcx_compress_bound(src_size);
     uint8_t* comp = (uint8_t*)malloc(comp_cap);
@@ -1495,10 +1506,28 @@ int main(int argc, char* argv[])
 
     } else if (strcmp(argv[1], "bench") == 0) {
         if (argc < 3) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s <file>\n", argv[1]);
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] <file>\n");
             return 1;
         }
-        return cmd_bench(argv[2]);
+        /* Parse optional -l/--level flag */
+        int bench_level = 0; /* 0 = all levels */
+        const char* bench_file = NULL;
+        for (int i = 2; i < argc; i++) {
+            if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
+                bench_level = atoi(argv[++i]);
+                if (bench_level < MCX_LEVEL_MIN || bench_level > MCX_LEVEL_MAX) {
+                    fprintf(stderr, "Error: level must be %d-%d\n", MCX_LEVEL_MIN, MCX_LEVEL_MAX);
+                    return 1;
+                }
+            } else if (!bench_file) {
+                bench_file = argv[i];
+            }
+        }
+        if (!bench_file) {
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] <file>\n");
+            return 1;
+        }
+        return cmd_bench(bench_file, bench_level);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
