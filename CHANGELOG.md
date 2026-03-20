@@ -4,6 +4,15 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 39)
+- **`mcx bench --baseline-dir DIR`** — per-file baselines in a directory. First run saves `DIR/filename.baseline`, subsequent runs compare against saved values with delta and percentage. Works with single files and directories. Returns exit code 1 on regression.
+- **`mcx stat --compare FILE1 FILE2`** — side-by-side file statistics comparison showing entropy, size, printable %, unique bytes, runs, max run length, and top 5 byte frequency differences with deltas.
+- **`mcx bench --chart`** — ASCII bar chart of compression ratios at L1/L2/L3/L6/L9/L12/L20 using Unicode block characters. Quick visual comparison in terminal.
+- **Mozilla L12 decompress profiling** — 51MB single block: BWT inverse 7289ms (81.5%), MTF decode 909ms (10.2%), rANS decode 413ms (4.6%), RLE2 decode 350ms (3.9%). BWT inverse dominates due to cache misses on large blocks.
+- **divsufsort memory review** — `saidx_t` is already `int32_t` (4 bytes), optimal for blocks up to 2GB. No 64-bit waste.
+- **Integration tests** — coverage for `--baseline-dir` (save/compare/regression), `stat --compare`, and `bench --chart` (7 levels).
+- **Man page + completions update** — `--baseline-dir`, `--chart`, `stat --compare` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 38)
 - **`mcx bench --suite NAME`** — predefined benchmark suites: `quick` (L1/L6/L12), `standard` (default 8 levels), `full` (L1-L26). Simplifies common benchmark workflows.
 - **WASM CI workflow** — `.github/workflows/wasm.yml` builds MCX with Emscripten and verifies compress/decompress roundtrip in Node.js (4 test cases).
