@@ -64,7 +64,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] <input|dir>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] [--no-header] <input|dir>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1437,7 +1437,7 @@ static double percentile_val(const double* sorted, int n, double p) {
     return sorted[lo] * (1.0 - frac) + sorted[hi] * frac;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n, int worst_n, int use_median, int show_percentile, int brief)
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n, int worst_n, int use_median, int show_percentile, int brief, int no_header)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -1453,26 +1453,28 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         printf("  \"file\": "); json_print_string(input); printf(",\n");
         printf("  \"original_bytes\": %zu,\n", src_size);
         printf("  \"results\": [\n");
-    } else if (csv == 2) {
-        /* Markdown header */
-        printf("Benchmarking `%s` (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
-        if (ratio_only)
-            printf("| Level | Compressed | Ratio | Saving |\n|-------|-----------|-------|--------|\n");
-        else if (show_memory)
-            printf("| Level | Compressed | Ratio | Saving | Comp MB/s | Dec MB/s | Peak RSS |\n|-------|-----------|-------|--------|-----------|----------|----------|\n");
-        else
-            printf("| Level | Compressed | Ratio | Saving | Comp MB/s | Dec MB/s |\n|-------|-----------|-------|--------|-----------|----------|\n");
-    } else if (csv) {
-        /* CSV header */
-        if (show_memory)
-            printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs,peak_rss_kb");
-        else
-            printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs");
-        if (show_percentile)
-            printf(",comp_p5,comp_p50,comp_p95,dec_p5,dec_p50,dec_p95");
-        printf("\n");
-    } else if (!brief) {
-        printf("Benchmarking '%s' (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
+    } else if (!no_header) {
+        if (csv == 2) {
+            /* Markdown header */
+            printf("Benchmarking `%s` (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
+            if (ratio_only)
+                printf("| Level | Compressed | Ratio | Saving |\n|-------|-----------|-------|--------|\n");
+            else if (show_memory)
+                printf("| Level | Compressed | Ratio | Saving | Comp MB/s | Dec MB/s | Peak RSS |\n|-------|-----------|-------|--------|-----------|----------|----------|\n");
+            else
+                printf("| Level | Compressed | Ratio | Saving | Comp MB/s | Dec MB/s |\n|-------|-----------|-------|--------|-----------|----------|\n");
+        } else if (csv) {
+            /* CSV header */
+            if (show_memory)
+                printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs,peak_rss_kb");
+            else
+                printf("file,original_bytes,compressor,level,compressed_bytes,ratio,saving_pct,comp_mbs,dec_mbs");
+            if (show_percentile)
+                printf(",comp_p5,comp_p50,comp_p95,dec_p5,dec_p50,dec_p95");
+            printf("\n");
+        } else if (!brief) {
+            printf("Benchmarking '%s' (%zu bytes / %zu KB)\n\n", input, src_size, src_size / 1024);
+        }
     }
 
     /* Run external compressors first if --compare */
@@ -1523,7 +1525,7 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         if (!csv && !json) printf("\n");
     }
 
-    if (!csv && !json && !brief) {
+    if (!csv && !json && !brief && !no_header) {
         if (ratio_only) {
             printf("%-6s %10s %10s %8s\n",
                    "Level", "Compressed", "Ratio", "Saving");
@@ -2762,6 +2764,7 @@ int main(int argc, char* argv[])
         int bench_histogram = 0;
         int bench_brief = 0;
         int bench_aggregate = 0;
+        int bench_no_header = 0;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         const char* bench_exclude = NULL;
@@ -2839,6 +2842,8 @@ int main(int argc, char* argv[])
                 }
             } else if (strcmp(argv[i], "--aggregate") == 0) {
                 bench_aggregate = 1;
+            } else if (strcmp(argv[i], "--no-header") == 0) {
+                bench_no_header = 1;
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -2880,7 +2885,7 @@ int main(int argc, char* argv[])
                 if (bench_histogram)
                     ret |= cmd_bench_histogram(fl.paths[f], bench_level);
                 else
-                    ret |= cmd_bench(fl.paths[f], bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief);
+                    ret |= cmd_bench(fl.paths[f], bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header);
                 if (f + 1 < fl.count && !bench_csv && !bench_json)
                     printf("\n");
                 /* Accumulate totals for --aggregate */
@@ -2933,7 +2938,7 @@ int main(int argc, char* argv[])
         }
         if (bench_histogram)
             return cmd_bench_histogram(bench_file, bench_level);
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
