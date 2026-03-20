@@ -136,4 +136,36 @@ if ! echo "$PCTILE_OUT" | grep -q "p95="; then
 fi
 echo "OK: --percentile with --iterations 5 shows p5/p50/p95"
 
+# Test --histogram: should show block size labels and ratio output
+HIST_OUT=$("$MCX" bench -l 6 --histogram "$TMPDIR/input.txt" 2>&1)
+if ! echo "$HIST_OUT" | grep -qi "block\|size\|ratio\|KB\|MB"; then
+    echo "FAIL: --histogram should show block size / ratio output"
+    echo "$HIST_OUT"
+    exit 1
+fi
+echo "OK: --histogram produces block size / ratio output"
+
+# Test --format markdown: should show markdown table (pipe characters)
+FMT_OUT=$("$MCX" bench -l 1 --format markdown "$TMPDIR/input.txt" 2>&1)
+if ! echo "$FMT_OUT" | grep -q "^|"; then
+    echo "FAIL: --format markdown should produce markdown table rows"
+    echo "$FMT_OUT"
+    exit 1
+fi
+if ! echo "$FMT_OUT" | grep -q "|.*L1.*|"; then
+    echo "FAIL: --format markdown should have L1 row in table"
+    echo "$FMT_OUT"
+    exit 1
+fi
+echo "OK: --format markdown produces markdown table"
+
+# Test --format csv: should produce CSV output
+FMT_CSV=$("$MCX" bench -l 1 --format csv "$TMPDIR/input.txt" 2>&1)
+if ! echo "$FMT_CSV" | grep -q "^file,original_bytes"; then
+    echo "FAIL: --format csv should produce CSV header"
+    echo "$FMT_CSV"
+    exit 1
+fi
+echo "OK: --format csv produces CSV output"
+
 echo "=== All bench flags tests passed ==="
