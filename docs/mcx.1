@@ -100,6 +100,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-compare\-self\fR \fIREF\fR]
 [\fB\-\-delta\fR \fIBASELINE\fR]
 [\fB\-\-save\-baseline\fR \fIFILE\fR]
+[\fB\-\-diff\fR \fIBASELINE\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -268,6 +269,8 @@ Force a specific compression strategy (lz, bwt, lzrc, stride) instead of auto\-d
 .TP
 .BR \-\-block\-size =\fIBYTES\fR
 Override default block size for BWT levels. Accepts suffixes: K, M (e.g. 4M).
+Use \fBauto\fR to automatically select block size based on input size:
+<1MB→256KB, <16MB→4MB, <128MB→16MB, ≥128MB→64MB.
 .TP
 .BR \-\-dry\-run
 Analyze and print predicted strategy/level without actually compressing.
@@ -356,6 +359,13 @@ For \fBbench\fR: explicitly save current compressed sizes to \fIFILE\fR.
 Unlike \fB\-\-delta\fR which auto\-saves on first run and compares on
 subsequent runs, \fB\-\-save\-baseline\fR always overwrites the file.
 Output format is compatible with \fB\-\-delta\fR for subsequent comparisons.
+.TP
+.BR \-\-diff =\fIBASELINE\fR
+For \fBbench\fR: like \fB\-\-delta\fR but also measures and compares
+compress/decompress speeds alongside ratio. Baseline format includes
+timing data (\fIL<N> <bytes> <comp_mbs> <dec_mbs>\fR). Speed variance
+of 5\-10% between runs is normal due to system load and thermals.
+Returns exit code 1 on ratio regression.
 .TP
 .BR \-\-blocks
 For \fBinfo\fR: show per\-block details (offset, compressed size,
