@@ -40,6 +40,7 @@ complete -c mcx -n '__fish_seen_subcommand_from compress' -l dry-run   -d 'Predi
 complete -c mcx -n '__fish_seen_subcommand_from compress' -l estimate    -d 'Estimate compressed size'
 complete -c mcx -n '__fish_seen_subcommand_from compress' -l level-scan  -d 'Try L1-L12 and pick best ratio'
 complete -c mcx -n '__fish_seen_subcommand_from compress' -l no-trials   -d 'Skip multi-strategy trial at L20+'
+complete -c mcx -n '__fish_seen_subcommand_from compress' -l filter     -x -a 'delta nibble none' -d 'Force preprocessing filter'
 complete -c mcx -n '__fish_seen_subcommand_from compress' -s o -l output  -r -F -d 'Output file'
 complete -c mcx -n '__fish_seen_subcommand_from compress' -s q -l quiet   -d 'Quiet mode'
 complete -c mcx -n '__fish_seen_subcommand_from compress' -s v -l verbose -d 'Verbose output'

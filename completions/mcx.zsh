@@ -38,6 +38,7 @@ _mcx() {
         '--estimate[Estimate compressed size]'
         '--level-scan[Try L1-L12, pick best ratio]'
         '--no-trials[Skip multi-strategy trial at L20+]'
+        '--filter[Force preprocessing filter]:filter:(delta nibble none)'
         '-o[Output file]:output:_files'
         '--output[Output file]:output:_files'
         '-q[Quiet mode]'

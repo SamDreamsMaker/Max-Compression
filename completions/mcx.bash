@@ -13,7 +13,7 @@ _mcx() {
             return 0
             ;;
         compress)
-            COMPREPLY=( $(compgen -W "-l -o -q -v -f -r -c -t --level -T --output --quiet --verbose --force --recursive --stdout --fast --default --best --delete --verify --threads --strategy --block-size --dry-run --estimate --level-scan --no-trials" -- "${cur}") $(compgen -f -- "${cur}") )
+            COMPREPLY=( $(compgen -W "-l -o -q -v -f -r -c -t --level -T --output --quiet --verbose --force --recursive --stdout --fast --default --best --delete --verify --threads --strategy --block-size --dry-run --estimate --level-scan --no-trials --filter" -- "${cur}") $(compgen -f -- "${cur}") )
             return 0
             ;;
         decompress|extract|x|d)
@@ -42,6 +42,10 @@ _mcx() {
             ;;
         --strategy)
             COMPREPLY=( $(compgen -W "lz bwt lzrc stride" -- "${cur}") )
+            return 0
+            ;;
+        --filter)
+            COMPREPLY=( $(compgen -W "delta nibble none" -- "${cur}") )
             return 0
             ;;
         -o|--output)
