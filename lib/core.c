@@ -1343,6 +1343,11 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
 
         int omp_err = 0;
         
+#ifdef _OPENMP
+        if (!omp_in_parallel()) {
+            omp_set_nested(0); /* Prevent inner CM-rANS OMP from corrupting heap */
+        }
+#endif
         int32_t b;
         #pragma omp parallel for schedule(dynamic)
         for (b = 0; b < (int32_t)num_blocks; b++) {
