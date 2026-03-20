@@ -455,7 +455,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     if (aac_size > 0) aac_buf[0] = 0xAE; /* LZ16+AAC */
                 }
 
-                /* Pick best: FSE vs rANS vs AAC vs raw LZ vs store */
+                /* Pick best: FSE vs rANS vs AAC vs raw LZ vs store.
+                 * Decompress-speed-aware: AAC decompresses ~8× slower than rANS
+                 * (serial dependency chains vs parallel state machines), so only
+                 * pick AAC if it saves ≥5% over the best fast coder (rANS/FSE). */
                 size_t best_size = block_src_size; /* Store threshold */
                 uint8_t best_type = 0x00;
 
@@ -467,7 +470,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     best_size = rans_size;
                     best_type = 0xA8; /* LZ+rANS */
                 }
-                if (aac_size > 0 && aac_size < best_size) {
+                /* AAC must beat current best by ≥5% to justify slow decode */
+                if (aac_size > 0 && aac_size < best_size &&
+                    (best_size == block_src_size || /* no fast coder worked */
+                     aac_size <= best_size * 95 / 100)) {
                     best_size = aac_size;
                     best_type = 0xAE; /* LZ+AAC */
                 }
@@ -559,7 +565,8 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     if (aac_size > 0) aac_buf[0] = 0xAF; /* LZ24+AAC */
                 }
 
-                /* Pick best: FSE vs rANS vs AAC vs raw LZ24 vs store */
+                /* Pick best: FSE vs rANS vs AAC vs raw LZ24 vs store.
+                 * Same decompress-speed-aware rule: AAC needs ≥5% gain. */
                 size_t best_size = block_src_size;
                 uint8_t best_type = 0x00;
 
@@ -569,7 +576,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 if (rans24_size > 0 && rans24_size < best_size) {
                     best_size = rans24_size; best_type = 0xA9;
                 }
-                if (aac_size > 0 && aac_size < best_size) {
+                /* AAC must beat current best by ≥5% to justify slow decode */
+                if (aac_size > 0 && aac_size < best_size &&
+                    (best_size == block_src_size ||
+                     aac_size <= best_size * 95 / 100)) {
                     best_size = aac_size; best_type = 0xAF;
                 }
                 if (lz_size < best_size) {
