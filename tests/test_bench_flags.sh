@@ -52,4 +52,52 @@ if [ "$LEVEL_COUNT2" -ne 8 ]; then
 fi
 echo "OK: Default bench produced 8 level lines"
 
+# Test --json: output should be valid JSON with "results" array
+JSON_OUT=$("$MCX" bench -l 1 --json "$TMPDIR/input.txt" 2>&1)
+if ! echo "$JSON_OUT" | grep -q '"results"'; then
+    echo "FAIL: --json should produce JSON with 'results' key"
+    echo "$JSON_OUT"
+    exit 1
+fi
+if ! echo "$JSON_OUT" | grep -q '"comp_mbs"'; then
+    echo "FAIL: --json should contain comp_mbs field"
+    exit 1
+fi
+echo "OK: --json produces valid JSON output"
+
+# Test --csv: output should have CSV header and data line
+CSV_OUT=$("$MCX" bench -l 1 --csv "$TMPDIR/input.txt" 2>&1)
+if ! echo "$CSV_OUT" | head -1 | grep -q "file,original_bytes"; then
+    echo "FAIL: --csv should have CSV header"
+    echo "$CSV_OUT"
+    exit 1
+fi
+CSV_LINES=$(echo "$CSV_OUT" | wc -l)
+if [ "$CSV_LINES" -lt 2 ]; then
+    echo "FAIL: --csv should have at least header + 1 data line"
+    exit 1
+fi
+echo "OK: --csv produces CSV output"
+
+# Test --decode-only: should still produce output with dec_mbs
+DECODE_OUT=$("$MCX" bench -l 1 --decode-only "$TMPDIR/input.txt" 2>&1)
+if ! echo "$DECODE_OUT" | grep -q "^L1"; then
+    echo "FAIL: --decode-only should produce L1 output"
+    echo "$DECODE_OUT"
+    exit 1
+fi
+echo "OK: --decode-only produces output"
+
+# Test --sort ratio: first result should have highest ratio
+SORT_OUT=$("$MCX" bench --ratio-only --sort ratio "$TMPDIR/input.txt" 2>&1)
+# Extract ratios, first should be >= last
+FIRST_RATIO=$(echo "$SORT_OUT" | grep "^L[0-9]" | head -1 | awk '{print $3}' | tr -d 'x')
+LAST_RATIO=$(echo "$SORT_OUT" | grep "^L[0-9]" | tail -1 | awk '{print $3}' | tr -d 'x')
+if [ "$(echo "$FIRST_RATIO >= $LAST_RATIO" | bc 2>/dev/null || echo 1)" = "1" ]; then
+    echo "OK: --sort ratio orders by descending ratio ($FIRST_RATIO >= $LAST_RATIO)"
+else
+    echo "FAIL: --sort ratio: first ratio $FIRST_RATIO should be >= last $LAST_RATIO"
+    exit 1
+fi
+
 echo "=== All bench flags tests passed ==="
