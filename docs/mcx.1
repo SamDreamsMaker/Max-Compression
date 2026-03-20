@@ -270,6 +270,12 @@ Valid values: \fBdelta\fR (sorted integer sequences), \fBnibble\fR
 Skip multi\-strategy trial at L20+ (use first matching strategy).
 Faster but may miss the optimal strategy for mixed\-content files.
 .TP
+.BR \-\-min\-ratio =\fIN\fR
+For \fBcompress\fR: only write the compressed output if the achieved
+compression ratio is at least \fIN\fR (e.g. \fB\-\-min\-ratio 1.5\fR).
+If the ratio is below the threshold, the output file is not created
+and a message is printed. Useful for skipping incompressible files.
+.TP
 .BR \-\-in\-place ", " \-i
 For \fBupgrade\fR: overwrite the input file directly (cannot combine with \fB\-o\fR).
 .TP
@@ -316,6 +322,11 @@ default representative subset (1, 3, 6, 9, 12, 20, 24, 26).
 .BR \-\-ratio\-only
 For \fBbench\fR: only measure compression ratio, skip timing entirely.
 Faster for ratio comparisons across levels. No speed columns in output.
+.TP
+.BR \-\-sort =\fIMODE\fR
+For \fBbench\fR: sort output by the given mode. Valid values:
+\fBratio\fR (best compression first), \fBspeed\fR (fastest first),
+\fBlevel\fR (default, ascending level number).
 .TP
 .BR \-\-split =\fISIZE\fR
 For \fBcompress\fR: split compressed output into chunks of the given

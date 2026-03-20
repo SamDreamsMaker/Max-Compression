@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 15)
+- **Nice-match early exit for HC chains** — L4-L9 now stop chain walking when a sufficiently long match is found (L4=16, L5-6=32, L7-8=64, L9=128). No ratio impact, faster compression on repetitive data.
+- **`mcx bench --sort ratio|speed|level`** — sort benchmark output by compression ratio, speed, or level (default: level).
+- **`mcx compress --min-ratio`** — only write compressed output if the achieved ratio meets or exceeds the given threshold (e.g. `--min-ratio 1.5`); skips writing if compression doesn't help enough.
+- **Integration tests** — coverage for `--json bench`, `--csv bench`, `--decode-only bench`, and `--sort` bench flags.
+- **L12 enwik8 profiling** — 10MB: BWT 35% (2718ms), MTF+RLE 5% (374ms), entropy encode 60% (4709ms). Multi-trial rANS is the clear bottleneck on 10MB blocks.
+- **Man page + completions update** — `--sort` and `--min-ratio` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 14)
 - **`mcx bench --all-levels`** — benchmark every compression level 1-26.
 - **`mcx bench --ratio-only`** — measure compression ratio only, skip timing (faster for ratio comparisons).
