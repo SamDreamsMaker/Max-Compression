@@ -747,4 +747,23 @@ if ! echo "$STAT_CMP" | grep -q "Delta"; then
 fi
 echo "OK: stat --compare shows side-by-side comparison"
 
+# Test bench --chart
+CHART_OUT=$("$MCX" bench --chart "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$CHART_OUT" | grep -q "L1"; then
+    echo "FAIL: bench --chart should show L1"
+    echo "$CHART_OUT"
+    exit 1
+fi
+if ! echo "$CHART_OUT" | grep -q "L12"; then
+    echo "FAIL: bench --chart should show L12"
+    echo "$CHART_OUT"
+    exit 1
+fi
+CHART_LEVELS=$(echo "$CHART_OUT" | grep -c "^L[0-9]")
+if [ "$CHART_LEVELS" -ne 7 ]; then
+    echo "FAIL: bench --chart should show 7 levels, got $CHART_LEVELS"
+    exit 1
+fi
+echo "OK: bench --chart shows 7-level ASCII bar chart"
+
 echo "=== All bench flags tests passed ==="

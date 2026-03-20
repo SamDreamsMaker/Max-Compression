@@ -130,6 +130,7 @@ _mcx() {
         '--baseline-dir[Per-file baselines in directory]:dir:_directories'
         '--diff[Compare ratio and speed against baseline]:baseline:_files'
         '--profile[Show per-phase time breakdown]'
+        '--chart[ASCII bar chart of compression ratios]'
         '--decode-only[Benchmark decompression only]'
         '--iterations[Number of iterations]:iterations:'
         '--size[Benchmark on truncated prefix]:size:'

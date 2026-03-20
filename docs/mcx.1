@@ -93,6 +93,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-median\fR]
 [\fB\-\-percentile\fR]
 [\fB\-\-histogram\fR]
+[\fB\-\-chart\fR]
 [\fB\-\-format\fR \fIFORMAT\fR]
 [\fB\-\-brief\fR]
 [\fB\-\-repeat\fR \fIN\fR]
@@ -463,6 +464,11 @@ benchmark variance.
 For \fBbench\fR: show compressed size distribution across block sizes.
 Useful for analyzing adaptive block behavior and understanding how
 different block sizes affect compression ratio.
+.TP
+.BR \-\-chart
+For \fBbench\fR: display an ASCII bar chart of compression ratios at
+levels L1, L2, L3, L6, L9, L12, and L20. Provides a quick visual
+comparison of how each level performs on the input file.
 .TP
 .BR \-\-format =\fIFORMAT\fR
 For \fBbench\fR: choose output format. Valid values: \fBtable\fR (default),

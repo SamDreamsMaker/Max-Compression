@@ -3192,6 +3192,7 @@ int main(int argc, char* argv[])
         int bench_median = 0;
         int bench_percentile = 0;
         int bench_histogram = 0;
+        int bench_chart = 0;
         int bench_brief = 0;
         int bench_aggregate = 0;
         int bench_no_header = 0;
@@ -3270,6 +3271,8 @@ int main(int argc, char* argv[])
                 bench_percentile = 1;
             } else if (strcmp(argv[i], "--histogram") == 0) {
                 bench_histogram = 1;
+            } else if (strcmp(argv[i], "--chart") == 0) {
+                bench_chart = 1;
             } else if (strcmp(argv[i], "--brief") == 0) {
                 bench_brief = 1;
             } else if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
@@ -3439,6 +3442,47 @@ int main(int argc, char* argv[])
             int r = cmd_bench_histogram(bench_file, bench_level);
             if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return r;
+        }
+        if (bench_chart) {
+            /* --chart: ASCII bar chart of compression ratios per level */
+            size_t src_size;
+            uint8_t* src = read_file(bench_file, &src_size);
+            if (!src) { fprintf(stderr, "Error: cannot read '%s'\n", bench_file); return 1; }
+            size_t dst_cap = mcx_compress_bound(src_size);
+            uint8_t* dst = (uint8_t*)malloc(dst_cap);
+            if (!dst) { free(src); return 1; }
+
+            int levels[] = {1, 2, 3, 6, 9, 12, 20};
+            int n_levels = 7;
+            double ratios[7];
+            double max_ratio = 0;
+
+            for (int li = 0; li < n_levels; li++) {
+                size_t csz = mcx_compress(dst, dst_cap, src, src_size, levels[li]);
+                if (mcx_is_error(csz)) { ratios[li] = 0; continue; }
+                ratios[li] = (double)src_size / (double)csz;
+                if (ratios[li] > max_ratio) max_ratio = ratios[li];
+            }
+
+            /* Extract basename */
+            const char* bname = bench_file;
+            for (const char* p = bench_file; *p; p++)
+                if (*p == '/') bname = p + 1;
+
+            printf("Compression ratio chart: %s (%zu bytes)\n\n", bname, src_size);
+            int bar_width = 50;
+            for (int li = 0; li < n_levels; li++) {
+                if (ratios[li] <= 0) { printf("L%-2d  ERROR\n", levels[li]); continue; }
+                int len = (max_ratio > 0) ? (int)(ratios[li] / max_ratio * bar_width) : 0;
+                if (len < 1) len = 1;
+                printf("L%-2d  ", levels[li]);
+                for (int b = 0; b < len; b++) printf("\xe2\x96\x88");
+                printf(" %.2fx\n", ratios[li]);
+            }
+
+            free(src); free(dst);
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            return 0;
         }
         if (bench_compare_self) {
             /* --compare-self REF: compress at specified level, compare size with reference */
