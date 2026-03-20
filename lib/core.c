@@ -25,6 +25,7 @@
 #include "entropy/adaptive_ac.h"
 #include "preprocess/preprocess.h"
 #include "lz/lzrc.h"
+#include "cm/cm.h"
 
 /* Runtime block size override (0 = use MCX_MAX_BLOCK_SIZE) */
 size_t mcx_block_size_override = 0;
@@ -193,7 +194,12 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     analysis = mcx_analyze(in, src_size);
 
     /* ── Choose strategy based on level (and analysis for BWT levels) ── */
-    if (level == 26) {
+    if (level == 28) {
+        /* Level 28: Context Mixing — PAQ-style, best compression, slowest */
+        static int cm_init_done = 0;
+        if (!cm_init_done) { mcx_cm_init(); cm_init_done = 1; }
+        strategy = MCX_STRATEGY_CM;
+    } else if (level == 26) {
         /* Level 26: Force LZRC strategy — BT match finder (best ratio, slowest) */
         strategy = MCX_STRATEGY_LZRC;
     } else if (level == 24) {
@@ -622,6 +628,30 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     free(lz_buf);
                     if (aac_buf) free(aac_buf);
                     if (rans24_buf) free(rans24_buf);
+                }
+            } else if (strategy == MCX_STRATEGY_CM) {
+                /* CM Path: Context Mixing (L28) */
+                size_t cm_cap = block_src_size + block_src_size/4 + 1024;
+                uint8_t* cm_buf = (uint8_t*)malloc(cm_cap + 1);
+                if (!cm_buf) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    continue;
+                }
+                
+                size_t cm_size = mcx_cm_compress(cm_buf + 1, cm_cap,
+                                                  in + src_offset, block_src_size);
+                
+                if (cm_size > 0 && cm_size < block_src_size) {
+                    cm_buf[0] = 0xC0; /* CM block type */
+                    block_sizes[b] = cm_size + 1;
+                    block_buffers[b] = cm_buf;
+                } else {
+                    /* CM didn't help — store raw */
+                    cm_buf[0] = 0x00;
+                    memcpy(cm_buf + 1, in + src_offset, block_src_size);
+                    block_sizes[b] = block_src_size + 1;
+                    block_buffers[b] = cm_buf;
                 }
             } else if (strategy == MCX_STRATEGY_LZRC) {
                 /* LZRC Path: v2.0 LZ + Range Coder */
@@ -1485,6 +1515,18 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                     continue;
                 }
                 memcpy(out + dst_offset, in + chunk_src_offset + 1, block_dst_size);
+            } else if (block_type == 0xC0) {
+                /* 0xC0 = CM (Context Mixing, L28) */
+                static int cm_init_done2 = 0;
+                if (!cm_init_done2) { mcx_cm_init(); cm_init_done2 = 1; }
+                size_t dec_size = mcx_cm_decompress(
+                    out + dst_offset, block_dst_size,
+                    in + chunk_src_offset + 1, chunk_comp_size - 1);
+                if (dec_size != block_dst_size) {
+                    #pragma omp critical
+                    { omp_err = 1; }
+                    continue;
+                }
             } else if (block_type == 0xB0) {
                 /* 0xB0 = LZRC (v2.0 LZ + Range Coder) */
                 size_t dec_size = mcx_lzrc_decompress(

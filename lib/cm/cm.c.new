@@ -12,10 +12,9 @@
  * This is the #1 technique that makes PAQ beat everything else.
  */
 
-
+/* Just copy exp014 and replace model_t with statemap_t */
 /* For brevity, include the working exp014 and just swap the model */
 
-#include "cm.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -184,7 +183,7 @@ static inline void smap_update(smap_t *s, uint32_t c, int bit) {
 static float stretch_tab[4097];
 static float squash_tab[4097];
 
-void mcx_cm_init(void) {
+static void init_tables(void) {
     for (int i = 0; i <= 4096; i++) {
         float p = (float)i / 4096.0f;
         if (p < 0.0001f) p = 0.0001f;
@@ -645,7 +644,7 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
 
 /* ── Compress / Decompress ─────────────────────────────────────── */
 
-size_t mcx_cm_compress(uint8_t *dst, size_t cap,
+static size_t cm_compress(uint8_t *dst, size_t cap,
                           const uint8_t *src, size_t size) {
     if (cap < 8) return 0;
     dst[0]=size&0xFF; dst[1]=(size>>8)&0xFF;
@@ -688,7 +687,7 @@ size_t mcx_cm_compress(uint8_t *dst, size_t cap,
     return comp;
 }
 
-size_t mcx_cm_decompress(uint8_t *dst, size_t cap,
+static size_t cm_decompress(uint8_t *dst, size_t cap,
                             const uint8_t *src, size_t src_size) {
     if (src_size < 4) return 0;
     size_t orig = (size_t)src[0] | ((size_t)src[1]<<8) |
@@ -733,3 +732,49 @@ size_t mcx_cm_decompress(uint8_t *dst, size_t cap,
 
 /* ── Main ──────────────────────────────────────────────────────── */
 
+int main(int argc, char **argv) {
+    init_tables();
+    if (argc < 2) { fprintf(stderr, "Usage: %s <file>\n", argv[0]); return 1; }
+    
+    FILE *f = fopen(argv[1], "rb");
+    if (!f) { perror("open"); return 1; }
+    fseek(f, 0, SEEK_END); size_t size = ftell(f); fseek(f, 0, SEEK_SET);
+    uint8_t *data = malloc(size);
+    if (fread(data, 1, size, f) != size) { fclose(f); free(data); return 1; }
+    fclose(f);
+    
+    printf("=== CM v3 (StateMap) ===\n");
+    printf("Input: %s (%zu bytes)\n\n", argv[1], size);
+    
+    size_t cap = size + size/4 + 1024;
+    uint8_t *comp = malloc(cap);
+    
+    clock_t t0 = clock();
+    size_t cs = cm_compress(comp, cap, data, size);
+    double ct = (double)(clock()-t0)/CLOCKS_PER_SEC;
+    
+    printf("Compressed: %zu bytes (%.4f bpb, %.3fx)\n", cs, cs*8.0/size, (double)size/cs);
+    printf("Compress: %.1f KB/s (%.2fs)\n\n", size/1024.0/ct, ct);
+    
+    uint8_t *dec = malloc(size);
+    t0 = clock();
+    size_t ds = cm_decompress(dec, size, comp, cs);
+    double dt = (double)(clock()-t0)/CLOCKS_PER_SEC;
+    
+    int ok = (ds == size && memcmp(data, dec, size) == 0);
+    printf("Roundtrip: %s\n", ok ? "✅ PASS" : "❌ FAIL");
+    printf("Decompress: %.1f KB/s (%.2fs)\n\n", size/1024.0/dt, dt);
+    
+    if (!ok && ds == size) {
+        for (size_t i = 0; i < size; i++)
+            if (data[i] != dec[i]) {
+                printf("Diff at %zu: want 0x%02X got 0x%02X\n", i, data[i], dec[i]);
+                break;
+            }
+    }
+    
+    printf("Baselines: CM-v2 44943 | MCX-L12 43154 (3.52x) | bzip2 43207 | PAQ8 ~40000\n");
+    
+    free(data); free(comp); free(dec);
+    return ok ? 0 : 1;
+}

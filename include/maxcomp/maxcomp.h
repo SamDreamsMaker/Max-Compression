@@ -74,7 +74,7 @@ MCXAPI const char* mcx_get_error_name(size_t result);
 
 #define MCX_LEVEL_MIN       1
 #define MCX_LEVEL_DEFAULT   3
-#define MCX_LEVEL_MAX      26
+#define MCX_LEVEL_MAX      28
 
 /* ═══════════════════════════════════════════════════════════════════════
  *  Simple API — Single-shot, in-memory compression

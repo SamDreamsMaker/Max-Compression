@@ -2712,8 +2712,8 @@ int main(int argc, char* argv[])
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
                 level = atoi(argv[++i]);
-                if (level < 1 || level > 26) {
-                    fprintf(stderr, "Error: invalid level %d (must be 1-26)\n"
+                if (level < 1 || level > 28) {
+                    fprintf(stderr, "Error: invalid level %d (must be 1-28)\n"
                             "  Recommended: --fast (L3), --default (L6), --best (L20)\n", level);
                     return 1;
                 }

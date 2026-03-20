@@ -32,6 +32,7 @@ preprocess/nibble_split.c
     entropy/adaptive_ac.c
     entropy/multi_rans.c
     entropy/range_coder.c
+    cm/cm.c
     external/divsufsort/divsufsort.c
     external/divsufsort/sssort.c
     external/divsufsort/trsort.c
