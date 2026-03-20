@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 31)
+- **Branchless Huffman hints** — added `__builtin_expect` branch hints to `HUFF_DECODE_ONE` macro for fast-path (≤9-bit codes). No measurable speed change (106.8 MB/s) — branch predictor already correctly predicts 99%+ fast-path hits.
+- **`mcx bench --compare-self REF`** — compress input at specified level, compare output size against a reference .mcx file. Reports MATCH/IMPROVED/REGRESSION with byte delta and percentage. Returns exit code 1 on regression for CI integration.
+- **`--adaptive-level --best` composition** — naturally composes: `--adaptive-level` picks level from entropy analysis, `--level-scan` overrides with empirically best if both specified. Documented in help text.
+- **Memory profiling: L1 vs L6 vs L12 on mozilla (51MB)** — compress: L1=137.7MB, L6=133.7MB, L12=571.6MB. Decompress: L1=96MB, L6=93.5MB, L12=532MB. L12 uses 4-5× more due to BWT suffix array and LF-mapping arrays.
+- **Integration tests** — coverage for `--output` with `--format json`/`--format csv` and `--compare-self` MATCH verification.
+- **Man page + completions update** — `--output` (bench) documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 30)
 - **Huffman uint64 bit buffer** — widened bit buffer from uint32_t to uint64_t, raising refill threshold to 56 bits. Reduces refill frequency but no measurable speed change on dickens L6 (106.7 MB/s) — LZ token parsing dominates.
 - **`mcx bench --output FILE`** — write benchmark results to a file in append mode, useful for collecting results over time and comparing across builds.
