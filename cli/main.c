@@ -64,6 +64,8 @@ static void print_usage(void)
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
         "  mcx bench      [-l LEVEL] [--compare] <input>  # benchmark all (or specific) levels\n"
         "  mcx compare    <input>                   # alias for bench\n"
+        "  mcx upgrade    [-l LEVEL] <file.mcx>    # recompress at different level\n"
+        "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
         "  mcx test                                # run self-tests\n"
         "  mcx version [--build]                   # detailed build info\n"
         "  mcx --version\n"
@@ -72,6 +74,7 @@ static void print_usage(void)
         "Aliases:\n"
         "  decompress → extract, x, d\n"
         "  bench → compare\n"
+        "  upgrade → recompress\n"
         "\n"
         "Levels (default: %d):\n"
         "  L1-L3   Fast LZ77 (speed priority)\n"
@@ -2151,6 +2154,195 @@ int main(int argc, char* argv[])
                fail ? " — FAILURES DETECTED" : " — all OK ✓");
         return fail > 0 ? 1 : 0;
 
+    } else if (strcmp(argv[1], "upgrade") == 0 || strcmp(argv[1], "recompress") == 0) {
+        /* Re-compress an .mcx file at a different level (decompress+recompress in one step) */
+        int new_level = MCX_LEVEL_DEFAULT;
+        int quiet = 0, force = 0;
+        const char* input_file = NULL;
+        const char* output_path = NULL;
+        for (int i = 2; i < argc; i++) {
+            if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
+                new_level = atoi(argv[++i]);
+                if (new_level < MCX_LEVEL_MIN || new_level > MCX_LEVEL_MAX) {
+                    fprintf(stderr, "Error: level must be %d-%d\n", MCX_LEVEL_MIN, MCX_LEVEL_MAX);
+                    return 1;
+                }
+            } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
+                quiet = 1;
+            } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--force") == 0) {
+                force = 1;
+            } else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) {
+                output_path = argv[++i];
+            } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
+                if (i + 1 < argc) g_threads = atoi(argv[++i]);
+            } else if (!input_file) {
+                input_file = argv[i];
+            }
+        }
+        if (!input_file) {
+            fprintf(stderr, "Usage: mcx upgrade [-l LEVEL] [-o output.mcx] <input.mcx>\n");
+            return 1;
+        }
+#ifdef _OPENMP
+        if (g_threads > 0) omp_set_num_threads(g_threads);
+#endif
+        /* Read compressed input */
+        size_t src_size;
+        uint8_t* src = read_file(input_file, &src_size);
+        if (!src) return 1;
+
+        /* Get frame info for the old level */
+        mcx_frame_info old_info;
+        size_t r = mcx_get_frame_info(&old_info, src, src_size);
+        if (mcx_is_error(r)) {
+            fprintf(stderr, "Error: '%s' is not a valid MCX file\n", input_file);
+            free(src); return 1;
+        }
+
+        if ((int)old_info.level == new_level && !force) {
+            if (!quiet) printf("'%s' is already at level %d (use -f to force recompress)\n",
+                               input_file, new_level);
+            free(src); return 0;
+        }
+
+        /* Decompress */
+        size_t orig_size = (size_t)old_info.original_size;
+        uint8_t* decompressed = (uint8_t*)malloc(orig_size + 1024);
+        if (!decompressed) { fprintf(stderr, "Error: out of memory\n"); free(src); return 1; }
+
+        size_t dsz = mcx_decompress(decompressed, orig_size + 1024, src, src_size);
+        if (mcx_is_error(dsz)) {
+            fprintf(stderr, "Error: decompression failed: %s\n", mcx_get_error_name(dsz));
+            free(src); free(decompressed); return 1;
+        }
+
+        /* Re-compress at new level */
+        size_t comp_cap = mcx_compress_bound(dsz);
+        uint8_t* compressed = (uint8_t*)malloc(comp_cap);
+        if (!compressed) { fprintf(stderr, "Error: out of memory\n"); free(src); free(decompressed); return 1; }
+
+        double t0 = get_time_sec();
+        size_t csz = mcx_compress(compressed, comp_cap, decompressed, dsz, new_level);
+        double dt = get_time_sec() - t0;
+
+        if (mcx_is_error(csz)) {
+            fprintf(stderr, "Error: recompression failed: %s\n", mcx_get_error_name(csz));
+            free(src); free(decompressed); free(compressed); return 1;
+        }
+
+        /* Verify roundtrip */
+        uint8_t* verify_buf = (uint8_t*)malloc(dsz + 1024);
+        if (verify_buf) {
+            size_t vsz = mcx_decompress(verify_buf, dsz + 1024, compressed, csz);
+            if (mcx_is_error(vsz) || vsz != dsz || memcmp(decompressed, verify_buf, dsz) != 0) {
+                fprintf(stderr, "Error: roundtrip verification failed after recompression!\n");
+                free(src); free(decompressed); free(compressed); free(verify_buf);
+                return 1;
+            }
+            free(verify_buf);
+        }
+
+        /* Determine output path */
+        const char* out = output_path ? output_path : input_file;
+
+        /* Write output */
+        FILE* fp = fopen(out, "wb");
+        if (!fp) {
+            fprintf(stderr, "Error: cannot write '%s': %s\n", out, strerror(errno));
+            free(src); free(decompressed); free(compressed); return 1;
+        }
+        fwrite(compressed, 1, csz, fp);
+        fclose(fp);
+
+        if (!quiet) {
+            long long saved = (long long)src_size - (long long)csz;
+            printf("Upgraded '%s': L%u → L%d, %zu → %zu bytes",
+                   input_file, old_info.level, new_level, src_size, csz);
+            if (saved > 0)
+                printf(" (saved %lld bytes, %.1f%%)", saved, 100.0 * saved / src_size);
+            else if (saved < 0)
+                printf(" (grew %lld bytes)", -saved);
+            printf(", %.1f MB/s\n", dsz / dt / 1048576.0);
+        }
+
+        free(src); free(decompressed); free(compressed);
+        return 0;
+
+    } else if (strcmp(argv[1], "pipe") == 0 ||
+               (argc == 1) ||
+               (argc >= 2 && strcmp(argv[1], "-") == 0)) {
+        /* Pipe mode: read from stdin, write to stdout
+         * mcx pipe [-l LEVEL]     — compress stdin → stdout
+         * mcx pipe -d             — decompress stdin → stdout
+         */
+        int pipe_level = MCX_LEVEL_DEFAULT;
+        int pipe_decompress = 0;
+        for (int i = 2; i < argc; i++) {
+            if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
+                pipe_level = atoi(argv[++i]);
+            } else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--decompress") == 0) {
+                pipe_decompress = 1;
+            }
+        }
+
+        /* Read all of stdin into memory */
+        size_t stdin_cap = 1024 * 1024; /* 1 MB initial */
+        size_t stdin_len = 0;
+        uint8_t* stdin_buf = (uint8_t*)malloc(stdin_cap);
+        if (!stdin_buf) { fprintf(stderr, "Error: out of memory\n"); return 1; }
+
+        while (!feof(stdin)) {
+            if (stdin_len >= stdin_cap) {
+                stdin_cap *= 2;
+                uint8_t* tmp = (uint8_t*)realloc(stdin_buf, stdin_cap);
+                if (!tmp) { fprintf(stderr, "Error: out of memory\n"); free(stdin_buf); return 1; }
+                stdin_buf = tmp;
+            }
+            size_t n = fread(stdin_buf + stdin_len, 1, stdin_cap - stdin_len, stdin);
+            if (n == 0) break;
+            stdin_len += n;
+        }
+
+        if (stdin_len == 0) {
+            fprintf(stderr, "Error: no data on stdin\n");
+            free(stdin_buf); return 1;
+        }
+
+        if (pipe_decompress) {
+            /* Decompress */
+            unsigned long long orig = mcx_get_decompressed_size(stdin_buf, stdin_len);
+            if (orig == 0) {
+                fprintf(stderr, "Error: cannot determine decompressed size from stdin data\n");
+                free(stdin_buf); return 1;
+            }
+            uint8_t* out = (uint8_t*)malloc((size_t)orig + 1024);
+            if (!out) { fprintf(stderr, "Error: out of memory\n"); free(stdin_buf); return 1; }
+
+            size_t dsz = mcx_decompress(out, (size_t)orig + 1024, stdin_buf, stdin_len);
+            if (mcx_is_error(dsz)) {
+                fprintf(stderr, "Error: decompression failed: %s\n", mcx_get_error_name(dsz));
+                free(stdin_buf); free(out); return 1;
+            }
+            fwrite(out, 1, dsz, stdout);
+            free(out);
+        } else {
+            /* Compress */
+            size_t bound = mcx_compress_bound(stdin_len);
+            uint8_t* out = (uint8_t*)malloc(bound);
+            if (!out) { fprintf(stderr, "Error: out of memory\n"); free(stdin_buf); return 1; }
+
+            size_t csz = mcx_compress(out, bound, stdin_buf, stdin_len, pipe_level);
+            if (mcx_is_error(csz)) {
+                fprintf(stderr, "Error: compression failed: %s\n", mcx_get_error_name(csz));
+                free(stdin_buf); free(out); return 1;
+            }
+            fwrite(out, 1, csz, stdout);
+            free(out);
+        }
+
+        free(stdin_buf);
+        return 0;
+
     } else {
         fprintf(stderr, "Error: unknown command '%s'\n", argv[1]);
         /* Suggest closest match for common typos */
@@ -2161,7 +2353,7 @@ int main(int argc, char* argv[])
         else if (strcmp(argv[1], "i") == 0 || strstr(argv[1], "header") || strstr(argv[1], "stat"))
             fprintf(stderr, "  Did you mean: mcx info?\n");
         else
-            fprintf(stderr, "  Available commands: compress, decompress, info, cat, bench, test\n");
+            fprintf(stderr, "  Available commands: compress, decompress, info, cat, bench, test, upgrade, pipe\n");
         return 1;
     }
 }
