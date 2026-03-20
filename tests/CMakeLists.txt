@@ -143,3 +143,7 @@ set_tests_properties(split_roundtrip PROPERTIES TIMEOUT 30)
 add_test(NAME preserve_mtime
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_preserve_mtime.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(preserve_mtime PROPERTIES TIMEOUT 30)
+
+add_test(NAME bench_flags
+    COMMAND ${CMAKE_SOURCE_DIR}/tests/test_bench_flags.sh ${CMAKE_BINARY_DIR}/bin/mcx)
+set_tests_properties(bench_flags PROPERTIES TIMEOUT 120)
