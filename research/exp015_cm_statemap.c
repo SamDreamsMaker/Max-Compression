@@ -548,7 +548,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
     
-    uint16_t final = sse_map(&cm->sse, ((cm->partial << 2) | bp) & (SSE_CTXS-1), mp);
+    uint16_t final = sse_map(&cm->sse, ((cm->prev[0] >> 4) << 5 | (cm->partial & 0xF) << 1 | (bp >> 2)) & (SSE_CTXS-1), mp);
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
@@ -597,7 +597,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr);
     }
     cm->total_bits++;
-    sse_update(&cm->sse, ((cm->partial << 2) | bp) & (SSE_CTXS-1), mp, bit);
+    sse_update(&cm->sse, ((cm->prev[0] >> 4) << 5 | (cm->partial & 0xF) << 1 | (bp >> 2)) & (SSE_CTXS-1), mp, bit);
     
     cm->partial = (cm->partial << 1) | bit;
 }
