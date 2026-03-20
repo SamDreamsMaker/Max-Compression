@@ -205,3 +205,25 @@ Binary data (x-ray, sao) sees minimal improvement. L6 is strictly better than L1
 both ratio and decompress speed; L1 only wins on compress speed.
 Speed: L3 ~4% slower compress (7.5 vs 7.8 MB/s on alice29), negligible decompress difference.
 Best gains on text-heavy/structured data (xml, nci, reymont). Minimal on binary (sao, x-ray).
+
+## L9 Decompress Profiling
+
+L9 decompresses **8× slower** than L6 on dickens (13.0 vs 105.5 MB/s). Both use LZ_HC
+strategy (same LZ77 decompressor), but differ in entropy coding:
+
+- **L6** → rANS entropy coder (block type 0xA8): simple table-based decode, ~100+ MB/s
+- **L9** → Adaptive AC entropy coder (block type 0xAE): arithmetic coding with model
+  updates during decode, ~13 MB/s
+
+The trial system at L9 picks Adaptive AC because it compresses the LZ token stream better
+(+3.6% ratio on dickens), but at a severe decompress speed cost. On alice29 (small file),
+both L6 and L9 use rANS and decode at ~90 MB/s — the issue is data-dependent.
+
+**Root cause:** Adaptive AC is an order-0 arithmetic coder that updates probability tables
+per-symbol during decode. This has:
+1. Serial dependency chain (each symbol depends on updated state)
+2. No table lookup parallelism (unlike rANS which pre-computes tables)
+3. Branch-heavy update logic per symbol
+
+**Potential fix (v3.0):** Add `--fast-decode` flag or decompress-speed-aware trial that
+penalizes Adaptive AC unless the ratio gain exceeds a threshold (e.g. >5%).
