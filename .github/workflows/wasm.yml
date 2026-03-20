@@ -1,0 +1,122 @@
+name: WASM Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.51
+
+      - name: Build WASM module
+        run: |
+          mkdir -p build-wasm
+          cd build-wasm
+          emcmake cmake -S .. -B . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMCX_BUILD_CLI=OFF \
+            -DMCX_BUILD_TESTS=OFF
+          emmake make maxcomp_static -j$(nproc)
+
+          emcc -O3 -s WASM=1 \
+            -s EXPORTED_FUNCTIONS='["_mcx_compress","_mcx_decompress","_mcx_compress_bound","_mcx_version_string","_mcx_is_error","_mcx_get_decompressed_size","_malloc","_free"]' \
+            -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString"]' \
+            -s ALLOW_MEMORY_GROWTH=1 \
+            -s MODULARIZE=1 \
+            -s EXPORT_NAME='MaxCompression' \
+            -I ../include \
+            lib/libmaxcomp.a \
+            -o ../wasm/maxcomp.js
+
+      - name: Verify WASM output
+        run: |
+          ls -lh wasm/maxcomp.js wasm/maxcomp.wasm
+          echo "WASM module size: $(stat -c%s wasm/maxcomp.wasm) bytes"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Roundtrip test in Node.js
+        run: |
+          cat > /tmp/test_wasm.mjs << 'SCRIPT'
+          import { readFileSync } from 'fs';
+          import { createRequire } from 'module';
+          const require = createRequire(import.meta.url);
+
+          // Load the WASM module
+          const factory = require('./wasm/maxcomp.js');
+          const MCX = await factory();
+
+          // Wrap C functions
+          const compress = MCX.cwrap('mcx_compress', 'number',
+            ['number', 'number', 'number', 'number', 'number']);
+          const decompress = MCX.cwrap('mcx_decompress', 'number',
+            ['number', 'number', 'number', 'number']);
+          const compressBound = MCX.cwrap('mcx_compress_bound', 'number', ['number']);
+          const isError = MCX.cwrap('mcx_is_error', 'number', ['number']);
+          const versionString = MCX.cwrap('mcx_version_string', 'string', []);
+
+          console.log('MCX WASM version:', versionString());
+
+          // Test data
+          const testCases = [
+            { name: 'repeated text', data: Buffer.from('Hello World! '.repeat(1000)) },
+            { name: 'sequential bytes', data: Buffer.from(Array.from({length: 4096}, (_, i) => i & 0xFF)) },
+            { name: 'single byte', data: Buffer.alloc(1000, 0x42) },
+            { name: 'small input', data: Buffer.from('abc') },
+          ];
+
+          for (const { name, data } of testCases) {
+            const srcSize = data.length;
+            const dstCap = compressBound(srcSize);
+
+            // Allocate WASM memory
+            const srcPtr = MCX._malloc(srcSize);
+            const dstPtr = MCX._malloc(dstCap);
+            MCX.HEAPU8.set(data, srcPtr);
+
+            // Compress
+            const compSize = compress(dstPtr, dstCap, srcPtr, srcSize, 6);
+            if (isError(compSize)) throw new Error(`Compress failed: ${name}`);
+
+            // Decompress
+            const decPtr = MCX._malloc(srcSize + 1024);
+            const decSize = decompress(decPtr, srcSize + 1024, dstPtr, compSize);
+            if (isError(decSize)) throw new Error(`Decompress failed: ${name}`);
+            if (decSize !== srcSize) throw new Error(`Size mismatch: ${name} (${decSize} != ${srcSize})`);
+
+            // Verify
+            const result = Buffer.from(MCX.HEAPU8.slice(decPtr, decPtr + decSize));
+            if (!data.equals(result)) throw new Error(`Data mismatch: ${name}`);
+
+            const ratio = (srcSize / compSize).toFixed(2);
+            console.log(`OK: ${name} — ${srcSize} -> ${compSize} (${ratio}x)`);
+
+            MCX._free(srcPtr);
+            MCX._free(dstPtr);
+            MCX._free(decPtr);
+          }
+
+          console.log('All WASM roundtrip tests passed!');
+          SCRIPT
+          node /tmp/test_wasm.mjs
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-module
+          path: |
+            wasm/maxcomp.js
+            wasm/maxcomp.wasm
+          retention-days: 30
