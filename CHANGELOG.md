@@ -4,6 +4,13 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 18)
+- **`mcx bench --percentile`** — report p5/p50/p95 speed distribution when iterations ≥ 5. Provides a full picture of benchmark variance alongside mean/median.
+- **`mcx compress --exclude GLOB`** — skip files matching a glob pattern when using `-r` recursive mode (e.g. `--exclude '*.mcx'` or `--exclude '*.log'`).
+- **Integration tests** — coverage for `--median` and `--percentile` bench flags.
+- **L12 vs L14 analysis** — tested on dickens: L12/L13/L14 produce byte-identical output (2497882 bytes). All use MCX_STRATEGY_DEFAULT with same 64MB block size and entropy coding. No differentiation exists between L12-L14.
+- **Man page + completions update** — `--percentile` and `--exclude` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 17)
 - **Adaptive hash table size for L1** — scale hash entries with input size (small files get smaller table, better cache usage). Tightened greedy multiplier from 4× to 2×, same ratio (2.15x alice29).
 - **`mcx bench --median`** — report median instead of mean when iterations > 1 (more robust to outliers).
