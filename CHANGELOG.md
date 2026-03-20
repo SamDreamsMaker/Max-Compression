@@ -4,6 +4,16 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 11)
+- **CM-rANS early exit** — skip CM-rANS trial when single rANS is already smaller than multi-table (reduces entropy encode time at L12+).
+- **`mcx bench --size`** — benchmark on a truncated prefix of input (e.g. `--size 64K` for quick tests).
+- **`mcx compress --split N`** — split compressed output into N-byte chunks (e.g. `--split 10M` for large archives).
+- **Unrolled MTF decode** — switch-based fast path for positions 0-3 (~85%+ of BWT+MTF output) with memmove fallback for pos≥4.
+- **Man page + completions update** — all Batch 11 flags documented.
+
+### Skipped (Batch 11)
+- **Radix sort for BWT** — BWT already uses SA-IS (O(n) linear time) or libdivsufsort; radix sort wouldn't improve.
+
 ### Added (Batch 10)
 - **`mcx bench --iterations N`** — run N compress/decompress iterations and average (default: 1, or 3 for --decode-only).
 - **Lazy matching for L2-L3** — check next position's match before emitting current; L2/L3 2.26x vs L1 2.15x on alice29 (+5% ratio, -6% speed tradeoff).
