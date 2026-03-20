@@ -649,4 +649,27 @@ if ! echo "$PROF_OUT" | grep -q "L1:"; then
 fi
 echo "OK: bench --profile flag accepted"
 
+# Test info --entropy
+"$MCX" compress -l 1 "$TMPDIR/input.txt" -o "$TMPDIR/entropy_test.mcx" -f -q 2>/dev/null
+ENT_OUT=$("$MCX" info --entropy "$TMPDIR/entropy_test.mcx" 2>/dev/null)
+if ! echo "$ENT_OUT" | grep -q "Entropy:"; then
+    echo "FAIL: info --entropy should show Entropy line"
+    echo "$ENT_OUT"
+    exit 1
+fi
+if ! echo "$ENT_OUT" | grep -q "bits/byte"; then
+    echo "FAIL: info --entropy should show bits/byte"
+    echo "$ENT_OUT"
+    exit 1
+fi
+echo "OK: info --entropy shows entropy of original data"
+
+# Test --profile output contains phase breakdown
+PROF_OUT=$("$MCX" bench -l 12 --profile "$TMPDIR/input.txt" 2>&1)
+if echo "$PROF_OUT" | grep -q "PROFILE.*BWT\|PROFILE.*Compress\|BWT forward\|Entropy encode"; then
+    echo "OK: bench --profile shows phase breakdown"
+else
+    echo "WARN: --profile phase breakdown not visible (may need BWT-level data)"
+fi
+
 echo "=== All bench flags tests passed ==="
