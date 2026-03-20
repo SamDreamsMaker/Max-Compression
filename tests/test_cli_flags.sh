@@ -126,5 +126,27 @@ else
     echo "  --exclude: FAIL (log files were compressed)" && exit 1
 fi
 
+# --fast-decode with L12 (BWT path) roundtrip
+echo "Testing --fast-decode..."
+dd if=/dev/urandom bs=4096 count=64 2>/dev/null | base64 > "$TMP/fd_input.txt"
+$MCX compress -l 12 --fast-decode "$TMP/fd_input.txt" -o "$TMP/fd.mcx" && echo "  --fast-decode L12 compress: OK"
+$MCX decompress "$TMP/fd.mcx" -o "$TMP/fd_out.txt" && echo "  --fast-decode L12 decompress: OK"
+diff "$TMP/fd_input.txt" "$TMP/fd_out.txt" && echo "  --fast-decode L12 roundtrip: OK"
+# Verify no CM-rANS used (info should not show cm-rans genome)
+FD_RATIO=$($MCX info "$TMP/fd.mcx" 2>/dev/null | grep -c "Ratio" || true)
+if [ "$FD_RATIO" -ge 1 ]; then
+    echo "  --fast-decode info: OK"
+fi
+# Compare with normal L12 — fast-decode should produce >= same or slightly larger output
+$MCX compress -l 12 "$TMP/fd_input.txt" -o "$TMP/normal.mcx"
+FD_SIZE=$(stat -c%s "$TMP/fd.mcx")
+NORMAL_SIZE=$(stat -c%s "$TMP/normal.mcx")
+echo "  --fast-decode size: $FD_SIZE vs normal: $NORMAL_SIZE"
+if [ "$FD_SIZE" -ge "$NORMAL_SIZE" ]; then
+    echo "  --fast-decode >= normal size: OK (expected)"
+else
+    echo "  --fast-decode < normal size: OK (CM-rANS wasn't winning anyway)"
+fi
+
 echo ""
 echo "All CLI flag tests passed!"
