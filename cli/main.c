@@ -24,6 +24,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <utime.h>
+#include <fnmatch.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
 #include "../lib/optimizer/genetic.h"
@@ -97,6 +98,7 @@ static void print_usage(void)
         "  -k, --keep      Keep original file (default, for gzip compat)\n"
         "      --delete    Delete source file after successful operation\n"
         "  -r, --recursive Recurse into directories\n"
+        "  --exclude GLOB  Skip files matching glob pattern (with -r)\n"
         "  -c, --stdout    Write output to stdout\n"
         "  -q, --quiet     Suppress non-error output\n"
         "  -v, --verbose   Show extra info (peak memory usage)\n"
@@ -236,6 +238,7 @@ static int g_preserve_mtime = 0; /* Preserve source file mtime on output */
 static double g_min_ratio = 0.0; /* Minimum ratio threshold (0=disabled) */
 static int g_atomic = 0;        /* Atomic write: use temp file + rename */
 static int g_keep_broken = 0;   /* Keep partial output on error (for debugging) */
+static const char* g_exclude_pattern = NULL; /* Glob pattern for --exclude */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -286,7 +289,8 @@ static int is_directory(const char* path) {
 }
 
 static void collect_files_recursive(const char* dir_path, file_list_t* fl,
-                                     const char* skip_ext) {
+                                     const char* skip_ext,
+                                     const char* exclude_pattern) {
     DIR* dir = opendir(dir_path);
     if (!dir) return;
     struct dirent* entry;
@@ -297,7 +301,7 @@ static void collect_files_recursive(const char* dir_path, file_list_t* fl,
         struct stat st;
         if (stat(full_path, &st) != 0) continue;
         if (S_ISDIR(st.st_mode)) {
-            collect_files_recursive(full_path, fl, skip_ext);
+            collect_files_recursive(full_path, fl, skip_ext, exclude_pattern);
         } else if (S_ISREG(st.st_mode)) {
             /* Skip files with the given extension (e.g., skip .mcx when compressing) */
             if (skip_ext) {
@@ -306,6 +310,9 @@ static void collect_files_recursive(const char* dir_path, file_list_t* fl,
                 if (plen > elen && strcmp(full_path + plen - elen, skip_ext) == 0)
                     continue;
             }
+            /* Skip files matching --exclude glob pattern */
+            if (exclude_pattern && fnmatch(exclude_pattern, entry->d_name, 0) == 0)
+                continue;
             file_list_add(fl, full_path);
         }
     }
@@ -2192,6 +2199,8 @@ int main(int argc, char* argv[])
                 g_atomic = 1;
             } else if (strcmp(argv[i], "--keep-broken") == 0) {
                 g_keep_broken = 1;
+            } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
+                g_exclude_pattern = argv[++i];
             } else if (strcmp(argv[i], "--min-ratio") == 0 && i + 1 < argc) {
                 g_min_ratio = atof(argv[++i]);
                 if (g_min_ratio <= 0.0) {
@@ -2242,7 +2251,7 @@ int main(int argc, char* argv[])
                     file_list_free(&expanded);
                     return 1;
                 }
-                collect_files_recursive(inputs[f], &expanded, ".mcx");
+                collect_files_recursive(inputs[f], &expanded, ".mcx", g_exclude_pattern);
             } else {
                 file_list_add(&expanded, inputs[f]);
             }
@@ -2319,7 +2328,7 @@ int main(int argc, char* argv[])
                 /* For decompress, only collect .mcx files */
                 file_list_t all_files;
                 file_list_init(&all_files);
-                collect_files_recursive(inputs[f], &all_files, NULL);
+                collect_files_recursive(inputs[f], &all_files, NULL, NULL);
                 for (int j = 0; j < all_files.count; j++) {
                     size_t plen = strlen(all_files.paths[j]);
                     if (plen > 4 && strcmp(all_files.paths[j] + plen - 4, ".mcx") == 0)
