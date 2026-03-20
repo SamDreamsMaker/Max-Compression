@@ -2984,6 +2984,7 @@ int main(int argc, char* argv[])
         const char* bench_exclude = NULL;
         const char* bench_output_file = NULL;
         const char* bench_compare_self = NULL;
+        const char* bench_delta_file = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
                 bench_level = atoi(argv[++i]);
@@ -3072,6 +3073,8 @@ int main(int argc, char* argv[])
                 bench_output_file = argv[++i];
             } else if (strcmp(argv[i], "--compare-self") == 0 && i + 1 < argc) {
                 bench_compare_self = argv[++i];
+            } else if (strcmp(argv[i], "--delta") == 0 && i + 1 < argc) {
+                bench_delta_file = argv[++i];
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -3209,6 +3212,65 @@ int main(int argc, char* argv[])
             else printf(" ✗ REGRESSION\n");
             if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return (delta > 0) ? 1 : 0;
+        }
+        if (bench_delta_file) {
+            /* --delta BASELINE: save baseline or compare against it.
+             * Format: one line per level "L<N> <bytes>" */
+            size_t src_size;
+            uint8_t* src = read_file(bench_file, &src_size);
+            if (!src) { fprintf(stderr, "Error: cannot read input '%s'\n", bench_file); return 1; }
+            size_t dst_cap = mcx_compress_bound(src_size);
+            uint8_t* dst = (uint8_t*)malloc(dst_cap);
+            if (!dst) { free(src); return 1; }
+
+            /* Determine levels to test */
+            int levels[] = {1, 3, 6, 9, 12};
+            int n_levels = (bench_level > 0) ? 1 : 5;
+            if (bench_level > 0) levels[0] = bench_level;
+
+            /* Try to read existing baseline */
+            size_t baseline[MCX_LEVEL_MAX + 1];
+            memset(baseline, 0, sizeof(baseline));
+            int has_baseline = 0;
+            FILE* bf = fopen(bench_delta_file, "r");
+            if (bf) {
+                char line[128];
+                while (fgets(line, sizeof(line), bf)) {
+                    int lvl; size_t sz;
+                    if (sscanf(line, "L%d %zu", &lvl, &sz) == 2 && lvl >= 1 && lvl <= MCX_LEVEL_MAX)
+                        baseline[lvl] = sz;
+                    has_baseline = 1;
+                }
+                fclose(bf);
+            }
+
+            int regression = 0;
+            FILE* out_f = NULL;
+            if (!has_baseline) out_f = fopen(bench_delta_file, "w");
+
+            for (int li = 0; li < n_levels; li++) {
+                int level = levels[li];
+                size_t comp_size = mcx_compress(dst, dst_cap, src, src_size, level);
+                if (mcx_is_error(comp_size)) {
+                    printf("L%-2d  ERROR\n", level);
+                    continue;
+                }
+                if (has_baseline && baseline[level] > 0) {
+                    int64_t d = (int64_t)comp_size - (int64_t)baseline[level];
+                    double pct = (double)d * 100.0 / baseline[level];
+                    printf("L%-2d  %zu → %zu  %+lld (%+.2f%%)%s\n", level,
+                        baseline[level], comp_size, (long long)d, pct,
+                        d > 0 ? " ✗" : d < 0 ? " ✓" : " =");
+                    if (d > 0) regression = 1;
+                } else {
+                    printf("L%-2d  %zu (saved to baseline)\n", level, comp_size);
+                    if (out_f) fprintf(out_f, "L%d %zu\n", level, comp_size);
+                }
+            }
+            free(src); free(dst);
+            if (out_f) fclose(out_f);
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            return regression ? 1 : 0;
         }
         if (bench_repeat <= 1) {
             int r = cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header, bench_cold);
