@@ -64,7 +64,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] <input>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1405,6 +1405,11 @@ static int bench_cmp_ratio(const void* a, const void* b) {
     double rb = ((const BenchResult*)b)->ratio;
     return (rb > ra) - (rb < ra); /* descending */
 }
+static int bench_cmp_ratio_asc(const void* a, const void* b) {
+    double ra = ((const BenchResult*)a)->ratio;
+    double rb = ((const BenchResult*)b)->ratio;
+    return (ra > rb) - (ra < rb); /* ascending (worst first) */
+}
 static int bench_cmp_speed(const void* a, const void* b) {
     double sa = ((const BenchResult*)a)->comp_speed;
     double sb = ((const BenchResult*)b)->comp_speed;
@@ -1431,7 +1436,7 @@ static double percentile_val(const double* sorted, int n, double p) {
     return sorted[lo] * (1.0 - frac) + sorted[hi] * frac;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n, int use_median, int show_percentile, int brief)
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n, int worst_n, int use_median, int show_percentile, int brief)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -1689,15 +1694,19 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
     }
 
     /* Sort results if requested */
-    if (sort_mode == BENCH_SORT_RATIO)
+    if (worst_n > 0) {
+        /* --worst implies sort by ratio ascending (worst first) */
+        qsort(results, n_results, sizeof(BenchResult), bench_cmp_ratio_asc);
+    } else if (sort_mode == BENCH_SORT_RATIO)
         qsort(results, n_results, sizeof(BenchResult), bench_cmp_ratio);
     else if (sort_mode == BENCH_SORT_SPEED)
         qsort(results, n_results, sizeof(BenchResult), bench_cmp_speed);
     /* BENCH_SORT_LEVEL is already in order */
 
-    /* Print results (limit to --top N if specified) */
+    /* Print results (limit to --top N or --worst N if specified) */
     int print_count = n_results;
     if (top_n > 0 && top_n < print_count) print_count = top_n;
+    if (worst_n > 0 && worst_n < print_count) print_count = worst_n;
     for (int i = 0; i < print_count; i++) {
         BenchResult* r = &results[i];
         if (json) {
@@ -2743,6 +2752,7 @@ int main(int argc, char* argv[])
         int bench_ratio_only = 0;
         int bench_sort_mode = BENCH_SORT_LEVEL; /* default: sort by level */
         int bench_top_n = 0; /* 0 = show all results */
+        int bench_worst_n = 0; /* 0 = show all results */
         int bench_median = 0;
         int bench_percentile = 0;
         int bench_histogram = 0;
@@ -2796,6 +2806,12 @@ int main(int argc, char* argv[])
                     fprintf(stderr, "Error: --top must be >= 1\n");
                     return 1;
                 }
+            } else if (strcmp(argv[i], "--worst") == 0 && i + 1 < argc) {
+                bench_worst_n = atoi(argv[++i]);
+                if (bench_worst_n < 1) {
+                    fprintf(stderr, "Error: --worst must be >= 1\n");
+                    return 1;
+                }
             } else if (strcmp(argv[i], "--median") == 0) {
                 bench_median = 1;
             } else if (strcmp(argv[i], "--percentile") == 0) {
@@ -2829,7 +2845,7 @@ int main(int argc, char* argv[])
 #endif
         if (bench_histogram)
             return cmd_bench_histogram(bench_file, bench_level);
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_median, bench_percentile, bench_brief);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
