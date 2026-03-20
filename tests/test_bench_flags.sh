@@ -543,4 +543,36 @@ if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/ml_rt.txt" > /dev/null 2>&1; then
 fi
 echo "OK: --memory-limit roundtrip verified"
 
+# Test --delta regression detection (tamper baseline)
+echo "L1 1" > "$TMPDIR/tampered_bl.txt"
+REGR_OUT=$("$MCX" bench --delta "$TMPDIR/tampered_bl.txt" -l 1 "$TMPDIR/input.txt" 2>/dev/null) || true
+REGR_EXIT=${PIPESTATUS[0]:-$?}
+# Re-run to capture exit code properly
+"$MCX" bench --delta "$TMPDIR/tampered_bl.txt" -l 1 "$TMPDIR/input.txt" > /dev/null 2>&1 && REGR_EXIT=0 || REGR_EXIT=$?
+if [ "$REGR_EXIT" -ne 1 ]; then
+    echo "FAIL: --delta should return exit code 1 on regression, got $REGR_EXIT"
+    echo "$REGR_OUT"
+    exit 1
+fi
+if ! echo "$REGR_OUT" | grep -q "✗"; then
+    echo "FAIL: --delta should show regression marker"
+    echo "$REGR_OUT"
+    exit 1
+fi
+echo "OK: --delta regression detection works (exit code 1, ✗ marker)"
+
+# Test --save-baseline
+rm -f "$TMPDIR/explicit_bl.txt"
+SB_OUT=$("$MCX" bench --save-baseline "$TMPDIR/explicit_bl.txt" -l 1 "$TMPDIR/input.txt" 2>/dev/null)
+if [ ! -f "$TMPDIR/explicit_bl.txt" ]; then
+    echo "FAIL: --save-baseline should create file"
+    exit 1
+fi
+if ! echo "$SB_OUT" | grep -q "saved"; then
+    echo "FAIL: --save-baseline should show saved message"
+    echo "$SB_OUT"
+    exit 1
+fi
+echo "OK: --save-baseline creates file"
+
 echo "=== All bench flags tests passed ==="
