@@ -112,23 +112,40 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
         return mcx_rans_compress(dst, dst_cap, src, src_size);
     }
     
-    /* Adaptive: try 4 and 5 tables, keep the smaller result.
-     * For large data (>200KB), also try 6 tables — but only if 5 beat 4
-     * (trend suggests more tables help, so 6 might help too). */
-    size_t sz4 = mt_compress_ntables(dst, dst_cap, src, src_size, 4);
-    size_t best = sz4;
-    int five_won = 0;
+    /* Adaptive table count based on data size:
+     * Each table adds ~80-130 bytes overhead (32B bitmap + varint freqs).
+     * Fewer tables = less overhead but less specialization.
+     *
+     *   < 8KB:    try 2, 3 tables (overhead dominates at small sizes)
+     *   8-64KB:   try 3, 4 tables
+     *   64-200KB: try 4, 5 tables
+     *   > 200KB:  try 4, 5, maybe 6 tables
+     */
+    int lo_tables, hi_tables;
+    if (src_size < 8192) {
+        lo_tables = 2; hi_tables = 3;
+    } else if (src_size < 65536) {
+        lo_tables = 3; hi_tables = 4;
+    } else if (src_size < 200000) {
+        lo_tables = 4; hi_tables = 5;
+    } else {
+        lo_tables = 4; hi_tables = 5;
+    }
+    
+    size_t best_lo = mt_compress_ntables(dst, dst_cap, src, src_size, lo_tables);
+    size_t best = best_lo;
+    int hi_won = 0;
     
     uint8_t* alt = (uint8_t*)malloc(dst_cap);
     if (alt) {
-        size_t sz5 = mt_compress_ntables(alt, dst_cap, src, src_size, 5);
-        if (!mcx_is_error(sz5) && (mcx_is_error(best) || sz5 < best)) {
-            memcpy(dst, alt, sz5);
-            best = sz5;
-            five_won = 1;
+        size_t sz_hi = mt_compress_ntables(alt, dst_cap, src, src_size, hi_tables);
+        if (!mcx_is_error(sz_hi) && (mcx_is_error(best) || sz_hi < best)) {
+            memcpy(dst, alt, sz_hi);
+            best = sz_hi;
+            hi_won = 1;
         }
-        /* Try 6 tables if 5 was better than 4 (trend: more tables help) */
-        if (five_won && src_size > 200000) {
+        /* Try 6 tables if hi_tables won and data is large (>200KB) */
+        if (hi_won && src_size > 200000) {
             size_t sz6 = mt_compress_ntables(alt, dst_cap, src, src_size, 6);
             if (!mcx_is_error(sz6) && (mcx_is_error(best) || sz6 < best)) {
                 memcpy(dst, alt, sz6);
