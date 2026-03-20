@@ -4,6 +4,17 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 8)
+- **`mcx bench --warmup`** — run one warmup iteration before timing to reduce cold-cache variance.
+- **`mcx compress --no-trials`** — skip multi-strategy trial at L20+ (use first strategy, faster).
+- **8-bit context rANS** — context-mode table selection (prev byte → 256 contexts) trialed alongside group mode; decoder detects via header flag.
+- **`mcx info --blocks`** — show per-block details (offset, size, strategy, flags) in tabular format.
+- **Silesia integration test** — roundtrip 12 corpus files × 3 levels (L1/L6/L12) = 36 tests.
+- **`mcx compress --level-scan`** — try L1-L12 and pick the best ratio automatically.
+
+### Tested (Batch 8)
+- **10-bit Huffman table** — no measurable decode speed difference vs current 9-bit (93.1 vs 92.9 MB/s on dickens L6); Huffman decode is not the bottleneck.
+
 ### Added (Batch 7)
 - **Version bump to 2.2.0** — synced across CMakeLists.txt, maxcomp.h, and README badge.
 - **`mcx upgrade --in-place/-i`** — explicit shortcut to overwrite file in-place during re-compression.
