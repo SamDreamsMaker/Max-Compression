@@ -433,4 +433,30 @@ if ! echo "$COLD_OUT" | grep -q "L1:"; then
 fi
 echo "OK: bench --cold flag accepted"
 
+# Test --cold with --iterations 2
+COLD_ITER=$("$MCX" bench -l 1 --cold --iterations 2 --brief "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$COLD_ITER" | grep -q "L1:"; then
+    echo "FAIL: --cold --iterations 2 should produce benchmark output"
+    echo "$COLD_ITER"
+    exit 1
+fi
+echo "OK: bench --cold --iterations 2 works"
+
+# Test --output FILE (append mode)
+OUTFILE="$TMPDIR/bench_output.txt"
+rm -f "$OUTFILE"
+"$MCX" bench -l 1 --brief --output "$OUTFILE" "$TMPDIR/input.txt" 2>/dev/null
+"$MCX" bench -l 3 --brief --output "$OUTFILE" "$TMPDIR/input.txt" 2>/dev/null
+if [ ! -f "$OUTFILE" ]; then
+    echo "FAIL: --output should create output file"
+    exit 1
+fi
+LINE_COUNT=$(wc -l < "$OUTFILE")
+if [ "$LINE_COUNT" -lt 2 ]; then
+    echo "FAIL: --output append mode should produce at least 2 lines, got $LINE_COUNT"
+    cat "$OUTFILE"
+    exit 1
+fi
+echo "OK: bench --output FILE append mode works ($LINE_COUNT lines)"
+
 echo "=== All bench flags tests passed ==="
