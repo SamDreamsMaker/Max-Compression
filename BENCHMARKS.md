@@ -157,3 +157,9 @@ L3 uses lazy matching (check next position before emitting); L1 is greedy.
 L3 decompress is also ~3-5% faster (fewer literals, longer matches → less overhead).
 Lazy matching at L3 is a good default: significant ratio improvement at modest speed cost.
 Binary/unstructured data (sao, x-ray) sees minimal ratio gain but still no regression.
+
+**Note (L2 vs L3):** L2 and L3 currently produce byte-identical output on all 12 Silesia
+files. Both use `mcx_lz_compress_lazy()` with the same parameters. The differentiation
+between L2 and L3 exists only in name. The meaningful jump is L1→L2 (greedy→lazy).
+Best ratio gains from lazy: xml +18%, nci +9%, webster +7%, reymont +6%.
+Speed cost: ~20% slower compress, ~3-5% faster decompress (fewer tokens).
