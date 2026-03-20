@@ -180,17 +180,38 @@ void mcx_mtf_decode(uint8_t* data, size_t size)
         table[i] = (uint8_t)i;
     }
 
+    /* Unrolled MTF decode: BWT+MTF output has very skewed position
+     * distribution — pos=0 is ~40-60% of symbols, pos=1 is ~15-25%,
+     * and pos < 8 covers ~90%+. Fast-path the common cases. */
     for (size_t i = 0; i < size; i++) {
         uint8_t pos = data[i];
         uint8_t sym = table[pos];
-
-        /* Output original symbol */
         data[i] = sym;
 
-        /* Optimized move-to-front: use memmove for bulk shift */
-        if (pos > 0) {
+        switch (pos) {
+        case 0:
+            /* Already at front — no shift needed */
+            break;
+        case 1:
+            table[1] = table[0];
+            table[0] = sym;
+            break;
+        case 2:
+            table[2] = table[1];
+            table[1] = table[0];
+            table[0] = sym;
+            break;
+        case 3:
+            table[3] = table[2];
+            table[2] = table[1];
+            table[1] = table[0];
+            table[0] = sym;
+            break;
+        default:
+            /* For pos >= 4: use memmove for the bulk shift */
             memmove(table + 1, table, pos);
+            table[0] = sym;
+            break;
         }
-        table[0] = sym;
     }
 }
