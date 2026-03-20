@@ -315,16 +315,28 @@ static const char* fmt_mem(long kb, char* buf, size_t bufsz) {
 /** Compute Shannon entropy (bits/byte) of data buffer */
 static double compute_entropy(const uint8_t* data, size_t size) {
     if (size == 0) return 0.0;
-    uint32_t freq[256] = {0};
-    /* Unrolled 4× to reduce loop overhead */
+    /* Two-histogram approach: split into halves to reduce cache-line write
+     * conflicts when consecutive bytes map to same freq[] slot.
+     * Both arrays fit in L1 (2×1KB). Merge at end. */
+    uint32_t f1[256] = {0}, f2[256] = {0};
+    size_t half = size / 2;
     size_t i = 0;
-    for (; i + 3 < size; i += 4) {
-        freq[data[i]]++;
-        freq[data[i+1]]++;
-        freq[data[i+2]]++;
-        freq[data[i+3]]++;
+    for (; i + 3 < half; i += 4) {
+        f1[data[i]]++;
+        f1[data[i+1]]++;
+        f1[data[i+2]]++;
+        f1[data[i+3]]++;
     }
-    for (; i < size; i++) freq[data[i]]++;
+    for (; i < half; i++) f1[data[i]]++;
+    for (; i + 3 < size; i += 4) {
+        f2[data[i]]++;
+        f2[data[i+1]]++;
+        f2[data[i+2]]++;
+        f2[data[i+3]]++;
+    }
+    for (; i < size; i++) f2[data[i]]++;
+    uint32_t freq[256];
+    for (int s = 0; s < 256; s++) freq[s] = f1[s] + f2[s];
     double entropy = 0.0;
     for (int s = 0; s < 256; s++) {
         if (freq[s] == 0) continue;
