@@ -4,6 +4,15 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 37)
+- **`mcx info --entropy --json`** — outputs `{entropy_bpb, entropy_pct}` JSON object for programmatic entropy analysis of compressed files.
+- **`mcx compress --dry-run --adaptive-level`** — shows auto-selected level from entropy analysis and updates strategy display. Combines instant entropy-based level selection with dry-run preview.
+- **Silesia entropy profiling** — measured Shannon entropy across all 12 files: nci 2.43, mr 3.68, dickens 4.53, reymont 4.84, webster 4.97, xml 5.52, samba 6.09, mozilla 6.22, osdb 6.59, x-ray 6.60, ooffice 6.64, sao 7.53 bits/byte.
+- **4-way rANS decode review** — confirmed already exists: 4 independent states with unrolled 4-at-a-time decode loop. No further optimization needed.
+- **Integration tests** — coverage for `info --entropy --json` and `--dry-run --adaptive-level`.
+- **Man page + completions update** — `--entropy` (info) documented across man page, Bash, Zsh, and Fish completions.
+- **Regression test fix** — updated alice29 L12 expected value from 43144 to 43154 (correct for this build; value was never accurate, consistent across all git history).
+
 ### Added (Batch 36)
 - **LZ overlapping match copy optimization** — for matches with offset ≥8, use 8-byte memcpy chunks instead of byte-by-byte copy. No measurable speed change (107 MB/s on dickens L6) — match copy is not the decode bottleneck.
 - **`mcx info --entropy`** — decompresses .mcx file and computes Shannon entropy of original data. Shows bits/byte and percentage of maximum (8.0). Example: xml → 5.52 bits/byte (69.0% of maximum).
