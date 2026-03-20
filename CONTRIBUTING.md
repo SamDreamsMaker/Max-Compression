@@ -151,6 +151,128 @@ File          Before        After
 mozilla       0.3 MB/s      0.4 MB/s (+33%)
 ```
 
+## Running Benchmarks
+
+### Quick Benchmark (Single File)
+
+```bash
+# Benchmark all default levels on a file
+./build/bin/mcx bench corpora/alice29.txt
+
+# Benchmark a specific level
+./build/bin/mcx bench -l 12 corpora/alice29.txt
+```
+
+### Comparison Benchmark (MCX vs Others)
+
+```bash
+# Run the comparison script (requires gzip, bzip2, xz installed)
+./benchmarks/compare.sh corpora/alice29.txt
+
+# Full Silesia corpus comparison
+for f in corpora/silesia/*; do
+    echo "=== $(basename $f) ==="
+    ./build/bin/mcx bench -l 12 "$f"
+done
+```
+
+### Benchmark Methodology
+
+- Build with **Release** mode: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
+- Use a quiet system (close browsers, stop background services)
+- Timing is internal (`clock_gettime`), excludes I/O overhead
+- For PR comparisons: benchmark the **same file** before and after your change
+- Standard corpus files are in `corpora/` (Canterbury) and `corpora/silesia/` (Silesia)
+
+### Reporting Benchmark Results in PRs
+
+Include a table like this in your PR description:
+
+```
+File            Level   Before      After       Change
+alice29.txt     L12     43,144      42,980      -0.4% ✓
+dickens         L12     2,497,882   2,497,882   = 
+kennedy.xls     L12     20,551      20,551      =
+```
+
+## Adding New Test Patterns
+
+Tests live in `tests/`. To add a new test pattern:
+
+### 1. Add to an Existing Test File
+
+For roundtrip patterns, add to `tests/test_comprehensive.c`:
+
+```c
+/* In the test_patterns array */
+{"my_pattern_name", generate_my_pattern, MY_PATTERN_SIZE},
+```
+
+### 2. Create a New Test File
+
+```c
+// tests/test_my_feature.c
+#include <maxcomp/maxcomp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static int test_roundtrip(const uint8_t* data, size_t size, int level) {
+    size_t comp_cap = size + size / 4 + 1024;
+    uint8_t* comp = malloc(comp_cap);
+    uint8_t* decomp = malloc(size);
+
+    size_t comp_size = mcx_compress(comp, comp_cap, data, size, level);
+    if (mcx_is_error(comp_size)) { free(comp); free(decomp); return 0; }
+
+    size_t decomp_size = mcx_decompress(decomp, size, comp, comp_size);
+    if (mcx_is_error(decomp_size)) { free(comp); free(decomp); return 0; }
+
+    int ok = (decomp_size == size) && (memcmp(data, decomp, size) == 0);
+    free(comp); free(decomp);
+    return ok;
+}
+
+int main(void) {
+    // Generate test data
+    uint8_t data[4096];
+    // ... fill data ...
+
+    int levels[] = {1, 3, 6, 9, 12, 20};
+    for (int i = 0; i < 6; i++) {
+        if (!test_roundtrip(data, sizeof(data), levels[i])) {
+            fprintf(stderr, "FAIL at level %d\n", levels[i]);
+            return 1;
+        }
+    }
+    printf("All tests passed\n");
+    return 0;
+}
+```
+
+### 3. Register in CMake
+
+Add to `tests/CMakeLists.txt`:
+
+```cmake
+add_executable(test_my_feature test_my_feature.c)
+target_link_libraries(test_my_feature PRIVATE maxcomp_static)
+if(UNIX)
+    target_link_libraries(test_my_feature PRIVATE m)
+endif()
+add_test(NAME my_feature COMMAND test_my_feature)
+```
+
+### 4. Test Pattern Ideas
+
+Good patterns to test (not all are covered yet):
+
+- **Sorted data** (integers, strings)
+- **Run-heavy data** (many repeated bytes)
+- **Alternating patterns** (ABABAB...)
+- **Near-random with structure** (random + periodic signal)
+- **Real-world samples** (place in `corpora/` if small enough)
+
 ## Architecture Notes
 
 ### Adding a New Compression Strategy
