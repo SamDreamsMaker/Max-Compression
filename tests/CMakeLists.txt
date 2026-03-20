@@ -134,3 +134,8 @@ set_tests_properties(cli_flags_pipe PROPERTIES TIMEOUT 60)
 add_test(NAME silesia_roundtrip
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_silesia_roundtrip.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(silesia_roundtrip PROPERTIES TIMEOUT 600)
+
+# --split flag integration test (compress with split, cat chunks, decompress, verify)
+add_test(NAME split_roundtrip
+    COMMAND ${CMAKE_SOURCE_DIR}/tests/test_split.sh ${CMAKE_BINARY_DIR}/bin/mcx)
+set_tests_properties(split_roundtrip PROPERTIES TIMEOUT 30)
