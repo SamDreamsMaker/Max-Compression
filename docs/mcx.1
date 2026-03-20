@@ -14,6 +14,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-no\-trials\fR]
 [\fB\-\-filter\fR \fINAME\fR]
 [\fB\-\-split\fR \fISIZE\fR]
+[\fB\-\-preserve\-mtime\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -23,6 +24,7 @@ mcx \- high\-ratio lossless data compression tool
 .br
 .B mcx decompress
 [\fB\-\-verify\fR]
+[\fB\-\-preserve\-mtime\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -300,10 +302,20 @@ For \fBbench\fR: benchmark on a truncated prefix of the input file.
 Accepts suffixes: K, M (e.g. \fB\-\-size 64K\fR). Useful for quick
 tests on large files.
 .TP
+.BR \-\-memory
+For \fBbench\fR: report peak RSS (resident set size) memory usage
+alongside speed and compression ratio. Useful for evaluating
+memory/performance tradeoffs across levels.
+.TP
 .BR \-\-split =\fISIZE\fR
 For \fBcompress\fR: split compressed output into chunks of the given
 size (e.g. \fB\-\-split 10M\fR). Output files are named with a numeric
 suffix (.000, .001, etc.). Useful for large archives.
+.TP
+.BR \-\-preserve\-mtime
+For \fBcompress\fR and \fBdecompress\fR: set the output file's
+modification time to match the input file's mtime. Useful for
+backup and archival workflows.
 .TP
 .BR \-V ", " \-\-version
 Print version string and exit.
