@@ -19,6 +19,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-exclude\fR \fIGLOB\fR]
 [\fB\-\-decompress\-check\fR]
 [\fB\-\-priority\fR \fIMODE\fR]
+[\fB\-\-adaptive\-level\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -92,6 +93,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-format\fR \fIFORMAT\fR]
 [\fB\-\-brief\fR]
 [\fB\-\-repeat\fR \fIN\fR]
+[\fB\-\-warmup\-iterations\fR \fIN\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -310,7 +312,12 @@ For \fBbench\fR: output results in CSV format for automated collection.
 .TP
 .BR \-\-warmup
 For \fBbench\fR: run one warmup iteration before timing to reduce
-cold\-cache variance in benchmark results.
+cold\-cache variance in benchmark results. See also \fB\-\-warmup\-iterations\fR.
+.TP
+.BR \-\-warmup\-iterations =\fIN\fR
+For \fBbench\fR: run \fIN\fR warmup iterations instead of the default 1.
+Useful for systems with variable turbo boost or SSD caching where a
+single warmup may not be sufficient for stable cold\-start elimination.
 .TP
 .BR \-\-blocks
 For \fBinfo\fR: show per\-block details (offset, compressed size,
@@ -441,6 +448,14 @@ For \fBcompress\fR: select optimization goal that adjusts internal
 parameters. Valid values: \fBspeed\fR (enables \fB\-\-fast\-decode\fR +
 \fB\-\-no\-trials\fR), \fBratio\fR (default behavior), \fBbalanced\fR
 (enables \fB\-\-fast\-decode\fR only). Shortcut for combining multiple flags.
+.TP
+.BR \-\-adaptive\-level
+For \fBcompress\fR: analyze file entropy and auto\-select the optimal
+compression level. Entropy thresholds: >7.5 bits/byte selects L1
+(near\-random data), >7.0 selects L3, >6.0 selects L6, and ≤6.0
+selects L12 (text/structured data). Uses O(n) Shannon entropy
+calculation — instant analysis, no trial compression needed.
+Overrides \fB\-l\fR if specified.
 .TP
 .BR \-\-keep\-broken
 For \fBcompress\fR: keep partial output on error instead of deleting.
