@@ -100,4 +100,14 @@ else
     exit 1
 fi
 
+# Test --top N: with --all-levels --sort ratio --top 3, verify exactly 3 data lines
+TOP_OUT=$("$MCX" bench --all-levels --sort ratio --top 3 --ratio-only "$TMPDIR/input.txt" 2>&1)
+TOP_LINES=$(echo "$TOP_OUT" | grep "^L[0-9]" | wc -l)
+if [ "$TOP_LINES" -ne 3 ]; then
+    echo "FAIL: --top 3 should produce exactly 3 data lines, got $TOP_LINES"
+    echo "$TOP_OUT"
+    exit 1
+fi
+echo "OK: --top 3 produces exactly 3 lines"
+
 echo "=== All bench flags tests passed ==="
