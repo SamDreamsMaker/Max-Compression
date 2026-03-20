@@ -154,13 +154,19 @@ size_t mcx_multi_rans_compress(uint8_t* dst, size_t dst_cap,
             best = sz_hi;
             hi_won = 1;
         }
-        /* Try 6 tables if hi_tables won and data is large (>200KB) */
+        /* Try 6 tables if hi_tables won and data is large (>200KB). */
         if (hi_won && src_size > 200000) {
             size_t sz6 = mt_compress_ntables(alt, dst_cap, src, src_size, 6);
             if (!mcx_is_error(sz6) && (mcx_is_error(best) || sz6 < best)) {
                 memcpy(dst, alt, sz6);
                 best = sz6;
             }
+        }
+        /* Early exit: if lo_tables beat hi_tables by >1%, skip context
+         * trials with hi_tables (data prefers fewer, broader tables). */
+        if (!hi_won && !mcx_is_error(best_lo) && !mcx_is_error(sz_hi) &&
+            best_lo < sz_hi * 99 / 100) {
+            hi_tables = lo_tables;
         }
         /* Try 1-byte context-based table selection */
         if (src_size >= 256) {
