@@ -57,7 +57,7 @@ static void print_usage(void)
         "  mcx verify     <file.mcx> [original]   # verify integrity\n"
         "  mcx diff       <a.mcx> <b.mcx>         # compare two archives\n"
         "  mcx info       <input.mcx>\n"
-        "  mcx ls/list    <file.mcx> [file2.mcx ...]\n"
+        "  mcx ls/list    [--json] <file.mcx> [file2.mcx ...]\n"
         "  mcx stat       <file>                     # file statistics (entropy, bytes)\n"
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
@@ -739,11 +739,55 @@ static const char* strategy_name(uint8_t s) {
 
 /* ─── ls command ─────────────────────────────────────────────────────── */
 
-static int cmd_ls(int argc, char** argv)
+static void json_print_string(const char* s);
+
+static int cmd_ls(int argc, char** argv, int json)
 {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: mcx ls <file.mcx> [file2.mcx ...]\n");
+    /* Collect non-flag arguments as files */
+    const char* files[256];
+    int n_files = 0;
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--json") == 0) continue;
+        if (n_files < 256) files[n_files++] = argv[i];
+    }
+
+    if (n_files == 0) {
+        fprintf(stderr, "Usage: mcx ls [--json] <file.mcx> [file2.mcx ...]\n");
         return 1;
+    }
+
+    if (json) {
+        printf("[\n");
+        int first = 1;
+        int errors = 0;
+        for (int i = 0; i < n_files; i++) {
+            size_t src_size;
+            uint8_t* src = read_file(files[i], &src_size);
+            if (!src) { errors++; continue; }
+
+            mcx_frame_info info;
+            size_t r = mcx_get_frame_info(&info, src, src_size);
+            if (mcx_is_error(r)) {
+                free(src); errors++; continue;
+            }
+
+            double ratio = (info.original_size > 0)
+                ? (double)info.original_size / src_size : 0;
+
+            if (!first) printf(",\n");
+            first = 0;
+            printf("  {\n");
+            printf("    \"file\": "); json_print_string(files[i]); printf(",\n");
+            printf("    \"compressed_size\": %zu,\n", src_size);
+            printf("    \"original_size\": %llu,\n", (unsigned long long)info.original_size);
+            printf("    \"ratio\": %.4f,\n", ratio);
+            printf("    \"level\": %u,\n", info.level);
+            printf("    \"strategy\": \"%s\"\n", strategy_name(info.strategy));
+            printf("  }");
+            free(src);
+        }
+        printf("\n]\n");
+        return errors > 0 ? 1 : 0;
     }
 
     printf("%-40s %10s %10s %7s %5s %-12s\n",
@@ -751,15 +795,15 @@ static int cmd_ls(int argc, char** argv)
     printf("────────────────────────────────────────────────────────────────────────────────────────\n");
 
     int errors = 0;
-    for (int i = 2; i < argc; i++) {
+    for (int i = 0; i < n_files; i++) {
         size_t src_size;
-        uint8_t* src = read_file(argv[i], &src_size);
+        uint8_t* src = read_file(files[i], &src_size);
         if (!src) { errors++; continue; }
 
         mcx_frame_info info;
         size_t r = mcx_get_frame_info(&info, src, src_size);
         if (mcx_is_error(r)) {
-            fprintf(stderr, "%-40s  (not a valid MCX file)\n", argv[i]);
+            fprintf(stderr, "%-40s  (not a valid MCX file)\n", files[i]);
             free(src); errors++; continue;
         }
 
@@ -767,7 +811,7 @@ static int cmd_ls(int argc, char** argv)
             ? (double)info.original_size / src_size : 0;
 
         printf("%-40s %10zu %10llu %6.2fx  L%-3u %-12s\n",
-               argv[i], src_size, info.original_size,
+               files[i], src_size, (unsigned long long)info.original_size,
                ratio, info.level, strategy_name(info.strategy));
         free(src);
     }
@@ -1716,7 +1760,10 @@ int main(int argc, char* argv[])
         return cmd_info(info_input, json_flag);
 
     } else if (strcmp(argv[1], "ls") == 0 || strcmp(argv[1], "list") == 0) {
-        return cmd_ls(argc, argv);
+        int ls_json = 0;
+        for (int i = 2; i < argc; i++)
+            if (strcmp(argv[i], "--json") == 0) ls_json = 1;
+        return cmd_ls(argc, argv, ls_json);
 
     } else if (strcmp(argv[1], "cat") == 0) {
         if (argc < 3) {
