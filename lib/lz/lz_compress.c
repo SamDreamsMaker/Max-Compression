@@ -397,9 +397,10 @@ size_t mcx_lz_compress_hc(
     const uint8_t* match_limit = ip_end - MCX_LZ_LAST_LITERALS;
     const uint8_t* mflimit = ip_end - MCX_LZ_MIN_MATCH;
 
-    /* Scale chain depth with level: L4=4, L6=8, L9=16 */
     /* Scale chain depth with level: L4=4, L5-6=8, L7-8=16, L9=64 */
     int chain_depth = (level <= 4) ? 4 : (level <= 6) ? 8 : (level <= 8) ? 16 : 64;
+    /* Nice match: stop chain walk early if match >= this length (tiered) */
+    int nice_match = (level <= 4) ? 16 : (level <= 6) ? 32 : (level <= 8) ? 64 : 128;
 
     if (src_size < MCX_LZ_MIN_MATCH + MCX_LZ_LAST_LITERALS) {
         op = lz_write_last_literals(op, op_end, ip, src_size);
@@ -452,6 +453,7 @@ size_t mcx_lz_compress_hc(
                 if (ml > best_len) {
                     best_len = ml;
                     best_offset = off;
+                    if ((int)best_len >= nice_match) break; /* Good enough */
                 }
             }
             candidate = chain[candidate & chain_mask];
@@ -487,6 +489,7 @@ size_t mcx_lz_compress_hc(
                     if (ml2 > best_len2) {
                         best_len2 = ml2;
                         best_off2 = off2;
+                        if ((int)best_len2 >= nice_match) break; /* Good enough */
                     }
                 }
                 cand2 = chain[cand2 & chain_mask];
