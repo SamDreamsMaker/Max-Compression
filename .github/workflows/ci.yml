@@ -188,7 +188,7 @@ jobs:
           EOF
           gcc /tmp/test_pkgconfig.c -o /tmp/test_pkgconfig \
               $(pkg-config --cflags --libs maxcomp) -lm
-          /tmp/test_pkgconfig
+          LD_LIBRARY_PATH=/usr/local/lib /tmp/test_pkgconfig
 
       - name: Test find_package (CMake)
         run: |
@@ -211,7 +211,7 @@ jobs:
           cd /tmp/cmake_test
           cmake -S . -B build
           cmake --build build
-          ./build/test_cmake
+          LD_LIBRARY_PATH=/usr/local/lib ./build/test_cmake
 
   python-bindings:
     runs-on: ubuntu-latest

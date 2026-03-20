@@ -120,22 +120,21 @@ endif()
 add_test(NAME streaming_decompress COMMAND test_streaming_decompress)
 set_tests_properties(streaming_decompress PROPERTIES TIMEOUT 120)
 
-# Multi-file compress/decompress roundtrip (CLI integration test)
+# Shell-based integration tests (skip on Windows — no bash)
+if(NOT WIN32)
+
 add_test(NAME multifile_roundtrip
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_multifile.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(multifile_roundtrip PROPERTIES TIMEOUT 30)
 
-# CLI flags + pipe mode integration test
 add_test(NAME cli_flags_pipe
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_cli_flags.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(cli_flags_pipe PROPERTIES TIMEOUT 60)
 
-# Silesia corpus roundtrip integration test
 add_test(NAME silesia_roundtrip
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_silesia_roundtrip.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(silesia_roundtrip PROPERTIES TIMEOUT 600)
 
-# --split flag integration test (compress with split, cat chunks, decompress, verify)
 add_test(NAME split_roundtrip
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_split.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(split_roundtrip PROPERTIES TIMEOUT 30)
@@ -151,3 +150,5 @@ set_tests_properties(bench_flags PROPERTIES TIMEOUT 120)
 add_test(NAME decompress_check
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_decompress_check.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(decompress_check PROPERTIES TIMEOUT 60)
+
+endif() # NOT WIN32

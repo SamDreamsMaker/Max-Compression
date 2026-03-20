@@ -1,18 +1,24 @@
-# Valgrind suppressions for MaxCompression
+# MaxCompression Valgrind Suppressions
 # Suppress known false positives from system libraries
 
+# OpenMP runtime
 {
-   glibc_dlopen
+   omp_runtime_leak
    Memcheck:Leak
    ...
-   fun:_dl_open
+   obj:*/libomp*.so*
+}
+{
+   omp_runtime_leak2
+   Memcheck:Leak
    ...
+   obj:*/libgomp*.so*
 }
 
+# dlopen/dlclose
 {
-   glibc_dlclose
+   dlopen_leak
    Memcheck:Leak
    ...
-   fun:_dl_close
-   ...
+   fun:dlopen*
 }
