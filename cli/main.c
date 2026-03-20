@@ -63,7 +63,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] <input>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1379,7 +1379,12 @@ static int bench_cmp_level(const void* a, const void* b) {
     return ((const BenchResult*)a)->level - ((const BenchResult*)b)->level;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n)
+static int cmp_double(const void* a, const void* b) {
+    double da = *(const double*)a, db = *(const double*)b;
+    return (da > db) - (da < db);
+}
+
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size, int show_memory, int bench_all_levels, int ratio_only, int sort_mode, int top_n, int use_median)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
@@ -1518,6 +1523,18 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         if (decode_only || ratio_only) {
             /* Pre-compress once (not timed) */
             comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
+        } else if (use_median && comp_iters > 1) {
+            /* Per-iteration timing for median */
+            double* ctimes = (double*)malloc(comp_iters * sizeof(double));
+            for (int ci = 0; ci < comp_iters; ci++) {
+                double t0 = bench_time();
+                comp_size = mcx_compress(comp, comp_cap, src, src_size, level);
+                double t1 = bench_time();
+                ctimes[ci] = t1 - t0;
+            }
+            qsort(ctimes, comp_iters, sizeof(double), cmp_double);
+            comp_time = ctimes[comp_iters / 2];
+            free(ctimes);
         } else {
             double t0 = bench_time();
             for (int ci = 0; ci < comp_iters; ci++)
@@ -1539,13 +1556,26 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
         size_t dec_size = 0;
         int ok = 1;
         if (!ratio_only) {
-            double t0 = bench_time();
-            for (int di = 0; di < dec_iter_count; di++) {
-                dec_size = mcx_decompress(dec, src_size + 64, comp, comp_size);
+            if (use_median && dec_iter_count > 1) {
+                /* Per-iteration timing for median */
+                double* dtimes = (double*)malloc(dec_iter_count * sizeof(double));
+                for (int di = 0; di < dec_iter_count; di++) {
+                    double t0 = bench_time();
+                    dec_size = mcx_decompress(dec, src_size + 64, comp, comp_size);
+                    double t1 = bench_time();
+                    dtimes[di] = t1 - t0;
+                }
+                qsort(dtimes, dec_iter_count, sizeof(double), cmp_double);
+                dec_time = dtimes[dec_iter_count / 2];
+                free(dtimes);
+            } else {
+                double t0 = bench_time();
+                for (int di = 0; di < dec_iter_count; di++) {
+                    dec_size = mcx_decompress(dec, src_size + 64, comp, comp_size);
+                }
+                double t1 = bench_time();
+                dec_time = (t1 - t0) / dec_iter_count;
             }
-            double t1 = bench_time();
-
-            dec_time = (t1 - t0) / dec_iter_count;
             dec_speed = src_size / dec_time / 1048576.0;
 
             /* Verify */
@@ -2489,6 +2519,7 @@ int main(int argc, char* argv[])
         int bench_ratio_only = 0;
         int bench_sort_mode = BENCH_SORT_LEVEL; /* default: sort by level */
         int bench_top_n = 0; /* 0 = show all results */
+        int bench_median = 0;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
@@ -2538,6 +2569,8 @@ int main(int argc, char* argv[])
                     fprintf(stderr, "Error: --top must be >= 1\n");
                     return 1;
                 }
+            } else if (strcmp(argv[i], "--median") == 0) {
+                bench_median = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
@@ -2551,7 +2584,7 @@ int main(int argc, char* argv[])
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_median);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
