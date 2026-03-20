@@ -32,6 +32,7 @@ size_t mcx_block_size_override = 0;
 /* Skip multi-strategy trials at L20+ (use first strategy only, faster) */
 int mcx_no_trials = 0;
 int mcx_force_filter = 0;  /* 0=auto, 1=delta, 2=nibble, 3=none */
+int mcx_fast_decode = 0;   /* 1=prefer fast decoders, skip Adaptive AC */
 
 /* Helper to get effective max block size */
 static inline size_t mcx_effective_block_size(void) {
@@ -450,7 +451,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 size_t aac_cap = lz_size + lz_size / 4 + 1024;
                 uint8_t* aac_buf = (uint8_t*)malloc(aac_cap + 1);
                 size_t aac_size = 0;
-                if (aac_buf && level >= 7) { /* AAC for L7+: ~5% better ratio, slower decompress */
+                if (aac_buf && level >= 7 && !mcx_fast_decode) {
+                    /* AAC for L7+: ~5% better ratio, slower decompress.
+                     * Skipped entirely with --fast-decode. */
                     aac_size = mcx_adaptive_ac_compress(aac_buf + 1, aac_cap, lz_buf, lz_size);
                     if (aac_size > 0) aac_buf[0] = 0xAE; /* LZ16+AAC */
                 }
@@ -556,11 +559,11 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     if (rans24_size > 0) rans24_buf[0] = 0xA9; /* LZ24+rANS */
                 }
 
-                /* Also try adaptive AC on LZ24 output */
+                /* Also try adaptive AC on LZ24 output (skipped with --fast-decode) */
                 size_t aac_cap = lz_size + lz_size / 4 + 1024;
                 uint8_t* aac_buf = (uint8_t*)malloc(aac_cap + 1);
                 size_t aac_size = 0;
-                if (aac_buf) {
+                if (aac_buf && !mcx_fast_decode) {
                     aac_size = mcx_adaptive_ac_compress(aac_buf + 1, aac_cap, lz_buf, lz_size);
                     if (aac_size > 0) aac_buf[0] = 0xAF; /* LZ24+AAC */
                 }

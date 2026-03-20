@@ -108,6 +108,7 @@ static void print_usage(void)
         "  -n, --dry-run   Analyze file without compressing\n"
         "      --estimate  Estimate compressed size via sample (faster)\n"
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
+        "      --fast-decode Prefer fast decoders (skip Adaptive AC)\n"
         "      --level-scan Try L1-L20, pick best ratio automatically\n"
         "      --level-range LO-HI Try a range of levels (e.g. 1-6, L3-L12) and pick best\n"
         "      --filter F  Force preprocessing filter: auto, delta, nibble, none\n"
@@ -2290,6 +2291,9 @@ int main(int argc, char* argv[])
             } else if (strcmp(argv[i], "--no-trials") == 0) {
                 extern int mcx_no_trials;
                 mcx_no_trials = 1;
+            } else if (strcmp(argv[i], "--fast-decode") == 0) {
+                extern int mcx_fast_decode;
+                mcx_fast_decode = 1;
             } else if (strcmp(argv[i], "--level-scan") == 0) {
                 g_level_scan = 1;
             } else if (strcmp(argv[i], "--level-range") == 0 && i + 1 < argc) {
