@@ -642,8 +642,8 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                     wlog++;
                 
                 size_t lzrc_size;
-                if (level == 24) {
-                    /* Level 24: HC match finder (~3x faster, ~2-5% larger) */
+                if (level == 24 || (level == 26 && mcx_fast_decode)) {
+                    /* Level 24 or L26 with --fast-decode: HC match finder (~3x faster, ~2-5% larger) */
                     lzrc_size = mcx_lzrc_compress_fast(lzrc_buf + 1, lzrc_cap,
                                                         in + src_offset, block_src_size,
                                                         wlog, 8);
