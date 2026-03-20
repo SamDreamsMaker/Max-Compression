@@ -381,12 +381,12 @@ static inline uint8_t char_class(uint8_t c) {
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
     smap_t word, sparse13, sparse14, sparse24;
-    smap_t charclass, nibble;
+    smap_t charclass, o13; /* nibble slot reused for o13 */
     smap_t indirect, o2_word, o11; /* gap15 slot reused for o11 */
     smap_t o9, o12; /* delta/o1_nibble slots reused */
     smap_t o8;              /* order-8 */
     smap_t word2;           /* word order-2 (two consecutive words) */
-    smap_t sparse024;       /* sparse: bytes 0,2,4 */
+    smap_t o14;             /* sparse024 slot reused for o14 */
     smap_t word_cc;         /* word hash × char class */
     smap_t o1_cc;           /* order-1 × char class sequence */
     smap_t word_len;        /* word hash × word length */
@@ -401,7 +401,7 @@ typedef struct {
     sse_t apm;  /* second-stage APM with different context */
     mixer_t mx1[2048], mx2[64], mx3[8], mx4[1024], mx5[256];
     float lr;
-    uint8_t prev[12];
+    uint8_t prev[14];
     uint32_t word_hash;
     uint32_t prev_word_hash; /* hash of previous word */
     uint32_t prev2_word_hash; /* hash of word before previous */
@@ -429,7 +429,7 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     smap_init(&cm->sparse14, 1<<20);
     smap_init(&cm->sparse24, 1<<20);
     smap_init(&cm->charclass, 1<<18);
-    smap_init(&cm->nibble, 1<<18);
+    smap_init(&cm->o13, 1<<24);
     smap_init(&cm->indirect, 1<<22);
     smap_init(&cm->o2_word, 1<<22);
     smap_init(&cm->o11, 1<<24);
@@ -437,7 +437,7 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     smap_init(&cm->o12, 1<<24);
     smap_init(&cm->o8, 1<<24);
     smap_init(&cm->word2, 1<<22);
-    smap_init(&cm->sparse024, 1<<20);
+    smap_init(&cm->o14, 1<<24);
     smap_init(&cm->word_cc, 1<<22);
     smap_init(&cm->o1_cc, 1<<20);
     smap_init(&cm->word_len, 1<<22);
@@ -466,11 +466,11 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->o3); smap_free(&cm->o4); smap_free(&cm->o5);
     smap_free(&cm->o6); smap_free(&cm->o7); smap_free(&cm->word);
     smap_free(&cm->sparse13); smap_free(&cm->sparse14); smap_free(&cm->sparse24);
-    smap_free(&cm->charclass); smap_free(&cm->nibble);
+    smap_free(&cm->charclass); smap_free(&cm->o13);
     smap_free(&cm->indirect); smap_free(&cm->o2_word); smap_free(&cm->o11);
     smap_free(&cm->o9); smap_free(&cm->o12);
     smap_free(&cm->o8);
-    smap_free(&cm->word2); smap_free(&cm->sparse024);
+    smap_free(&cm->word2); smap_free(&cm->o14);
     smap_free(&cm->word_cc); smap_free(&cm->o1_cc); smap_free(&cm->word_len); smap_free(&cm->prevword_byte);
     smap_free(&cm->upper2); smap_free(&cm->o10); smap_free(&cm->word3); smap_free(&cm->word4); smap_free(&cm->run);
     match_free(&cm->match);
@@ -496,7 +496,8 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[10] = h32(((uint32_t)p[0]<<8)|p[3]) ^ par;
     ctx[11] = h32(((uint32_t)p[1]<<8)|p[3]) ^ par;
     ctx[12] = ((uint32_t)char_class(p[0])<<12)|((uint32_t)char_class(p[1])<<8)|par;
-    ctx[13] = ((uint32_t)(p[0]>>4)<<12)|((uint32_t)(p[1]>>4)<<8)|par;
+    /* order-13 */
+    ctx[13] = h32(h32(h0123 ^ ((uint32_t)p[4]<<24|p[5]<<16|p[6]<<8|p[7])) ^ h32((uint32_t)p[8]<<24|p[9]<<16|p[10]<<8|p[11]) ^ ((uint32_t)p[12]<<8)) ^ par;
     
     uint32_t o2h = h32(h01) % cm->ictx_size;
     ctx[14] = h32(((uint32_t)cm->ictx[o2h] << 8) | par);
@@ -512,7 +513,8 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     /* Word order-2 (current word × previous word) */
     ctx[20] = h32(cm->word_hash ^ cm->prev_word_hash) ^ par;
     /* Sparse: bytes 0,2,4 */
-    ctx[21] = h32(((uint32_t)p[0]<<16)|((uint32_t)p[2]<<8)|p[4]) ^ par;
+    /* order-14 */
+    ctx[21] = h32(h32(h0123 ^ ((uint32_t)p[4]<<24|p[5]<<16|p[6]<<8|p[7])) ^ h32((uint32_t)p[8]<<24|p[9]<<16|p[10]<<8|p[11]) ^ ((uint32_t)p[12]<<16|p[13]<<8)) ^ par;
     /* Word × char class */
     ctx[22] = h32(cm->word_hash ^ ((uint32_t)char_class(p[0])<<16)) ^ par;
     /* Order-1 × char class sequence (3 consecutive classes) */
@@ -549,7 +551,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[10] = smap_get(&cm->sparse14, ctx[10]);
     preds[11] = smap_get(&cm->sparse24, ctx[11]);
     preds[12] = smap_get(&cm->charclass, ctx[12]);
-    preds[13] = smap_get(&cm->nibble, ctx[13]);
+    preds[13] = smap_get(&cm->o13, ctx[13]);
     preds[14] = smap_get(&cm->indirect, ctx[14]);
     preds[15] = smap_get(&cm->o2_word, ctx[15]);
     preds[16] = smap_get(&cm->o11, ctx[16]);
@@ -557,7 +559,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[18] = smap_get(&cm->o12, ctx[18]);
     preds[19] = smap_get(&cm->o8, ctx[19]);
     preds[20] = smap_get(&cm->word2, ctx[20]);
-    preds[21] = smap_get(&cm->sparse024, ctx[21]);
+    preds[21] = smap_get(&cm->o14, ctx[21]);
     preds[22] = smap_get(&cm->word_cc, ctx[22]);
     preds[23] = smap_get(&cm->o1_cc, ctx[23]);
     preds[24] = smap_get(&cm->word_len, ctx[24]);
@@ -615,7 +617,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->sparse14, ctx[10], bit);
     smap_update(&cm->sparse24, ctx[11], bit);
     smap_update(&cm->charclass, ctx[12], bit);
-    smap_update(&cm->nibble, ctx[13], bit);
+    smap_update(&cm->o13, ctx[13], bit);
     smap_update(&cm->indirect, ctx[14], bit);
     smap_update(&cm->o2_word, ctx[15], bit);
     smap_update(&cm->o11, ctx[16], bit);
@@ -623,7 +625,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->o12, ctx[18], bit);
     smap_update(&cm->o8, ctx[19], bit);
     smap_update(&cm->word2, ctx[20], bit);
-    smap_update(&cm->sparse024, ctx[21], bit);
+    smap_update(&cm->o14, ctx[21], bit);
     smap_update(&cm->word_cc, ctx[22], bit);
     smap_update(&cm->o1_cc, ctx[23], bit);
     smap_update(&cm->word_len, ctx[24], bit);
@@ -664,7 +666,7 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
     else
         cm->run_length = 1;
     
-    for (int j = 11; j > 0; j--) cm->prev[j] = cm->prev[j-1];
+    for (int j = 13; j > 0; j--) cm->prev[j] = cm->prev[j-1];
     cm->prev[0] = byte;
     cm->partial = 1;
     if ((byte>='a'&&byte<='z')||(byte>='A'&&byte<='Z')||byte=='\'') {
