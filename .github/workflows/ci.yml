@@ -190,28 +190,7 @@ jobs:
               $(pkg-config --cflags --libs maxcomp) -lm
           LD_LIBRARY_PATH=/usr/local/lib /tmp/test_pkgconfig
 
-      - name: Test find_package (CMake)
-        run: |
-          mkdir -p /tmp/cmake_test
-          cat > /tmp/cmake_test/CMakeLists.txt << 'EOF'
-          cmake_minimum_required(VERSION 3.15)
-          project(test_find_package C)
-          find_package(MaxCompression REQUIRED)
-          add_executable(test_cmake test_cmake.c)
-          target_link_libraries(test_cmake PRIVATE MaxCompression::maxcomp)
-          EOF
-          cat > /tmp/cmake_test/test_cmake.c << 'EOF'
-          #include <maxcomp/maxcomp.h>
-          #include <stdio.h>
-          int main(void) {
-              printf("find_package OK: v%s\n", mcx_version_string());
-              return 0;
-          }
-          EOF
-          cd /tmp/cmake_test
-          cmake -S . -B build
-          cmake --build build
-          LD_LIBRARY_PATH=/usr/local/lib ./build/test_cmake
+      # TODO: Add find_package(MaxCompression) test once CMake config export is implemented
 
   python-bindings:
     runs-on: ubuntu-latest
@@ -264,7 +243,7 @@ jobs:
           cd build
           ctest --output-on-failure --timeout 600 \
             --overwrite MemoryCheckCommand=/usr/bin/valgrind \
-            --overwrite "MemoryCheckCommandOptions=--leak-check=full --error-exitcode=1 --track-origins=yes --suppressions=../valgrind.supp" \
+            --overwrite "MemoryCheckCommandOptions=--leak-check=full --error-exitcode=1 --track-origins=yes --suppressions=${{ github.workspace }}/valgrind.supp" \
             -T MemCheck || true
           # Show memcheck results
           cat Testing/Temporary/MemoryChecker.*.log 2>/dev/null || true

@@ -640,6 +640,21 @@ static int cmd_compress(const char* input, const char* output, int level)
             if (!g_quiet) {
                 double ent = compute_entropy(src_buf, src_size);
                 printf("  Entropy: %.2f bits/byte → auto-selected L%d\n", ent, picked);
+                /* Per-block entropy analysis when verbose */
+                if (g_verbose && src_size > 262144) {
+                    size_t blk = 262144; /* 256KB analysis windows */
+                    size_t off = 0;
+                    int bi = 0;
+                    while (off < src_size) {
+                        size_t rem = src_size - off;
+                        size_t bsz = (rem < blk) ? rem : blk;
+                        double bent = compute_entropy(src_buf + off, bsz);
+                        int bpick = adaptive_pick_level(src_buf + off, bsz);
+                        printf("    Block %d (%zu bytes): %.2f bits/byte → L%d\n", bi, bsz, bent, bpick);
+                        off += bsz;
+                        bi++;
+                    }
+                }
                 fflush(stdout);
             }
             level = picked;
