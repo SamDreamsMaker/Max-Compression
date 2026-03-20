@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 32)
+- **Entropy frequency counting 4× unroll** — reduced loop overhead in `compute_entropy()`. SIMD histogram not practical on Atom C2338 (no AVX2 gather/scatter); scalar 4× unroll is the practical optimum.
+- **`mcx bench --delta BASELINE`** — saves baseline on first run (`L<N> <bytes>` per line), compares on subsequent runs. Shows per-level byte delta and percentage. Returns exit code 1 on any regression. Tests L1/L3/L6/L9/L12 by default.
+- **`mcx compress --memory-limit SIZE`** — caps peak memory by adjusting BWT block size. Converts limit to block_size = (limit - 32MB) / 10. Minimum 64M. Example: `--memory-limit 256M` → 22MB block size.
+- **Threading profiling** — dickens 10MB: single block, no scaling (1T=8.5s, 2T=8.5s). mozilla 51MB with 16MB blocks: 2T=37.3s vs 1T=41.2s (+10%, memory-bandwidth bound on Atom C2338 dual-core).
+- **Integration tests** — coverage for `--compare-self` regression (exit code 1), `--delta` save/compare, `--memory-limit` roundtrip.
+- **Man page + completions update** — `--compare-self` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 31)
 - **Branchless Huffman hints** — added `__builtin_expect` branch hints to `HUFF_DECODE_ONE` macro for fast-path (≤9-bit codes). No measurable speed change (106.8 MB/s) — branch predictor already correctly predicts 99%+ fast-path hits.
 - **`mcx bench --compare-self REF`** — compress input at specified level, compare output size against a reference .mcx file. Reports MATCH/IMPROVED/REGRESSION with byte delta and percentage. Returns exit code 1 on regression for CI integration.
