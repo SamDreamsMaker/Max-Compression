@@ -244,6 +244,46 @@ jobs:
           print(f'Bound(1MB): {maxcomp.compress_bound(1048576)}')
           "
 
+  valgrind:
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential libomp-dev valgrind
+
+      - name: Build (Debug, without OpenMP for cleaner valgrind output)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-g -O1"
+          cmake --build build -j$(nproc)
+
+      - name: Run tests under valgrind memcheck
+        run: |
+          cd build
+          ctest --output-on-failure --timeout 600 \
+            --overwrite MemoryCheckCommand=/usr/bin/valgrind \
+            --overwrite "MemoryCheckCommandOptions=--leak-check=full --error-exitcode=1 --track-origins=yes --suppressions=../valgrind.supp" \
+            -T MemCheck || true
+          # Show memcheck results
+          cat Testing/Temporary/MemoryChecker.*.log 2>/dev/null || true
+
+      - name: Valgrind roundtrip on sample data
+        run: |
+          echo "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs." > /tmp/vg_test.txt
+          for level in 1 3 6 9 12; do
+            echo "=== Level $level ==="
+            valgrind --leak-check=full --error-exitcode=1 --track-origins=yes \
+              ./build/bin/mcx compress -l $level -q /tmp/vg_test.txt -o /tmp/vg_test.mcx -f
+            valgrind --leak-check=full --error-exitcode=1 --track-origins=yes \
+              ./build/bin/mcx decompress -q /tmp/vg_test.mcx -o /tmp/vg_test.dec -f
+            diff /tmp/vg_test.txt /tmp/vg_test.dec
+            echo "Level $level: OK (no leaks)"
+            rm -f /tmp/vg_test.mcx /tmp/vg_test.dec
+          done
+          rm -f /tmp/vg_test.txt
+
   doxygen:
     runs-on: ubuntu-latest
     steps:

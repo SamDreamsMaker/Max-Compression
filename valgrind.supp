@@ -1,0 +1,18 @@
+# Valgrind suppressions for MaxCompression
+# Suppress known false positives from system libraries
+
+{
+   glibc_dlopen
+   Memcheck:Leak
+   ...
+   fun:_dl_open
+   ...
+}
+
+{
+   glibc_dlclose
+   Memcheck:Leak
+   ...
+   fun:_dl_close
+   ...
+}
