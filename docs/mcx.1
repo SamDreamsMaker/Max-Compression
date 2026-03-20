@@ -86,6 +86,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-ratio\-only\fR]
 [\fB\-\-median\fR]
 [\fB\-\-percentile\fR]
+[\fB\-\-histogram\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -360,6 +361,11 @@ For \fBbench\fR: report p5/p50/p95 speed distribution when
 \fB\-\-iterations\fR >= 5. Shows the 5th, 50th (median), and 95th
 percentile of compress and decompress speeds. Useful for understanding
 benchmark variance.
+.TP
+.BR \-\-histogram
+For \fBbench\fR: show compressed size distribution across block sizes.
+Useful for analyzing adaptive block behavior and understanding how
+different block sizes affect compression ratio.
 .TP
 .BR \-\-exclude =\fIGLOB\fR
 For \fBcompress \-r\fR: skip files matching the given glob pattern.
