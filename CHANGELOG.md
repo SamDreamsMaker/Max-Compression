@@ -4,6 +4,15 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 7)
+- **Version bump to 2.2.0** — synced across CMakeLists.txt, maxcomp.h, and README badge.
+- **`mcx upgrade --in-place/-i`** — explicit shortcut to overwrite file in-place during re-compression.
+- **Pipe mode CI test** — roundtrip via `mcx pipe | mcx pipe -d` in ctest.
+- **`mcx bench --csv`** — CSV output for automated benchmark collection and CI tracking.
+- **`mcx decompress --verify`** — re-compress after decompression to verify integrity match.
+- **Man page update** — added upgrade, pipe, --estimate, --csv, --verify, --strategy, --json documentation.
+- **Shell completions update** — Bash, Zsh, and Fish updated with all new commands and flags.
+
 ### Added
 - **`mcx upgrade` command** — re-compress an `.mcx` file at a different level (decompress+recompress in one step) with roundtrip verification. Alias: `mcx recompress`.
 - **`mcx pipe` command** — compress/decompress stdin→stdout (`mcx pipe [-l LEVEL]` / `mcx pipe -d`), like gzip without arguments.
