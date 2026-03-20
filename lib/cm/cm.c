@@ -339,7 +339,7 @@ static void match_update(match_t *m, uint32_t pos) {
 
 /* ── SSE ───────────────────────────────────────────────────────── */
 
-#define SSE_CTXS 512
+#define SSE_CTXS 2048
 #define SSE_BUCKETS 256
 
 typedef struct {
@@ -360,7 +360,7 @@ static uint16_t sse_map(sse_t *s, int ctx, uint16_t prob) {
     int scaled = prob * (SSE_BUCKETS - 1);
     int b = scaled / PROB_MAX;
     int frac = scaled % PROB_MAX; /* fractional part */
-    int c = ctx % SSE_CTXS;
+    int c = ctx & (SSE_CTXS - 1);
     if (b >= SSE_BUCKETS - 1) return s->t[c][SSE_BUCKETS - 1];
     /* Linear interpolation */
     uint32_t p0 = s->t[c][b];
@@ -370,7 +370,7 @@ static uint16_t sse_map(sse_t *s, int ctx, uint16_t prob) {
 
 static void sse_update(sse_t *s, int ctx, uint16_t prob, int bit) {
     int b = prob * (SSE_BUCKETS - 1) / PROB_MAX;
-    int c = ctx % SSE_CTXS;
+    int c = ctx & (SSE_CTXS - 1);
     uint16_t p = s->t[c][b];
     if (bit == 0) s->t[c][b] = p + ((PROB_MAX - p) >> 5);
     else          s->t[c][b] = p - (p >> 5);
@@ -578,7 +578,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
     
-    int sse_ctx = ((cm->prev[0] >> 4) << 5 | (cm->partial & 0xF) << 1 | (bp >> 2)) & (SSE_CTXS-1);
+    int sse_ctx = ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
     uint16_t sse_p = sse_map(&cm->sse, sse_ctx, mp);
     if (sse_p < 1) sse_p = 1; if (sse_p > PROB_MAX-1) sse_p = PROB_MAX-1;
     
@@ -636,7 +636,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr);
     }
     cm->total_bits++;
-    sse_update(&cm->sse, ((cm->prev[0] >> 4) << 5 | (cm->partial & 0xF) << 1 | (bp >> 2)) & (SSE_CTXS-1), mp, bit);
+    sse_update(&cm->sse, ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     
     cm->partial = (cm->partial << 1) | bit;
 }
