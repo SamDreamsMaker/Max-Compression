@@ -84,5 +84,27 @@ $MCX compress --filter auto -q "$TMP/input.txt" -o "$TMP/filter_auto.mcx"
 $MCX decompress -q "$TMP/filter_auto.mcx" -o "$TMP/filter_auto.txt"
 diff "$TMP/input.txt" "$TMP/filter_auto.txt" && echo "  --filter auto: OK"
 
+# --min-ratio: high threshold should skip output
+$MCX compress --min-ratio 100.0 -q "$TMP/input.txt" -o "$TMP/minratio.mcx" -f
+if [ ! -f "$TMP/minratio.mcx" ]; then
+    echo "  --min-ratio skip: OK"
+else
+    echo "  --min-ratio skip: FAIL (output file should not exist)" && exit 1
+fi
+
+# --min-ratio: low threshold should create output
+$MCX compress --min-ratio 0.1 -q "$TMP/input.txt" -o "$TMP/minratio2.mcx" -f
+if [ -f "$TMP/minratio2.mcx" ]; then
+    $MCX decompress -q "$TMP/minratio2.mcx" -o "$TMP/minratio2.txt" -f
+    diff "$TMP/input.txt" "$TMP/minratio2.txt" && echo "  --min-ratio pass: OK"
+else
+    echo "  --min-ratio pass: FAIL (output file should exist)" && exit 1
+fi
+
+# --atomic: should produce identical output via temp+rename
+$MCX compress --atomic -q "$TMP/input.txt" -o "$TMP/atomic.mcx" -f
+$MCX decompress -q "$TMP/atomic.mcx" -o "$TMP/atomic.txt" -f
+diff "$TMP/input.txt" "$TMP/atomic.txt" && echo "  --atomic: OK"
+
 echo ""
 echo "All CLI flag tests passed!"
