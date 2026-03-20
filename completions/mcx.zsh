@@ -121,6 +121,7 @@ _mcx() {
         '--json[JSON output format]'
         '--warmup[Run warmup iteration before timing]'
         '--warmup-iterations[Number of warmup iterations]:count:'
+        '--cold[Flush filesystem cache between iterations]'
         '--decode-only[Benchmark decompression only]'
         '--iterations[Number of iterations]:iterations:'
         '--size[Benchmark on truncated prefix]:size:'

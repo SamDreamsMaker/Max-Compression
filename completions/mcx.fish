@@ -100,6 +100,7 @@ complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l csv -d 'CSV ou
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l json -d 'JSON output format'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l warmup -d 'Run warmup iteration before timing'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l warmup-iterations -x -d 'Number of warmup iterations'
+complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l cold -d 'Flush filesystem cache between iterations'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l decode-only -d 'Benchmark decompression only'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l iterations -x -d 'Number of iterations'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l size -x -d 'Benchmark on truncated prefix (e.g. 64K)'
