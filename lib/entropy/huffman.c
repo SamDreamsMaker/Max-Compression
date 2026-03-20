@@ -209,7 +209,24 @@ size_t mcx_huffman_compress(uint8_t* dst, size_t dst_cap,
     return di;
 }
 
-/* ─── Huffman Decompress ─────────────────────────────────────────────── */
+/* ─── Huffman Decompress (table-based fast decoder) ──────────────────── */
+
+/*
+ * Table-based Huffman decoder: uses a HUFF_FAST_BITS-wide lookup table
+ * for O(1) decoding of short codes. Codes longer than HUFF_FAST_BITS
+ * fall back to a secondary tree walk via subtable entries.
+ *
+ * Each table entry packs: symbol (low 16 bits) + code length (high 16 bits).
+ * For entries where code length > HUFF_FAST_BITS, the entry stores
+ * a tree-node index (symbol field = node index, length = 0xFF sentinel)
+ * and we finish decoding via the tree.
+ */
+#define HUFF_FAST_BITS   9
+#define HUFF_FAST_SIZE   (1 << HUFF_FAST_BITS)  /* 512 entries */
+#define HUFF_ENTRY(sym, len) (((uint32_t)(len) << 16) | (uint16_t)(sym))
+#define HUFF_ENTRY_SYM(e)   ((uint16_t)((e) & 0xFFFF))
+#define HUFF_ENTRY_LEN(e)   ((uint8_t)((e) >> 16))
+#define HUFF_SENTINEL        0xFF  /* length sentinel: need tree walk */
 
 size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
                               const uint8_t* src, size_t src_size)
@@ -232,11 +249,7 @@ size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
         return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
     }
 
-    /* Build decode lookup: for each possible prefix, find the symbol */
-    /* Simple bit-by-bit decoding using the tree (slow but correct) */
-    /* TODO: Replace with table-based fast decoder */
-
-    /* Reconstruct the tree for decoding */
+    /* Reconstruct the tree (needed for building fast table + fallback) */
     huff_node_t nodes[511];
     int node_count = 0;
     int active[511];
@@ -282,27 +295,98 @@ size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
 
     int root = active[0];
 
-    /* Decode bit stream */
-    size_t si = header_size;
-    size_t di = 0;
-    int bit_pos = 7;
+    /* Build fast lookup table from canonical codes */
+    uint32_t fast_table[HUFF_FAST_SIZE];
+    memset(fast_table, 0, sizeof(fast_table));
 
-    while (di < orig_size && si < src_size) {
-        int node = root;
+    for (int sym = 0; sym < 256; sym++) {
+        uint8_t nbits = table.bits[sym];
+        if (nbits == 0) continue;
 
-        while (nodes[node].symbol < 0) {
-            if (si >= src_size) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
-
-            int bit = (src[si] >> bit_pos) & 1;
-            bit_pos--;
-            if (bit_pos < 0) { bit_pos = 7; si++; }
-
-            node = bit ? nodes[node].right : nodes[node].left;
-            if (node < 0) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        if (nbits <= HUFF_FAST_BITS) {
+            /* Fill all table entries for this code (pad remaining bits) */
+            uint16_t code = table.code[sym];
+            int pad_bits = HUFF_FAST_BITS - nbits;
+            uint32_t base_idx = (uint32_t)code << pad_bits;
+            uint32_t count = 1u << pad_bits;
+            for (uint32_t j = 0; j < count; j++) {
+                fast_table[base_idx + j] = HUFF_ENTRY(sym, nbits);
+            }
         }
-
-        dst[di++] = (uint8_t)nodes[node].symbol;
     }
 
+    /* Mark entries for long codes: walk tree HUFF_FAST_BITS deep, store node index */
+    for (uint32_t idx = 0; idx < HUFF_FAST_SIZE; idx++) {
+        if (HUFF_ENTRY_LEN(fast_table[idx]) != 0) continue;
+        /* This prefix doesn't map to a short code — walk the tree */
+        int node = root;
+        for (int b = HUFF_FAST_BITS - 1; b >= 0 && nodes[node].symbol < 0; b--) {
+            int bit = (idx >> b) & 1;
+            node = bit ? nodes[node].right : nodes[node].left;
+            if (node < 0) break;
+        }
+        if (node >= 0 && nodes[node].symbol >= 0) {
+            /* Resolved within HUFF_FAST_BITS (shouldn't normally happen, but handle it) */
+            fast_table[idx] = HUFF_ENTRY(nodes[node].symbol, HUFF_FAST_BITS);
+        } else if (node >= 0) {
+            /* Store tree-node index for fallback; use sentinel length */
+            fast_table[idx] = HUFF_ENTRY(node, HUFF_SENTINEL);
+        }
+    }
+
+    /* Decode bit stream using fast table + bit buffer */
+    size_t si = header_size;
+    size_t di = 0;
+
+    /* Bit buffer: accumulate bits from source bytes, MSB-first */
+    uint32_t bit_buf = 0;
+    int      bit_cnt = 0;
+
+    /* Refill macro: ensure at least HUFF_FAST_BITS bits in buffer */
+    #define HUFF_REFILL() do { \
+        while (bit_cnt < HUFF_FAST_BITS && si < src_size) { \
+            bit_buf = (bit_buf << 8) | src[si++]; \
+            bit_cnt += 8; \
+        } \
+    } while (0)
+
+    while (di < orig_size) {
+        HUFF_REFILL();
+        if (bit_cnt < 1) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+
+        /* Peek top HUFF_FAST_BITS from bit buffer */
+        int peek_bits = (bit_cnt >= HUFF_FAST_BITS) ? HUFF_FAST_BITS : bit_cnt;
+        uint32_t idx = (bit_buf >> (bit_cnt - HUFF_FAST_BITS)) & (HUFF_FAST_SIZE - 1);
+        /* If we have fewer bits, shift up to fill HUFF_FAST_BITS width */
+        if (peek_bits < HUFF_FAST_BITS)
+            idx = (bit_buf << (HUFF_FAST_BITS - peek_bits)) & (HUFF_FAST_SIZE - 1);
+
+        uint32_t entry = fast_table[idx];
+        uint8_t  len   = HUFF_ENTRY_LEN(entry);
+
+        if (len != 0 && len != HUFF_SENTINEL) {
+            /* Fast path: symbol decoded in one lookup */
+            dst[di++] = (uint8_t)HUFF_ENTRY_SYM(entry);
+            bit_cnt -= len;
+        } else if (len == HUFF_SENTINEL) {
+            /* Slow path: code longer than HUFF_FAST_BITS, finish via tree */
+            bit_cnt -= HUFF_FAST_BITS;
+            int node = (int)HUFF_ENTRY_SYM(entry);
+
+            while (nodes[node].symbol < 0) {
+                HUFF_REFILL();
+                if (bit_cnt < 1) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+                int bit = (bit_buf >> (bit_cnt - 1)) & 1;
+                bit_cnt--;
+                node = bit ? nodes[node].right : nodes[node].left;
+                if (node < 0) return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+            }
+            dst[di++] = (uint8_t)nodes[node].symbol;
+        } else {
+            return MCX_ERROR(MCX_ERR_SRC_CORRUPTED);
+        }
+    }
+
+    #undef HUFF_REFILL
     return orig_size;
 }
