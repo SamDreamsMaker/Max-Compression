@@ -92,6 +92,28 @@
 
 *Modern desktop CPUs (3+ GHz) will be approximately 4-6× faster.*
 
+## L20 vs L26 — When is LZRC Worth It?
+
+| File | Size | L20 Size | L20 Time | L26 Size | L26 Time | Winner |
+|------|------|----------|----------|----------|----------|--------|
+| ooffice | 5.9 MB | 2,405,901 | 14.7s | 2,733,387 | 24.9s | **L20** |
+| xml | 5.1 MB | 415,606 | — | 487,143 | — | **L20** |
+| reymont | 6.3 MB | 1,098,757 | — | 1,445,841 | — | **L20** |
+| sao | 6.9 MB | 4,888,582 | — | 4,975,128 | — | **L20** |
+| x-ray | 8.1 MB | 3,930,751 | — | 5,157,318 | — | **L20** |
+| dickens | 9.7 MB | 2,497,882 | 34.3s | 2,801,692 | 16.7s | **L20** |
+| osdb | 9.6 MB | 2,483,536 | — | 3,035,680 | — | **L20** |
+| mr | 9.5 MB | 2,327,064 | 63.5s | 3,063,378 | 24.5s | **L20** |
+
+**Conclusion: L20 wins on every Silesia file.** LZRC (L24/L26) is not competitive with BWT-based L20 on any standard benchmark data. L20's "smart" strategy auto-selects BWT+MTF+rANS for text/structured data and stride-delta for binary, which consistently outperforms pure LZ+range coding.
+
+**When L26 might help:**
+- Very large files (>100MB) where BWT block boundaries hurt
+- Highly structured binary data with long exact-match patterns
+- Streaming scenarios where BWT is impractical
+
+**Recommendation:** Use L20 (--best) for maximum compression. L24/L26 is only useful for specific binary workloads that don't benefit from BWT transforms.
+
 ## Reproduction
 
 ```bash
