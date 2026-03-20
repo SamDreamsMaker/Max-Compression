@@ -19,7 +19,15 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#include <sys/utime.h>
+#define access _access
+#define F_OK 0
+#define utime _utime
+#define utimbuf _utimbuf
+#else
 #include <sys/resource.h>
 #include <dirent.h>
 #include <unistd.h>
@@ -253,6 +261,7 @@ static int g_atomic = 0;        /* Atomic write: use temp file + rename */
 static int g_keep_broken = 0;   /* Keep partial output on error (for debugging) */
 static const char* g_exclude_pattern = NULL; /* Glob pattern for --exclude */
 static int g_decompress_check = 0; /* In-memory decompress+verify after compress */
+static int g_adaptive_level = 0; /* Analyze entropy and pick optimal level per-block */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -269,6 +278,52 @@ static const char* fmt_mem(long kb, char* buf, size_t bufsz) {
     else
         snprintf(buf, bufsz, "%ld KB", kb);
     return buf;
+}
+
+/* ─── Adaptive level: entropy-based level selection ──────────────────── */
+
+/** Compute Shannon entropy (bits/byte) of data buffer */
+static double compute_entropy(const uint8_t* data, size_t size) {
+    if (size == 0) return 0.0;
+    uint32_t freq[256] = {0};
+    for (size_t i = 0; i < size; i++) freq[data[i]]++;
+    double entropy = 0.0;
+    for (int s = 0; s < 256; s++) {
+        if (freq[s] == 0) continue;
+        double p = (double)freq[s] / (double)size;
+        entropy -= p * log2(p);
+    }
+    return entropy;
+}
+
+/** Pick optimal compression level based on file entropy and size.
+ *  High entropy (near-random/compressed): L3 (fast, won't compress much anyway)
+ *  Medium entropy (binary/mixed): L6 (balanced LZ-HC)
+ *  Low entropy (text/structured): L12 (BWT, best ratio)
+ *  Very low entropy (very repetitive): L12 with large blocks
+ */
+static int adaptive_pick_level(const uint8_t* data, size_t size) {
+    double entropy = compute_entropy(data, size);
+    
+    /* Also check for long runs (repetitive data benefits from BWT) */
+    int long_runs = 0;
+    if (size > 100) {
+        int run_len = 1;
+        for (size_t i = 1; i < size && i < 10000; i++) {
+            if (data[i] == data[i-1]) {
+                if (++run_len >= 8) long_runs++;
+            } else {
+                run_len = 1;
+            }
+        }
+    }
+    
+    if (entropy > 7.5) return 1;       /* Near-random: minimal compression possible */
+    if (entropy > 6.5) return 3;       /* High entropy: fast LZ */
+    if (entropy > 5.0) return 6;       /* Medium: balanced LZ-HC */
+    if (entropy > 3.5) return 9;       /* Medium-low: deep LZ-HC */
+    if (long_runs > 50) return 12;     /* Very repetitive: BWT */
+    return 12;                          /* Low entropy: BWT */
 }
 
 /* ─── Recursive directory traversal ──────────────────────────────────── */
@@ -337,6 +392,14 @@ static void collect_files_recursive(const char* dir_path, file_list_t* fl,
         }
     }
     closedir(dir);
+}
+#else
+/* Stub: recursive dir listing not available on Windows */
+static void collect_files_recursive(const char* dir_path, file_list_t* fl,
+                                     const char* skip_ext,
+                                     const char* exclude_pattern) {
+    (void)dir_path; (void)fl; (void)skip_ext; (void)exclude_pattern;
+    fprintf(stderr, "Error: recursive directory traversal not supported on Windows\n");
 }
 #endif /* !_WIN32 */
 
@@ -544,6 +607,17 @@ static int cmd_compress(const char* input, const char* output, int level)
         }
 
         size_t comp_size;
+        
+        /* --adaptive-level: analyze entropy and pick optimal level */
+        if (g_adaptive_level) {
+            int picked = adaptive_pick_level(src_buf, src_size);
+            if (!g_quiet) {
+                double ent = compute_entropy(src_buf, src_size);
+                printf("  Entropy: %.2f bits/byte → auto-selected L%d\n", ent, picked);
+                fflush(stdout);
+            }
+            level = picked;
+        }
         
         if (g_level_scan || g_level_range_lo > 0) {
             /* --level-scan or --level-range: try multiple levels, pick best ratio */
@@ -2427,6 +2501,8 @@ int main(int argc, char* argv[])
                 g_keep_broken = 1;
             } else if (strcmp(argv[i], "--decompress-check") == 0) {
                 g_decompress_check = 1;
+            } else if (strcmp(argv[i], "--adaptive-level") == 0) {
+                g_adaptive_level = 1;
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 g_exclude_pattern = argv[++i];
             } else if (strcmp(argv[i], "--min-ratio") == 0 && i + 1 < argc) {
