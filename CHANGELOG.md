@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 27)
+- **RC_MOVE_BITS tuning profiling** — tested RC_MOVE_BITS=4 vs current 5 on mozilla 1MB L20: 657707 vs 652110 (+0.86% worse), identical speed (3.02s vs 3.01s). Faster adaptation causes models to overshoot and oscillate. Not worth changing.
+- **`mcx bench --repeat N`** — run entire benchmark N times and show min/max/avg across runs. More robust than `--iterations` (which averages within a single run). Useful for detecting system-level variance (thermals, background load).
+- **`mcx compress --priority speed|ratio|balanced`** — select optimization goal that adjusts internal parameters. `speed` enables `--fast-decode` + `--no-trials`, `ratio` uses defaults, `balanced` enables `--fast-decode` only.
+- **L1 vs L2 decompress Silesia profiling** — L2 decompresses faster on all 12 files (avg +4.5%) due to longer matches from lazy matching. Best: xml +17.5%, nci +6.4%. Worst: sao +1.1%. Lazy matching produces fewer, longer matches = fewer LZ tokens = faster decode.
+- **Integration tests** — coverage for `--decompress-check`, `--priority`, and `--repeat` flags.
+- **Man page + completions update** — `--repeat` and `--priority` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 26)
 - **12-bit range coder probability profiling** — tested RC_PROB_BITS=12 vs 11 on mozilla 1MB (LZRC path): 654372 vs 652110 (+0.35% worse), identical speed (3.2s). Higher precision slows model adaptation in LZRC context models. Not worth changing.
 - **`mcx bench --no-header`** — suppress column headers for cleaner piping output. Combines with `--brief` for minimal output.

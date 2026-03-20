@@ -18,6 +18,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-keep\-broken\fR]
 [\fB\-\-exclude\fR \fIGLOB\fR]
 [\fB\-\-decompress\-check\fR]
+[\fB\-\-priority\fR \fIMODE\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -90,6 +91,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-histogram\fR]
 [\fB\-\-format\fR \fIFORMAT\fR]
 [\fB\-\-brief\fR]
+[\fB\-\-repeat\fR \fIN\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -423,10 +425,22 @@ and verify the CRC matches the original data. Stronger than \fB\-\-verify\fR
 (which re\-compresses): this catches encoder bugs that produce valid but
 incorrect compressed streams.
 .TP
+.BR \-\-repeat =\fIN\fR
+For \fBbench\fR: run the entire benchmark N times and show min/max/avg
+across all runs. More robust than \fB\-\-iterations\fR (which averages
+within a single run) for detecting system\-level variance such as
+thermals, background load, or CPU frequency scaling.
+.TP
 .BR \-\-no\-header
 For \fBbench\fR: suppress column headers in output. Useful for piping
 benchmark results into other tools. Combines well with \fB\-\-brief\fR for
 minimal machine\-readable output.
+.TP
+.BR \-\-priority =\fIMODE\fR
+For \fBcompress\fR: select optimization goal that adjusts internal
+parameters. Valid values: \fBspeed\fR (enables \fB\-\-fast\-decode\fR +
+\fB\-\-no\-trials\fR), \fBratio\fR (default behavior), \fBbalanced\fR
+(enables \fB\-\-fast\-decode\fR only). Shortcut for combining multiple flags.
 .TP
 .BR \-\-keep\-broken
 For \fBcompress\fR: keep partial output on error instead of deleting.
