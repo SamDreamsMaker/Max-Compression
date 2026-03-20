@@ -102,7 +102,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--warmup-iterations N] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] [--no-header] [--repeat N] [--cold] <input|dir>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--warmup-iterations N] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--suite quick|standard|full] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] [--no-header] [--repeat N] [--cold] <input|dir>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1766,6 +1766,8 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
 
     int default_levels[] = {1, 3, 6, 9, 12, 20, 24, 26};
     int n_default = sizeof(default_levels) / sizeof(default_levels[0]);
+    int quick_levels[] = {1, 6, 12};
+    int n_quick = sizeof(quick_levels) / sizeof(quick_levels[0]);
 
     /* Build full level list 1-26 for --all-levels */
     int full_levels[26];
@@ -1777,7 +1779,10 @@ static int cmd_bench(const char* input, int specific_level, int compare, int csv
     if (specific_level > 0) {
         levels = &specific_level;
         n_levels = 1;
-    } else if (bench_all_levels) {
+    } else if (bench_all_levels == 2) {
+        levels = quick_levels;
+        n_levels = n_quick;
+    } else if (bench_all_levels == 1) {
         levels = full_levels;
         n_levels = 26;
     } else {
@@ -3078,6 +3083,7 @@ int main(int argc, char* argv[])
         int bench_repeat = 1;
         int bench_cold = 0;
         int bench_profile = 0;
+        int bench_suite = 0; /* 0=default, 1=quick, 2=standard, 3=full */
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         const char* bench_exclude = NULL;
@@ -3172,6 +3178,15 @@ int main(int argc, char* argv[])
                 bench_cold = 1;
             } else if (strcmp(argv[i], "--profile") == 0) {
                 bench_profile = 1;
+            } else if (strcmp(argv[i], "--suite") == 0 && i + 1 < argc) {
+                const char* sv = argv[++i];
+                if (strcmp(sv, "quick") == 0) bench_suite = 1;
+                else if (strcmp(sv, "standard") == 0) bench_suite = 2;
+                else if (strcmp(sv, "full") == 0) bench_suite = 3;
+                else {
+                    fprintf(stderr, "Error: --suite must be quick, standard, or full\n");
+                    return 1;
+                }
             } else if ((strcmp(argv[i], "--output") == 0 || strcmp(argv[i], "-o") == 0) && i + 1 < argc) {
                 bench_output_file = argv[++i];
             } else if (strcmp(argv[i], "--compare-self") == 0 && i + 1 < argc) {
@@ -3201,9 +3216,16 @@ int main(int argc, char* argv[])
             }
         }
         if (!bench_file) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] [--memory] [--all-levels] <file>\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] [--memory] [--all-levels] [--suite quick|standard|full] <file>\n");
             return 1;
         }
+        /* Apply --suite presets (overrides --all-levels if set) */
+        if (bench_suite == 1) {
+            bench_all_levels = 2;  /* quick: L1/L6/L12 (special value) */
+        } else if (bench_suite == 3) {
+            bench_all_levels = 1;  /* full: L1-L26 */
+        }
+        /* suite==2 (standard) = default levels, no change needed */
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
