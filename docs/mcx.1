@@ -99,6 +99,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-output\fR \fIFILE\fR]
 [\fB\-\-compare\-self\fR \fIREF\fR]
 [\fB\-\-delta\fR \fIBASELINE\fR]
+[\fB\-\-save\-baseline\fR \fIFILE\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -349,6 +350,12 @@ compressed sizes to \fIBASELINE\fR (format: \fIL<N> <bytes>\fR per line).
 On subsequent runs, compares current sizes against baseline at each level
 (L1/L3/L6/L9/L12 by default, or specific level with \fB\-l\fR). Shows byte
 delta and percentage per level. Returns exit code 1 on any regression.
+.TP
+.BR \-\-save\-baseline =\fIFILE\fR
+For \fBbench\fR: explicitly save current compressed sizes to \fIFILE\fR.
+Unlike \fB\-\-delta\fR which auto\-saves on first run and compares on
+subsequent runs, \fB\-\-save\-baseline\fR always overwrites the file.
+Output format is compatible with \fB\-\-delta\fR for subsequent comparisons.
 .TP
 .BR \-\-blocks
 For \fBinfo\fR: show per\-block details (offset, compressed size,
