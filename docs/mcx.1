@@ -88,6 +88,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-percentile\fR]
 [\fB\-\-histogram\fR]
 [\fB\-\-format\fR \fIFORMAT\fR]
+[\fB\-\-brief\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -267,6 +268,11 @@ Try levels L1\-L12 and automatically pick the one with the best
 compression ratio. Slower than a single level but finds the optimal
 speed/ratio tradeoff.
 .TP
+.BR \-\-level\-range =\fIL\fRstart\fB\-L\fRend
+Try a contiguous range of levels and pick the one with the best
+compression ratio (e.g. \fB\-\-level\-range L1\-L6\fR or
+\fB\-\-level\-range L6\-L12\fR). More control than \fB\-\-level\-scan\fR.
+.TP
 .BR \-\-filter =\fINAME\fR
 Force a specific preprocessing filter instead of auto\-detect.
 Valid values: \fBdelta\fR (sorted integer sequences), \fBnibble\fR
@@ -372,6 +378,11 @@ different block sizes affect compression ratio.
 For \fBbench\fR: choose output format. Valid values: \fBtable\fR (default),
 \fBcsv\fR, \fBjson\fR, or \fBmarkdown\fR. Unifies the older \fB\-\-csv\fR and
 \fB\-\-json\fR flags, which are still accepted as aliases.
+.TP
+.BR \-\-brief
+For \fBbench\fR: compact one\-line\-per\-level output. Example:
+\fBL6: 2.38x 6.4/87.2 MB/s\fR. Useful for scripting and quick
+comparisons.
 .TP
 .BR \-\-exclude =\fIGLOB\fR
 For \fBcompress \-r\fR: skip files matching the given glob pattern.
