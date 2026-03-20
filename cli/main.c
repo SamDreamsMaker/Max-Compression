@@ -2332,7 +2332,7 @@ static void compute_file_stats(const uint8_t* data, size_t size,
     *out_text_pct = 100.0 * text_bytes / size;
 }
 
-static int cmd_stat_compare(const char* file1, const char* file2)
+static int cmd_stat_compare(const char* file1, const char* file2, int json)
 {
     size_t size1, size2;
     uint8_t* data1 = read_file(file1, &size1);
@@ -2353,47 +2353,69 @@ static int cmd_stat_compare(const char* file1, const char* file2)
     for (const char* p = file1; *p; p++) if (*p == '/') bn1 = p + 1;
     for (const char* p = file2; *p; p++) if (*p == '/') bn2 = p + 1;
 
-    printf("%-25s %15s %15s %15s\n", "", bn1, bn2, "Delta");
-    printf("%-25s %15s %15s %15s\n", "─────────────────────────",
-           "───────────────", "───────────────", "───────────────");
-    printf("%-25s %15zu %15zu %+15ld\n", "Size (bytes)", size1, size2,
-           (long)size2 - (long)size1);
-    printf("%-25s %14.3f  %14.3f  %+14.3f\n", "Entropy (bits/byte)",
-           ent1, ent2, ent2 - ent1);
-    printf("%-25s %14.1f%% %14.1f%% %+14.1f%%\n", "Printable",
-           text1, text2, text2 - text1);
-    printf("%-25s %15d %15d %+15d\n", "Unique bytes",
-           uni1, uni2, uni2 - uni1);
-    printf("%-25s %15zu %15zu %+15ld\n", "Runs (>=4)",
-           runs1, runs2, (long)runs2 - (long)runs1);
-    printf("%-25s %15zu %15zu %+15ld\n", "Max run length",
-           maxrun1, maxrun2, (long)maxrun2 - (long)maxrun1);
-
-    /* Top 5 byte frequency differences */
-    printf("\nTop 5 byte frequency differences:\n");
+    /* Compute top 5 byte frequency differences (shared by both outputs) */
     typedef struct { int byte; long diff; } freq_diff_t;
     freq_diff_t diffs[256];
     for (int i = 0; i < 256; i++) {
         diffs[i].byte = i;
-        /* Normalize to per-1000 to compare different-sized files */
         double pct1 = (size1 > 0) ? 1000.0 * freq1[i] / size1 : 0;
         double pct2 = (size2 > 0) ? 1000.0 * freq2[i] / size2 : 0;
-        diffs[i].diff = (long)((pct2 - pct1) * 1000); /* millipermille for sorting */
+        diffs[i].diff = (long)((pct2 - pct1) * 1000);
     }
-    /* Sort by absolute difference */
     for (int i = 0; i < 255; i++)
         for (int j = i + 1; j < 256; j++)
             if (labs(diffs[j].diff) > labs(diffs[i].diff)) {
                 freq_diff_t tmp = diffs[i]; diffs[i] = diffs[j]; diffs[j] = tmp;
             }
-    for (int i = 0; i < 5 && i < 256; i++) {
-        int b = diffs[i].byte;
-        double p1 = (size1 > 0) ? 100.0 * freq1[b] / size1 : 0;
-        double p2 = (size2 > 0) ? 100.0 * freq2[b] / size2 : 0;
-        char label[16];
-        if (b >= 32 && b <= 126) snprintf(label, sizeof(label), "'%c' (0x%02X)", b, b);
-        else snprintf(label, sizeof(label), "0x%02X", b);
-        printf("  %-12s  %6.2f%% → %6.2f%%  (%+.2f%%)\n", label, p1, p2, p2 - p1);
+
+    if (json) {
+        printf("{\n");
+        printf("  \"file1\": "); json_print_string(file1); printf(",\n");
+        printf("  \"file2\": "); json_print_string(file2); printf(",\n");
+        printf("  \"size1\": %zu, \"size2\": %zu, \"size_delta\": %ld,\n",
+               size1, size2, (long)size2 - (long)size1);
+        printf("  \"entropy1\": %.3f, \"entropy2\": %.3f, \"entropy_delta\": %.3f,\n",
+               ent1, ent2, ent2 - ent1);
+        printf("  \"printable_pct1\": %.1f, \"printable_pct2\": %.1f,\n", text1, text2);
+        printf("  \"unique1\": %d, \"unique2\": %d,\n", uni1, uni2);
+        printf("  \"runs1\": %zu, \"runs2\": %zu,\n", runs1, runs2);
+        printf("  \"max_run1\": %zu, \"max_run2\": %zu,\n", maxrun1, maxrun2);
+        printf("  \"top_freq_diffs\": [\n");
+        for (int i = 0; i < 5 && i < 256; i++) {
+            int b = diffs[i].byte;
+            double p1 = (size1 > 0) ? 100.0 * freq1[b] / size1 : 0;
+            double p2 = (size2 > 0) ? 100.0 * freq2[b] / size2 : 0;
+            printf("    {\"byte\": %d, \"pct1\": %.2f, \"pct2\": %.2f, \"delta\": %.2f}%s\n",
+                   b, p1, p2, p2 - p1, (i < 4) ? "," : "");
+        }
+        printf("  ]\n}\n");
+    } else {
+        printf("%-25s %15s %15s %15s\n", "", bn1, bn2, "Delta");
+        printf("%-25s %15s %15s %15s\n", "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80",
+               "───────────────", "───────────────", "───────────────");
+        printf("%-25s %15zu %15zu %+15ld\n", "Size (bytes)", size1, size2,
+               (long)size2 - (long)size1);
+        printf("%-25s %14.3f  %14.3f  %+14.3f\n", "Entropy (bits/byte)",
+               ent1, ent2, ent2 - ent1);
+        printf("%-25s %14.1f%% %14.1f%% %+14.1f%%\n", "Printable",
+               text1, text2, text2 - text1);
+        printf("%-25s %15d %15d %+15d\n", "Unique bytes",
+               uni1, uni2, uni2 - uni1);
+        printf("%-25s %15zu %15zu %+15ld\n", "Runs (>=4)",
+               runs1, runs2, (long)runs2 - (long)runs1);
+        printf("%-25s %15zu %15zu %+15ld\n", "Max run length",
+               maxrun1, maxrun2, (long)maxrun2 - (long)maxrun1);
+
+        printf("\nTop 5 byte frequency differences:\n");
+        for (int i = 0; i < 5 && i < 256; i++) {
+            int b = diffs[i].byte;
+            double p1 = (size1 > 0) ? 100.0 * freq1[b] / size1 : 0;
+            double p2 = (size2 > 0) ? 100.0 * freq2[b] / size2 : 0;
+            char label[16];
+            if (b >= 32 && b <= 126) snprintf(label, sizeof(label), "'%c' (0x%02X)", b, b);
+            else snprintf(label, sizeof(label), "0x%02X", b);
+            printf("  %-12s  %6.2f%% \xe2\x86\x92 %6.2f%%  (%+.2f%%)\n", label, p1, p2, p2 - p1);
+        }
     }
 
     free(data1); free(data2);
@@ -3197,7 +3219,7 @@ int main(int argc, char* argv[])
             else if (stat_ninputs < 2) stat_inputs[stat_ninputs++] = argv[i];
         }
         if (compare_flag && stat_ninputs == 2) {
-            return cmd_stat_compare(stat_inputs[0], stat_inputs[1]);
+            return cmd_stat_compare(stat_inputs[0], stat_inputs[1], json_flag);
         }
         if (!stat_inputs[0]) {
             fprintf(stderr, "Usage: mcx stat [--json] <file>\n"

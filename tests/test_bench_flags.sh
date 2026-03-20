@@ -747,6 +747,20 @@ if ! echo "$STAT_CMP" | grep -q "Delta"; then
 fi
 echo "OK: stat --compare shows side-by-side comparison"
 
+# Test stat --compare --json
+STAT_JSON=$("$MCX" stat --compare --json "$TMPDIR/input.txt" "$TMPDIR/compare2.txt" 2>/dev/null)
+if ! echo "$STAT_JSON" | grep -q '"entropy1"'; then
+    echo "FAIL: stat --compare --json should contain entropy1"
+    echo "$STAT_JSON"
+    exit 1
+fi
+if ! echo "$STAT_JSON" | grep -q '"top_freq_diffs"'; then
+    echo "FAIL: stat --compare --json should contain top_freq_diffs"
+    echo "$STAT_JSON"
+    exit 1
+fi
+echo "OK: stat --compare --json outputs structured JSON"
+
 # Test bench --chart
 CHART_OUT=$("$MCX" bench --chart "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$CHART_OUT" | grep -q "L1"; then
