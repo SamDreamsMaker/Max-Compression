@@ -105,7 +105,7 @@ static void print_usage(void)
         "  -n, --dry-run   Analyze file without compressing\n"
         "      --estimate  Estimate compressed size via sample (faster)\n"
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
-        "      --level-scan Try L1-L12, pick best ratio automatically\n"
+        "      --level-scan Try L1-L20, pick best ratio automatically\n"
         "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
@@ -487,7 +487,7 @@ static int cmd_compress(const char* input, const char* output, int level)
         
         if (g_level_scan) {
             /* --level-scan: try multiple levels, pick best ratio */
-            int scan_levels[] = {1, 3, 6, 9, 12};
+            int scan_levels[] = {1, 3, 6, 9, 12, 20};
             int n_scan = sizeof(scan_levels) / sizeof(scan_levels[0]);
             size_t best_size = SIZE_MAX;
             int best_level = scan_levels[0];
