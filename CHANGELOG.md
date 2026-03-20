@@ -4,6 +4,17 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 13)
+- **`mcx bench --all-levels`** — benchmark every level 1-26 (not just the default subset of 8 representative levels).
+- **`--preserve-mtime` decompress fix** — flag was only parsed in compress command; now also works for decompress/extract.
+- **`--preserve-mtime` integration test** — verifies mtime preservation through full compress→decompress roundtrip.
+- **Man page + completions update** — `--preserve-mtime`, `--memory`, and `--all-levels` documented across man page, Bash, Zsh, and Fish completions.
+
+### Skipped (Batch 13)
+- **3-byte LZ matches** — match confirmation uses `read32()` (4-byte compare) for speed in hot loop; 3-byte matches need masking/memcmp plus token format change. Deferred to v3.0.
+- **Embed CRC32 in frame header** — all 8 flag bits used; needs flag extension (v3.0 format change).
+- **Cache-friendly BWT inverse** — already optimized with merged LF-mapping, 2× unrolled with prefetch. LF-traversal is inherently random-access; no further optimization without algorithmic change.
+
 ### Added (Batch 12)
 - **`mcx compress --preserve-mtime`** — set output file mtime to match input file's modification time.
 - **`mcx bench --memory`** — report peak RSS memory usage alongside speed and ratio during benchmarks.
