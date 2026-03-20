@@ -3018,6 +3018,7 @@ int main(int argc, char* argv[])
         const char* bench_output_file = NULL;
         const char* bench_compare_self = NULL;
         const char* bench_delta_file = NULL;
+        const char* bench_save_baseline = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
                 bench_level = atoi(argv[++i]);
@@ -3108,6 +3109,8 @@ int main(int argc, char* argv[])
                 bench_compare_self = argv[++i];
             } else if (strcmp(argv[i], "--delta") == 0 && i + 1 < argc) {
                 bench_delta_file = argv[++i];
+            } else if (strcmp(argv[i], "--save-baseline") == 0 && i + 1 < argc) {
+                bench_save_baseline = argv[++i];
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -3245,6 +3248,32 @@ int main(int argc, char* argv[])
             else printf(" ✗ REGRESSION\n");
             if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return (delta > 0) ? 1 : 0;
+        }
+        if (bench_save_baseline) {
+            /* --save-baseline FILE: explicitly save current results as baseline */
+            size_t src_size;
+            uint8_t* src = read_file(bench_file, &src_size);
+            if (!src) { fprintf(stderr, "Error: cannot read input '%s'\n", bench_file); return 1; }
+            size_t dst_cap = mcx_compress_bound(src_size);
+            uint8_t* dst = (uint8_t*)malloc(dst_cap);
+            if (!dst) { free(src); return 1; }
+            int levels[] = {1, 3, 6, 9, 12};
+            int n_levels = (bench_level > 0) ? 1 : 5;
+            if (bench_level > 0) levels[0] = bench_level;
+            FILE* bf = fopen(bench_save_baseline, "w");
+            if (!bf) { fprintf(stderr, "Error: cannot write '%s'\n", bench_save_baseline); free(src); free(dst); return 1; }
+            for (int li = 0; li < n_levels; li++) {
+                size_t comp_size = mcx_compress(dst, dst_cap, src, src_size, levels[li]);
+                if (mcx_is_error(comp_size)) {
+                    printf("L%-2d  ERROR\n", levels[li]);
+                    continue;
+                }
+                fprintf(bf, "L%d %zu\n", levels[li], comp_size);
+                printf("L%-2d  %zu (saved)\n", levels[li], comp_size);
+            }
+            fclose(bf); free(src); free(dst);
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            return 0;
         }
         if (bench_delta_file) {
             /* --delta BASELINE: save baseline or compare against it.
