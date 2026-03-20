@@ -168,8 +168,12 @@ typedef struct {
 /** Default block size for block-based compression (64 KB). */
 #define MCX_DEFAULT_BLOCK_SIZE  (64 * 1024)
 
-/** Maximum block size (1 MB). */
+/** Maximum block size (64 MB). */
 #define MCX_MAX_BLOCK_SIZE      (64 * 1024 * 1024) /* 64MB blocks — +2% on large text (webster) */
+
+/** Runtime block size override (0 = use MCX_MAX_BLOCK_SIZE).
+ *  Set via mcx CLI --block-size flag. */
+extern size_t mcx_block_size_override;
 
 /** Minimum block size for adaptive blocking (1 MB). */
 #define MCX_MIN_BLOCK_SIZE      (1 * 1024 * 1024)

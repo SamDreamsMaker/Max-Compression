@@ -94,6 +94,7 @@ static void print_usage(void)
         "  -v, --verbose   Show extra info (peak memory usage)\n"
         "  -s, --strategy  Force strategy: lz, bwt, cm, smart, lzrc\n"
         "  -t, --threads N Use N threads (default: auto)\n"
+        "      --block-size SIZE  Override block size (e.g. 1M, 4M, 32M)\n"
         "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
@@ -1491,6 +1492,18 @@ int main(int argc, char* argv[])
                 g_verbose = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
+            } else if (strcmp(argv[i], "--block-size") == 0 && i + 1 < argc) {
+                /* Parse block size with optional K/M suffix */
+                char* endp;
+                long val = strtol(argv[++i], &endp, 10);
+                if (*endp == 'K' || *endp == 'k') val *= 1024;
+                else if (*endp == 'M' || *endp == 'm') val *= 1024 * 1024;
+                if (val < 64 * 1024 || val > 256 * 1024 * 1024) {
+                    fprintf(stderr, "Error: block size must be 64K-256M (got %ld)\n", val);
+                    return 1;
+                }
+                extern size_t mcx_block_size_override;
+                mcx_block_size_override = (size_t)val;
             } else if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--strategy") == 0) && i + 1 < argc) {
                 const char* sname = argv[++i];
                 if (strcmp(sname, "lz") == 0 || strcmp(sname, "lz77") == 0) {

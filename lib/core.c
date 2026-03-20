@@ -26,6 +26,15 @@
 #include "lz/lzrc.h"
 #include <time.h>
 
+/* Runtime block size override (0 = use MCX_MAX_BLOCK_SIZE) */
+size_t mcx_block_size_override = 0;
+
+/* Helper to get effective max block size */
+static inline size_t mcx_effective_block_size(void) {
+    if (mcx_block_size_override > 0) return mcx_block_size_override;
+    return MCX_MAX_BLOCK_SIZE;
+}
+
 /* Decompress profiling: set MCX_PROFILE=1 to enable stage timing */
 static int mcx_profile_enabled = -1; /* -1 = not checked yet */
 static inline int mcx_profile(void) {
@@ -259,7 +268,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
 
     if (src_size > 0 && strategy != MCX_STRATEGY_STORE && strategy != MCX_STRATEGY_FAST) {
         /* Try adaptive block sizing for BWT strategies on multi-block data */
-        if (src_size > MCX_MAX_BLOCK_SIZE &&
+        if (src_size > mcx_effective_block_size() &&
             (strategy == MCX_STRATEGY_DEFAULT || strategy == MCX_STRATEGY_BEST ||
              strategy == MCX_STRATEGY_STRIDE)) {
             uint32_t adaptive_count = 0;
@@ -267,7 +276,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             if (mcx_adaptive_blocks(in, src_size, &adaptive_sizes, &adaptive_count) == 0 &&
                 adaptive_count > 0) {
                 /* Check if adaptive gave different sizing than uniform */
-                uint32_t uniform_count = (uint32_t)((src_size + MCX_MAX_BLOCK_SIZE - 1) / MCX_MAX_BLOCK_SIZE);
+                uint32_t uniform_count = (uint32_t)((src_size + mcx_effective_block_size() - 1) / mcx_effective_block_size());
                 if (adaptive_count != uniform_count) {
                     num_blocks = adaptive_count;
                     orig_block_sizes = adaptive_sizes;
@@ -281,10 +290,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 }
             } else {
                 if (adaptive_sizes) free(adaptive_sizes);
-                num_blocks = (uint32_t)((src_size + MCX_MAX_BLOCK_SIZE - 1) / MCX_MAX_BLOCK_SIZE);
+                num_blocks = (uint32_t)((src_size + mcx_effective_block_size() - 1) / mcx_effective_block_size());
             }
         } else {
-            num_blocks = (uint32_t)((src_size + MCX_MAX_BLOCK_SIZE - 1) / MCX_MAX_BLOCK_SIZE);
+            num_blocks = (uint32_t)((src_size + mcx_effective_block_size() - 1) / mcx_effective_block_size());
         }
     }
     size_t block_sizes_offset = 0;
@@ -382,10 +391,10 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 src_offset = block_src_offsets[b];
                 block_src_size = block_src_sizes_arr[b];
             } else {
-                src_offset = (size_t)b * MCX_MAX_BLOCK_SIZE;
+                src_offset = (size_t)b * mcx_effective_block_size();
                 block_src_size = src_size - src_offset;
-                if (block_src_size > MCX_MAX_BLOCK_SIZE) {
-                    block_src_size = MCX_MAX_BLOCK_SIZE;
+                if (block_src_size > mcx_effective_block_size()) {
+                    block_src_size = mcx_effective_block_size();
                 }
             }
 
@@ -1048,7 +1057,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             /* Try BWT with genome optimizer (L12) — might find a better genome
              * than the forced genome at L20 (especially for binary data).
              * Skip for text (forced genome already optimal) and large files (>16MB). */
-            if (src_size <= MCX_MAX_BLOCK_SIZE &&
+            if (src_size <= mcx_effective_block_size() &&
                 analysis.type != MCX_DTYPE_TEXT_ASCII &&
                 analysis.type != MCX_DTYPE_TEXT_UTF8) {
                 size_t alt12 = mcx_compress(alt_buf, dst_cap, src, src_size, 12);
