@@ -636,6 +636,26 @@ static int cmd_compress(const char* input, const char* output, int level)
      * Fall back to streaming API for very large files (>256MB). */
     size_t ONE_SHOT_LIMIT = 256ULL * 1024 * 1024;
 
+    /* Resolve auto block size based on input size */
+    {
+        extern size_t mcx_block_size_override;
+        if (mcx_block_size_override == (size_t)-1) {
+            /* Auto: pick block size proportional to input.
+             * <1MB → 256KB, <16MB → 4MB, <128MB → 16MB, else 64MB (default) */
+            if (src_size < 1024 * 1024)
+                mcx_block_size_override = 256 * 1024;
+            else if (src_size < 16 * 1024 * 1024)
+                mcx_block_size_override = 4 * 1024 * 1024;
+            else if (src_size < 128 * 1024 * 1024)
+                mcx_block_size_override = 16 * 1024 * 1024;
+            else
+                mcx_block_size_override = 0; /* use default 64MB */
+            if (!g_quiet && mcx_block_size_override > 0)
+                fprintf(stderr, "Auto block size: %zuKB for %zu byte input\n",
+                        mcx_block_size_override / 1024, src_size);
+        }
+    }
+
     if (src_size > 0 && src_size <= ONE_SHOT_LIMIT) {
         /* ── One-shot compression (full pipeline) ── */
         uint8_t* src_buf = (uint8_t*)malloc(src_size);
@@ -2563,17 +2583,23 @@ int main(int argc, char* argv[])
                             limit / (1024*1024), block / (1024*1024));
                 }
             } else if (strcmp(argv[i], "--block-size") == 0 && i + 1 < argc) {
-                /* Parse block size with optional K/M suffix */
-                char* endp;
-                long val = strtol(argv[++i], &endp, 10);
-                if (*endp == 'K' || *endp == 'k') val *= 1024;
-                else if (*endp == 'M' || *endp == 'm') val *= 1024 * 1024;
-                if (val < 64 * 1024 || val > 256 * 1024 * 1024) {
-                    fprintf(stderr, "Error: block size must be 64K-256M (got %ld)\n", val);
-                    return 1;
-                }
+                const char* bsarg = argv[++i];
                 extern size_t mcx_block_size_override;
-                mcx_block_size_override = (size_t)val;
+                if (strcmp(bsarg, "auto") == 0) {
+                    /* Auto block size: will be set after reading input size */
+                    mcx_block_size_override = (size_t)-1; /* sentinel for auto */
+                } else {
+                    /* Parse block size with optional K/M suffix */
+                    char* endp;
+                    long val = strtol(bsarg, &endp, 10);
+                    if (*endp == 'K' || *endp == 'k') val *= 1024;
+                    else if (*endp == 'M' || *endp == 'm') val *= 1024 * 1024;
+                    if (val < 64 * 1024 || val > 256 * 1024 * 1024) {
+                        fprintf(stderr, "Error: block size must be 64K-256M (got %ld)\n", val);
+                        return 1;
+                    }
+                    mcx_block_size_override = (size_t)val;
+                }
             } else if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--strategy") == 0) && i + 1 < argc) {
                 const char* sname = argv[++i];
                 if (strcmp(sname, "lz") == 0 || strcmp(sname, "lz77") == 0) {
