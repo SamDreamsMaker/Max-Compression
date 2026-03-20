@@ -3020,6 +3020,7 @@ int main(int argc, char* argv[])
         const char* bench_compare_self = NULL;
         const char* bench_delta_file = NULL;
         const char* bench_save_baseline = NULL;
+        const char* bench_diff_file = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
                 bench_level = atoi(argv[++i]);
@@ -3112,6 +3113,8 @@ int main(int argc, char* argv[])
                 bench_delta_file = argv[++i];
             } else if (strcmp(argv[i], "--save-baseline") == 0 && i + 1 < argc) {
                 bench_save_baseline = argv[++i];
+            } else if (strcmp(argv[i], "--diff") == 0 && i + 1 < argc) {
+                bench_diff_file = argv[++i];
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -3275,6 +3278,76 @@ int main(int argc, char* argv[])
             fclose(bf); free(src); free(dst);
             if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return 0;
+        }
+        if (bench_diff_file) {
+            /* --diff BASELINE: like --delta but also measures and compares speed.
+             * Format: "L<N> <bytes> <comp_mbs> <dec_mbs>" per line */
+            size_t src_size;
+            uint8_t* src = read_file(bench_file, &src_size);
+            if (!src) { fprintf(stderr, "Error: cannot read input '%s'\n", bench_file); return 1; }
+            size_t dst_cap = mcx_compress_bound(src_size);
+            uint8_t* dst = (uint8_t*)malloc(dst_cap);
+            uint8_t* dec = (uint8_t*)malloc(src_size + 64);
+            if (!dst || !dec) { free(src); free(dst); free(dec); return 1; }
+
+            int levels[] = {1, 3, 6, 9, 12};
+            int n_levels = (bench_level > 0) ? 1 : 5;
+            if (bench_level > 0) levels[0] = bench_level;
+
+            /* Read baseline */
+            typedef struct { size_t bytes; double comp_mbs, dec_mbs; } bl_entry;
+            bl_entry bl[MCX_LEVEL_MAX + 1];
+            memset(bl, 0, sizeof(bl));
+            int has_bl = 0;
+            FILE* bf = fopen(bench_diff_file, "r");
+            if (bf) {
+                char line[256];
+                while (fgets(line, sizeof(line), bf)) {
+                    int lvl; size_t sz; double cmbs, dmbs;
+                    if (sscanf(line, "L%d %zu %lf %lf", &lvl, &sz, &cmbs, &dmbs) == 4 && lvl >= 1 && lvl <= MCX_LEVEL_MAX) {
+                        bl[lvl].bytes = sz; bl[lvl].comp_mbs = cmbs; bl[lvl].dec_mbs = dmbs;
+                    }
+                    has_bl = 1;
+                }
+                fclose(bf);
+            }
+
+            int regression = 0;
+            FILE* of = (!has_bl) ? fopen(bench_diff_file, "w") : NULL;
+            double mb = src_size / 1048576.0;
+
+            for (int li = 0; li < n_levels; li++) {
+                int level = levels[li];
+                double t0 = bench_time();
+                size_t comp_size = mcx_compress(dst, dst_cap, src, src_size, level);
+                double ct = bench_time() - t0;
+                if (mcx_is_error(comp_size)) { printf("L%-2d  ERROR\n", level); continue; }
+                double cmbs = (ct > 0) ? mb / ct : 0;
+
+                t0 = bench_time();
+                mcx_decompress(dec, src_size + 64, dst, comp_size);
+                double dt = bench_time() - t0;
+                double dmbs = (dt > 0) ? mb / dt : 0;
+
+                if (has_bl && bl[level].bytes > 0) {
+                    int64_t d = (int64_t)comp_size - (int64_t)bl[level].bytes;
+                    double rpct = (double)d * 100.0 / bl[level].bytes;
+                    double cspd = (bl[level].comp_mbs > 0) ? (cmbs - bl[level].comp_mbs) / bl[level].comp_mbs * 100 : 0;
+                    double dspd = (bl[level].dec_mbs > 0) ? (dmbs - bl[level].dec_mbs) / bl[level].dec_mbs * 100 : 0;
+                    printf("L%-2d  ratio: %zu→%zu %+.2f%%  comp: %.1f→%.1f MB/s %+.1f%%  dec: %.1f→%.1f MB/s %+.1f%%\n",
+                        level, bl[level].bytes, comp_size, rpct,
+                        bl[level].comp_mbs, cmbs, cspd,
+                        bl[level].dec_mbs, dmbs, dspd);
+                    if (d > 0) regression = 1;
+                } else {
+                    printf("L%-2d  %zu bytes  %.1f/%.1f MB/s (saved)\n", level, comp_size, cmbs, dmbs);
+                    if (of) fprintf(of, "L%d %zu %.2f %.2f\n", level, comp_size, cmbs, dmbs);
+                }
+            }
+            free(src); free(dst); free(dec);
+            if (of) fclose(of);
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            return regression ? 1 : 0;
         }
         if (bench_delta_file) {
             /* --delta BASELINE: save baseline or compare against it.
