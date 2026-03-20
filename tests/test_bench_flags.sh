@@ -17,7 +17,7 @@ echo "=== Bench flags integration test ==="
 echo "The quick brown fox jumps over the lazy dog. Testing bench flags." > "$TMPDIR/input.txt"
 
 # Test --all-levels: should produce 26 level lines
-OUTPUT=$("$MCX" bench --all-levels --ratio-only "$TMPDIR/input.txt" 2>&1)
+OUTPUT=$("$MCX" bench --all-levels --ratio-only "$TMPDIR/input.txt" 2>/dev/null)
 LEVEL_COUNT=$(echo "$OUTPUT" | grep -c "^L[0-9]")
 if [ "$LEVEL_COUNT" -ne 26 ]; then
     echo "FAIL: --all-levels should produce 26 level lines, got $LEVEL_COUNT"
@@ -43,7 +43,7 @@ fi
 echo "OK: --ratio-only hides speed columns"
 
 # Test default levels (without --all-levels): should produce 8 level lines
-OUTPUT2=$("$MCX" bench --ratio-only "$TMPDIR/input.txt" 2>&1)
+OUTPUT2=$("$MCX" bench --ratio-only "$TMPDIR/input.txt" 2>/dev/null)
 LEVEL_COUNT2=$(echo "$OUTPUT2" | grep -c "^L[0-9]")
 if [ "$LEVEL_COUNT2" -ne 8 ]; then
     echo "FAIL: Default bench should produce 8 level lines, got $LEVEL_COUNT2"
@@ -53,7 +53,7 @@ fi
 echo "OK: Default bench produced 8 level lines"
 
 # Test --json: output should be valid JSON with "results" array
-JSON_OUT=$("$MCX" bench -l 1 --json "$TMPDIR/input.txt" 2>&1)
+JSON_OUT=$("$MCX" bench -l 1 --json "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$JSON_OUT" | grep -q '"results"'; then
     echo "FAIL: --json should produce JSON with 'results' key"
     echo "$JSON_OUT"
@@ -66,7 +66,7 @@ fi
 echo "OK: --json produces valid JSON output"
 
 # Test --csv: output should have CSV header and data line
-CSV_OUT=$("$MCX" bench -l 1 --csv "$TMPDIR/input.txt" 2>&1)
+CSV_OUT=$("$MCX" bench -l 1 --csv "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$CSV_OUT" | head -1 | grep -q "file,original_bytes"; then
     echo "FAIL: --csv should have CSV header"
     echo "$CSV_OUT"
@@ -80,7 +80,7 @@ fi
 echo "OK: --csv produces CSV output"
 
 # Test --decode-only: should still produce output with dec_mbs
-DECODE_OUT=$("$MCX" bench -l 1 --decode-only "$TMPDIR/input.txt" 2>&1)
+DECODE_OUT=$("$MCX" bench -l 1 --decode-only "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$DECODE_OUT" | grep -q "^L1"; then
     echo "FAIL: --decode-only should produce L1 output"
     echo "$DECODE_OUT"
@@ -89,7 +89,7 @@ fi
 echo "OK: --decode-only produces output"
 
 # Test --sort ratio: first result should have highest ratio
-SORT_OUT=$("$MCX" bench --ratio-only --sort ratio "$TMPDIR/input.txt" 2>&1)
+SORT_OUT=$("$MCX" bench --ratio-only --sort ratio "$TMPDIR/input.txt" 2>/dev/null)
 # Extract ratios, first should be >= last
 FIRST_RATIO=$(echo "$SORT_OUT" | grep "^L[0-9]" | head -1 | awk '{print $3}' | tr -d 'x')
 LAST_RATIO=$(echo "$SORT_OUT" | grep "^L[0-9]" | tail -1 | awk '{print $3}' | tr -d 'x')
@@ -101,7 +101,7 @@ else
 fi
 
 # Test --top N: with --all-levels --sort ratio --top 3, verify exactly 3 data lines
-TOP_OUT=$("$MCX" bench --all-levels --sort ratio --top 3 --ratio-only "$TMPDIR/input.txt" 2>&1)
+TOP_OUT=$("$MCX" bench --all-levels --sort ratio --top 3 --ratio-only "$TMPDIR/input.txt" 2>/dev/null)
 TOP_LINES=$(echo "$TOP_OUT" | grep "^L[0-9]" | wc -l)
 if [ "$TOP_LINES" -ne 3 ]; then
     echo "FAIL: --top 3 should produce exactly 3 data lines, got $TOP_LINES"
@@ -111,7 +111,7 @@ fi
 echo "OK: --top 3 produces exactly 3 lines"
 
 # Test --median with --iterations 3: should produce output (median timing)
-MEDIAN_OUT=$("$MCX" bench -l 1 --iterations 3 --median "$TMPDIR/input.txt" 2>&1)
+MEDIAN_OUT=$("$MCX" bench -l 1 --iterations 3 --median "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$MEDIAN_OUT" | grep -q "^L1"; then
     echo "FAIL: --median should produce L1 output"
     echo "$MEDIAN_OUT"
@@ -120,7 +120,7 @@ fi
 echo "OK: --median with --iterations 3 produces output"
 
 # Test --percentile with --iterations 5: should show p5/p50/p95
-PCTILE_OUT=$("$MCX" bench -l 1 --iterations 5 --percentile "$TMPDIR/input.txt" 2>&1)
+PCTILE_OUT=$("$MCX" bench -l 1 --iterations 5 --percentile "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$PCTILE_OUT" | grep -q "p5="; then
     echo "FAIL: --percentile should show p5= in output"
     echo "$PCTILE_OUT"
@@ -137,7 +137,7 @@ fi
 echo "OK: --percentile with --iterations 5 shows p5/p50/p95"
 
 # Test --histogram: should show block size labels and ratio output
-HIST_OUT=$("$MCX" bench -l 6 --histogram "$TMPDIR/input.txt" 2>&1)
+HIST_OUT=$("$MCX" bench -l 6 --histogram "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$HIST_OUT" | grep -qi "block\|size\|ratio\|KB\|MB"; then
     echo "FAIL: --histogram should show block size / ratio output"
     echo "$HIST_OUT"
@@ -146,7 +146,7 @@ fi
 echo "OK: --histogram produces block size / ratio output"
 
 # Test --format markdown: should show markdown table (pipe characters)
-FMT_OUT=$("$MCX" bench -l 1 --format markdown "$TMPDIR/input.txt" 2>&1)
+FMT_OUT=$("$MCX" bench -l 1 --format markdown "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$FMT_OUT" | grep -q "^|"; then
     echo "FAIL: --format markdown should produce markdown table rows"
     echo "$FMT_OUT"
@@ -160,7 +160,7 @@ fi
 echo "OK: --format markdown produces markdown table"
 
 # Test --format csv: should produce CSV output
-FMT_CSV=$("$MCX" bench -l 1 --format csv "$TMPDIR/input.txt" 2>&1)
+FMT_CSV=$("$MCX" bench -l 1 --format csv "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$FMT_CSV" | grep -q "^file,original_bytes"; then
     echo "FAIL: --format csv should produce CSV header"
     echo "$FMT_CSV"
@@ -169,7 +169,7 @@ fi
 echo "OK: --format csv produces CSV output"
 
 # Test --brief: should produce compact one-line output
-BRIEF_OUT=$("$MCX" bench -l 6 --brief "$TMPDIR/input.txt" 2>&1)
+BRIEF_OUT=$("$MCX" bench -l 6 --brief "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$BRIEF_OUT" | grep -q "^L6:"; then
     echo "FAIL: --brief should produce 'L6:' compact output"
     echo "$BRIEF_OUT"
@@ -221,7 +221,7 @@ fi
 echo "OK: --level-range 1-3 roundtrip verified"
 
 # Test --worst: show worst N results
-WORST_OUT=$("$MCX" bench --all-levels --worst 3 "$TMPDIR/input.txt" 2>&1)
+WORST_OUT=$("$MCX" bench --all-levels --worst 3 "$TMPDIR/input.txt" 2>/dev/null)
 WORST_LINES=$(echo "$WORST_OUT" | grep "^L[0-9]" | wc -l)
 if [ "$WORST_LINES" -ne 3 ]; then
     echo "FAIL: --worst 3 should show exactly 3 result lines, got $WORST_LINES"
@@ -230,7 +230,7 @@ fi
 echo "OK: --worst 3 shows exactly 3 result lines"
 
 # Test --worst with --sort speed: worst by speed (slowest compressors)
-WORST_SPEED_OUT=$("$MCX" bench --all-levels --sort speed --worst 2 "$TMPDIR/input.txt" 2>&1)
+WORST_SPEED_OUT=$("$MCX" bench --all-levels --sort speed --worst 2 "$TMPDIR/input.txt" 2>/dev/null)
 WORST_SPEED_LINES=$(echo "$WORST_SPEED_OUT" | grep "^L[0-9]" | wc -l)
 if [ "$WORST_SPEED_LINES" -ne 2 ]; then
     echo "FAIL: --worst 2 --sort speed should show exactly 2 result lines, got $WORST_SPEED_LINES"
@@ -239,7 +239,7 @@ fi
 echo "OK: --worst 2 --sort speed shows exactly 2 result lines"
 
 # Test --filter with bench: force none filter
-FILTER_OUT=$("$MCX" bench --filter none -l 1 "$TMPDIR/input.txt" 2>&1)
+FILTER_OUT=$("$MCX" bench --filter none -l 1 "$TMPDIR/input.txt" 2>/dev/null)
 if ! echo "$FILTER_OUT" | grep -q "^L1"; then
     echo "FAIL: bench --filter none -l 1 should produce L1 result"
     exit 1
@@ -264,7 +264,7 @@ python3 -c "print('Skip this log file content. ' * 10)" > "$TMPDIR/benchdir/skip
 python3 -c "print('Skip this debug log too. ' * 10)" > "$TMPDIR/benchdir/debug.log"
 
 # Without --exclude: should see all 4 files
-BENCH_ALL=$("$MCX" bench -l 1 --ratio-only "$TMPDIR/benchdir" 2>&1)
+BENCH_ALL=$("$MCX" bench -l 1 --ratio-only "$TMPDIR/benchdir" 2>/dev/null)
 ALL_COUNT=$(echo "$BENCH_ALL" | grep -c "===.*===")
 if [ "$ALL_COUNT" -ne 4 ]; then
     echo "FAIL: bench directory should show 4 files, got $ALL_COUNT"
@@ -274,7 +274,7 @@ fi
 echo "OK: bench directory shows all 4 files"
 
 # With --exclude '*.log': should see only 2 files
-BENCH_EXCL=$("$MCX" bench -l 1 --ratio-only --exclude '*.log' "$TMPDIR/benchdir" 2>&1)
+BENCH_EXCL=$("$MCX" bench -l 1 --ratio-only --exclude '*.log' "$TMPDIR/benchdir" 2>/dev/null)
 EXCL_COUNT=$(echo "$BENCH_EXCL" | grep -c "===.*===")
 if [ "$EXCL_COUNT" -ne 2 ]; then
     echo "FAIL: bench --exclude '*.log' should show 2 files, got $EXCL_COUNT"
@@ -289,7 +289,7 @@ fi
 echo "OK: bench --exclude correctly skips .log files"
 
 # Test --aggregate with directory
-BENCH_AGG=$("$MCX" bench -l 1 --ratio-only --aggregate "$TMPDIR/benchdir" 2>&1)
+BENCH_AGG=$("$MCX" bench -l 1 --ratio-only --aggregate "$TMPDIR/benchdir" 2>/dev/null)
 if ! echo "$BENCH_AGG" | grep -q "AGGREGATE"; then
     echo "FAIL: --aggregate should show AGGREGATE summary"
     echo "$BENCH_AGG"
@@ -298,7 +298,7 @@ fi
 echo "OK: bench --aggregate shows aggregate summary"
 
 # Test --aggregate with --json
-BENCH_AGG_JSON=$("$MCX" bench -l 1 --ratio-only --aggregate --format json "$TMPDIR/benchdir" 2>&1)
+BENCH_AGG_JSON=$("$MCX" bench -l 1 --ratio-only --aggregate --format json "$TMPDIR/benchdir" 2>/dev/null)
 if ! echo "$BENCH_AGG_JSON" | grep -q '"aggregate"'; then
     echo "FAIL: --aggregate --json should contain aggregate key"
     echo "$BENCH_AGG_JSON"
@@ -312,7 +312,7 @@ fi
 echo "OK: bench --aggregate --json shows structured aggregate"
 
 # Test --aggregate with --csv
-BENCH_AGG_CSV=$("$MCX" bench -l 1 --ratio-only --aggregate --format csv "$TMPDIR/benchdir" 2>&1)
+BENCH_AGG_CSV=$("$MCX" bench -l 1 --ratio-only --aggregate --format csv "$TMPDIR/benchdir" 2>/dev/null)
 if ! echo "$BENCH_AGG_CSV" | grep -q "TOTAL"; then
     echo "FAIL: --aggregate --csv should contain TOTAL line"
     echo "$BENCH_AGG_CSV"
@@ -321,7 +321,7 @@ fi
 echo "OK: bench --aggregate --csv shows TOTAL line"
 
 # Test --no-header flag
-BENCH_NH=$("$MCX" bench -l 1 "$TMPDIR/benchdir/keep.txt" --ratio-only --no-header 2>&1)
+BENCH_NH=$("$MCX" bench -l 1 "$TMPDIR/benchdir/keep.txt" --ratio-only --no-header 2>/dev/null)
 if echo "$BENCH_NH" | grep -q "Benchmarking"; then
     echo "FAIL: --no-header should suppress Benchmarking title"
     echo "$BENCH_NH"
@@ -340,7 +340,7 @@ fi
 echo "OK: bench --no-header suppresses headers, keeps data"
 
 # Test --no-header with --csv
-BENCH_NH_CSV=$("$MCX" bench -l 1 "$TMPDIR/benchdir/keep.txt" --csv --no-header 2>&1)
+BENCH_NH_CSV=$("$MCX" bench -l 1 "$TMPDIR/benchdir/keep.txt" --csv --no-header 2>/dev/null)
 if echo "$BENCH_NH_CSV" | grep -q "file,original"; then
     echo "FAIL: --no-header --csv should suppress CSV header line"
     echo "$BENCH_NH_CSV"
@@ -353,5 +353,45 @@ if [ "$CSV_COLS" -lt 5 ]; then
     exit 1
 fi
 echo "OK: bench --no-header --csv suppresses header, keeps data"
+
+# Test --repeat with --format json
+BENCH_REPEAT=$("$MCX" bench -l 1 --repeat 2 --format json "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$BENCH_REPEAT" | grep -q '"level"'; then
+    echo "FAIL: --repeat --format json should contain level field"
+    echo "$BENCH_REPEAT"
+    exit 1
+fi
+# --repeat 2 should produce 2 JSON result objects
+JSON_COUNT=$(echo "$BENCH_REPEAT" | grep -c '"results"')
+if [ "$JSON_COUNT" -lt 2 ]; then
+    echo "FAIL: --repeat 2 should produce at least 2 JSON result objects, got $JSON_COUNT"
+    echo "$BENCH_REPEAT"
+    exit 1
+fi
+echo "OK: bench --repeat --format json works ($JSON_COUNT runs)"
+
+# Test --warmup-iterations N
+BENCH_WI=$("$MCX" bench -l 1 --warmup-iterations 2 --brief "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$BENCH_WI" | grep -q "L1:"; then
+    echo "FAIL: --warmup-iterations should produce L1 output"
+    echo "$BENCH_WI"
+    exit 1
+fi
+echo "OK: bench --warmup-iterations works"
+
+# Test --adaptive-level
+ADAPT_OUT=$("$MCX" compress --adaptive-level "$TMPDIR/input.txt" -o "$TMPDIR/adaptive_out.mcx" -f 2>/dev/null)
+if ! echo "$ADAPT_OUT" | grep -q "Entropy:.*auto-selected L"; then
+    echo "FAIL: --adaptive-level should show entropy and selected level"
+    echo "$ADAPT_OUT"
+    exit 1
+fi
+# Verify roundtrip
+"$MCX" decompress "$TMPDIR/adaptive_out.mcx" -o "$TMPDIR/adaptive_rt.txt" -f 2>&1 > /dev/null
+if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/adaptive_rt.txt" > /dev/null 2>&1; then
+    echo "FAIL: --adaptive-level roundtrip failed"
+    exit 1
+fi
+echo "OK: --adaptive-level roundtrip verified"
 
 echo "=== All bench flags tests passed ==="

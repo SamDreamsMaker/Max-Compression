@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "$0")/portable.sh"
 # Test all CLI flag combinations
 set -e
 MCX="${1:-build/bin/mcx}"
@@ -139,8 +140,8 @@ if [ "$FD_RATIO" -ge 1 ]; then
 fi
 # Compare with normal L12 — fast-decode should produce >= same or slightly larger output
 $MCX compress -l 12 "$TMP/fd_input.txt" -o "$TMP/normal.mcx"
-FD_SIZE=$(stat -c%s "$TMP/fd.mcx")
-NORMAL_SIZE=$(stat -c%s "$TMP/normal.mcx")
+FD_SIZE=$(get_file_size "$TMP/fd.mcx")
+NORMAL_SIZE=$(get_file_size "$TMP/normal.mcx")
 echo "  --fast-decode size: $FD_SIZE vs normal: $NORMAL_SIZE"
 if [ "$FD_SIZE" -ge "$NORMAL_SIZE" ]; then
     echo "  --fast-decode >= normal size: OK (expected)"

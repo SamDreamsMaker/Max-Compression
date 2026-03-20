@@ -277,12 +277,16 @@ static const char* g_exclude_pattern = NULL; /* Glob pattern for --exclude */
 static int g_decompress_check = 0; /* In-memory decompress+verify after compress */
 static int g_adaptive_level = 0; /* Analyze entropy and pick optimal level per-block */
 
-/** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
+/** Get peak RSS in KB. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
+#if defined(_WIN32)
+    return 0; /* TODO: GetProcessMemoryInfo */
+#else
     struct rusage ru;
     if (getrusage(RUSAGE_SELF, &ru) == 0)
-        return ru.ru_maxrss; /* KB on Linux */
+        return ru.ru_maxrss; /* KB on Linux, bytes on macOS */
     return 0;
+#endif
 }
 
 /** Format memory size for display */
@@ -2378,7 +2382,11 @@ int main(int argc, char* argv[])
 #endif
             if (!has_simd) printf(" none");
             printf("\n");
+#ifdef __STDC_VERSION__
             printf("    C std:      C%ld\n", __STDC_VERSION__);
+#else
+            printf("    C std:      unknown\n");
+#endif
             printf("    Word size:  %zu-bit\n", sizeof(void*) * 8);
 #ifdef MCX_USE_DIVSUFSORT
             printf("    BWT sort:   libdivsufsort (fast)\n");
