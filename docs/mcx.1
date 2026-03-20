@@ -101,6 +101,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-compare\-self\fR \fIREF\fR]
 [\fB\-\-delta\fR \fIBASELINE\fR]
 [\fB\-\-save\-baseline\fR \fIFILE\fR]
+[\fB\-\-baseline\-dir\fR \fIDIR\fR]
 [\fB\-\-diff\fR \fIBASELINE\fR]
 [\fB\-\-profile\fR]
 \fIINPUT\fR
@@ -361,6 +362,13 @@ For \fBbench\fR: explicitly save current compressed sizes to \fIFILE\fR.
 Unlike \fB\-\-delta\fR which auto\-saves on first run and compares on
 subsequent runs, \fB\-\-save\-baseline\fR always overwrites the file.
 Output format is compatible with \fB\-\-delta\fR for subsequent comparisons.
+.TP
+.BR \-\-baseline\-dir =\fIDIR\fR
+For \fBbench\fR: store per\-file baselines in \fIDIR\fR. On first run,
+saves each file's compressed sizes as \fIDIR/filename.baseline\fR. On
+subsequent runs, compares against saved baselines and reports deltas.
+Works with both single file and directory inputs. Returns exit code 1 on
+any regression. Useful for tracking per\-file ratio changes across builds.
 .TP
 .BR \-\-diff =\fIBASELINE\fR
 For \fBbench\fR: like \fB\-\-delta\fR but also measures and compares

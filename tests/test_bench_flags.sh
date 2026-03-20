@@ -700,4 +700,36 @@ if ! echo "$DRY_ADAPT" | grep -q "auto-selected"; then
 fi
 echo "OK: --dry-run --adaptive-level shows level selection"
 
+# Test --baseline-dir (save and compare)
+BLDIR="$TMPDIR/baselines"
+BL_OUT=$("$MCX" bench --baseline-dir "$BLDIR" -l 6 "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$BL_OUT" | grep -q "saving baseline"; then
+    echo "FAIL: --baseline-dir first run should say 'saving baseline'"
+    echo "$BL_OUT"
+    exit 1
+fi
+if [ ! -f "$BLDIR/input.txt.baseline" ]; then
+    echo "FAIL: --baseline-dir should create input.txt.baseline"
+    exit 1
+fi
+echo "OK: --baseline-dir saves per-file baseline"
+
+# Compare run
+BL_CMP=$("$MCX" bench --baseline-dir "$BLDIR" -l 6 "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$BL_CMP" | grep -q "+0 (+0.00%) ="; then
+    echo "FAIL: --baseline-dir second run should show MATCH"
+    echo "$BL_CMP"
+    exit 1
+fi
+echo "OK: --baseline-dir compares against saved baseline"
+
+# Tamper baseline to detect regression
+echo "L6 1" > "$BLDIR/input.txt.baseline"
+BL_REG=$("$MCX" bench --baseline-dir "$BLDIR" -l 6 "$TMPDIR/input.txt" 2>/dev/null) && BL_EXIT=0 || BL_EXIT=$?
+if [ "$BL_EXIT" -ne 1 ]; then
+    echo "FAIL: --baseline-dir should exit 1 on regression (got $BL_EXIT)"
+    exit 1
+fi
+echo "OK: --baseline-dir exits 1 on regression"
+
 echo "=== All bench flags tests passed ==="

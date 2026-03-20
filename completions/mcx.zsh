@@ -127,6 +127,7 @@ _mcx() {
         '--compare-self[Compare against reference .mcx file]:ref:_files'
         '--delta[Compare against baseline file]:baseline:_files'
         '--save-baseline[Save current results as baseline]:file:_files'
+        '--baseline-dir[Per-file baselines in directory]:dir:_directories'
         '--diff[Compare ratio and speed against baseline]:baseline:_files'
         '--profile[Show per-phase time breakdown]'
         '--decode-only[Benchmark decompression only]'

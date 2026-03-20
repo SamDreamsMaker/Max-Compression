@@ -3092,6 +3092,7 @@ int main(int argc, char* argv[])
         const char* bench_delta_file = NULL;
         const char* bench_save_baseline = NULL;
         const char* bench_diff_file = NULL;
+        const char* bench_baseline_dir = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
                 bench_level = atoi(argv[++i]);
@@ -3197,6 +3198,8 @@ int main(int argc, char* argv[])
                 bench_save_baseline = argv[++i];
             } else if (strcmp(argv[i], "--diff") == 0 && i + 1 < argc) {
                 bench_diff_file = argv[++i];
+            } else if (strcmp(argv[i], "--baseline-dir") == 0 && i + 1 < argc) {
+                bench_baseline_dir = argv[++i];
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -3239,6 +3242,12 @@ int main(int argc, char* argv[])
             }
             saved_stdout = stdout;
             stdout = of;
+        }
+        if (bench_baseline_dir) {
+            /* --baseline-dir DIR: per-file baselines — handled separately,
+             * supports both single file and directory input.
+             * Jumps to the baseline-dir handler below. */
+            goto handle_baseline_dir;
         }
         if (is_directory(bench_file)) {
             /* Directory mode: benchmark each file in directory */
@@ -3370,6 +3379,97 @@ int main(int argc, char* argv[])
             fclose(bf); free(src); free(dst);
             if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
             return 0;
+        }
+        handle_baseline_dir:
+        if (bench_baseline_dir) {
+            /* --baseline-dir DIR: per-file baselines in a directory.
+             * First run: save baselines as DIR/filename.baseline
+             * Subsequent: compare against saved baselines.
+             * Works with single files or directories (bench_file). */
+#ifdef _WIN32
+            _mkdir(bench_baseline_dir);
+#else
+            mkdir(bench_baseline_dir, 0755);
+#endif
+            file_list_t fl = {NULL, 0, 0};
+            int is_dir = is_directory(bench_file);
+            if (is_dir) {
+                collect_files_recursive(bench_file, &fl, ".mcx", bench_exclude);
+            } else {
+                file_list_add(&fl, bench_file);
+            }
+            if (fl.count == 0) {
+                fprintf(stderr, "Error: no files found\n");
+                return 1;
+            }
+            int has_regression = 0;
+            for (size_t fi = 0; fi < fl.count; fi++) {
+                const char* fpath = fl.paths[fi];
+                /* Extract basename for baseline filename */
+                const char* bname = fpath;
+                for (const char* p = fpath; *p; p++) {
+                    if (*p == '/' || *p == '\\') bname = p + 1;
+                }
+                char blpath[1024];
+                snprintf(blpath, sizeof(blpath), "%s/%s.baseline", bench_baseline_dir, bname);
+
+                size_t fsz;
+                uint8_t* fdata = read_file(fpath, &fsz);
+                if (!fdata) { fprintf(stderr, "Error: cannot read '%s'\n", fpath); continue; }
+                size_t dst_cap = mcx_compress_bound(fsz);
+                uint8_t* cdst = (uint8_t*)malloc(dst_cap);
+                if (!cdst) { free(fdata); continue; }
+
+                int levels[] = {1, 3, 6, 9, 12};
+                int n_levels = (bench_level > 0) ? 1 : 5;
+                if (bench_level > 0) levels[0] = bench_level;
+
+                /* Check if baseline exists */
+                FILE* bf = fopen(blpath, "r");
+                if (!bf) {
+                    /* First run: save baseline */
+                    bf = fopen(blpath, "w");
+                    if (!bf) { fprintf(stderr, "Error: cannot write '%s'\n", blpath); free(fdata); free(cdst); continue; }
+                    printf("=== %s (saving baseline) ===\n", bname);
+                    for (int li = 0; li < n_levels; li++) {
+                        size_t csz = mcx_compress(cdst, dst_cap, fdata, fsz, levels[li]);
+                        if (mcx_is_error(csz)) { printf("  L%-2d  ERROR\n", levels[li]); continue; }
+                        fprintf(bf, "L%d %zu\n", levels[li], csz);
+                        printf("  L%-2d  %zu (saved)\n", levels[li], csz);
+                    }
+                    fclose(bf);
+                } else {
+                    /* Compare against baseline */
+                    size_t bl_sizes[MCX_LEVEL_MAX + 1];
+                    memset(bl_sizes, 0, sizeof(bl_sizes));
+                    char line[256];
+                    while (fgets(line, sizeof(line), bf)) {
+                        int lvl; size_t sz;
+                        if (sscanf(line, "L%d %zu", &lvl, &sz) == 2 && lvl >= 1 && lvl <= MCX_LEVEL_MAX)
+                            bl_sizes[lvl] = sz;
+                    }
+                    fclose(bf);
+                    printf("=== %s ===\n", bname);
+                    for (int li = 0; li < n_levels; li++) {
+                        size_t csz = mcx_compress(cdst, dst_cap, fdata, fsz, levels[li]);
+                        if (mcx_is_error(csz)) { printf("  L%-2d  ERROR\n", levels[li]); continue; }
+                        if (bl_sizes[levels[li]] > 0) {
+                            long delta = (long)csz - (long)bl_sizes[levels[li]];
+                            double pct = 100.0 * (double)delta / (double)bl_sizes[levels[li]];
+                            const char* sym = (delta < 0) ? "\xe2\x9c\x93" : (delta > 0) ? "\xe2\x9c\x97" : "=";
+                            printf("  L%-2d  %zu vs %zu  %+ld (%+.2f%%) %s\n",
+                                   levels[li], csz, bl_sizes[levels[li]], delta, pct, sym);
+                            if (delta > 0) has_regression = 1;
+                        } else {
+                            printf("  L%-2d  %zu (no baseline)\n", levels[li], csz);
+                        }
+                    }
+                }
+                free(fdata); free(cdst);
+            }
+            file_list_free(&fl);
+            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            return has_regression ? 1 : 0;
         }
         if (bench_diff_file) {
             /* --diff BASELINE: like --delta but also measures and compares speed.

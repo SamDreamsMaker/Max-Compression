@@ -106,6 +106,7 @@ complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l output -r -F -
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l compare-self -r -F -d 'Compare against reference .mcx file'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l delta -r -F -d 'Compare against baseline file'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l save-baseline -r -F -d 'Save current results as baseline'
+complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l baseline-dir -r -F -d 'Per-file baselines in directory'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l diff -r -F -d 'Compare ratio and speed against baseline'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l profile -d 'Show per-phase time breakdown'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l decode-only -d 'Benchmark decompression only'
