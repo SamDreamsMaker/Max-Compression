@@ -278,6 +278,12 @@ Force a specific preprocessing filter instead of auto\-detect.
 Valid values: \fBdelta\fR (sorted integer sequences), \fBnibble\fR
 (structured binary data), \fBnone\fR (disable preprocessing).
 .TP
+.BR \-\-fast\-decode
+Prefer faster\-decoding entropy coders (rANS over Adaptive AC) even at
+slight ratio cost. Useful when decompress speed matters more than maximum
+compression. For BWT blocks, also skips the CM\-rANS trial (prefer simpler
+rANS). Recommended when serving compressed data for real\-time consumption.
+.TP
 .BR \-\-no\-trials
 Skip multi\-strategy trial at L20+ (use first matching strategy).
 Faster but may miss the optimal strategy for mixed\-content files.
@@ -388,6 +394,11 @@ comparisons.
 For \fBbench\fR: only show the worst N results by compression ratio.
 Useful for identifying hard\-to\-compress files in a batch. Opposite
 of \fB\-\-top\fR.
+.TP
+.BR \-\-filter =\fINAME\fR
+For \fBbench\fR: benchmark with a forced preprocessing filter to measure
+filter impact on specific data. Valid values: \fBdelta\fR, \fBnibble\fR,
+\fBnone\fR. Passes the filter to the compressor for each benchmark run.
 .TP
 .BR \-\-exclude =\fIGLOB\fR
 For \fBcompress \-r\fR: skip files matching the given glob pattern.
