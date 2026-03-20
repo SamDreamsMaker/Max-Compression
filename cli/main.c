@@ -23,6 +23,7 @@
 #include <sys/resource.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <utime.h>
 #include <maxcomp/maxcomp.h>
 #include "../lib/internal.h"
 #include "../lib/optimizer/genetic.h"
@@ -107,6 +108,7 @@ static void print_usage(void)
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
         "      --level-scan Try L1-L20, pick best ratio automatically\n"
         "      --filter F  Force preprocessing filter: auto, delta, nibble, none\n"
+        "      --preserve-mtime  Set output file mtime to match input\n"
         "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
@@ -228,6 +230,7 @@ static int g_force_filter = 0; /* 0=auto, 1=delta, 2=nibble, 3=none */
 static int g_estimate = 0;  /* Estimate compressed size via sample compress */
 static int g_level_scan = 0; /* Try L1-L12, pick best ratio automatically */
 static size_t g_split_size = 0; /* Split output into chunks of this size (0=disabled) */
+static int g_preserve_mtime = 0; /* Preserve source file mtime on output */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -333,6 +336,10 @@ static int cmd_compress(const char* input, const char* output, int level)
         output = auto_output;
     }
     
+    /* Capture source file mtime for --preserve-mtime */
+    struct stat src_stat;
+    int have_src_stat = (g_preserve_mtime && fstat(fileno(fin), &src_stat) == 0);
+
     fseek(fin, 0, SEEK_END);
     size_t src_size = ftell(fin);
     fseek(fin, 0, SEEK_SET);
@@ -739,6 +746,25 @@ static int cmd_compress(const char* input, const char* output, int level)
         if (!g_quiet) printf("  Verified: roundtrip OK ✓\n");
     }
 
+    /* Preserve source file mtime on output if --preserve-mtime */
+    if (have_src_stat && !g_stdout && output) {
+        struct utimbuf ut;
+        ut.actime = src_stat.st_atime;
+        ut.modtime = src_stat.st_mtime;
+        if (g_split_size > 0) {
+            /* Set mtime on all chunk files */
+            for (int cn = 1; ; cn++) {
+                char cname[1088];
+                snprintf(cname, sizeof(cname), "%s.%03d", output, cn);
+                if (access(cname, F_OK) != 0) break;
+                utime(cname, &ut);
+            }
+        } else {
+            utime(output, &ut);
+        }
+        if (!g_quiet) printf("  Preserved mtime from source\n");
+    }
+
     /* Delete source file if --delete was specified */
     if (g_delete && !g_stdout) {
         if (remove(input) != 0) {
@@ -788,6 +814,10 @@ static int cmd_decompress(const char* input, const char* output)
         fclose(fin);
         return 1;
     }
+
+    /* Capture source file mtime for --preserve-mtime */
+    struct stat dec_src_stat;
+    int have_dec_src_stat = (g_preserve_mtime && fstat(fileno(fin), &dec_src_stat) == 0);
 
     /* Read entire compressed file into memory */
     fseek(fin, 0, SEEK_END);
@@ -895,6 +925,15 @@ static int cmd_decompress(const char* input, const char* output)
     free(dst_buf);
     fclose(fin);
     fclose(fout);
+
+    /* Preserve source file mtime on output if --preserve-mtime */
+    if (have_dec_src_stat && !g_stdout && output) {
+        struct utimbuf ut;
+        ut.actime = dec_src_stat.st_atime;
+        ut.modtime = dec_src_stat.st_mtime;
+        utime(output, &ut);
+        if (!g_quiet) printf("  Preserved mtime from source\n");
+    }
 
     /* Delete source file if --delete was specified */
     if (g_delete && !g_stdout) {
@@ -1906,6 +1945,8 @@ int main(int argc, char* argv[])
                             "  Available: lz, bwt, cm, smart, lzrc\n", sname);
                     return 1;
                 }
+            } else if (strcmp(argv[i], "--preserve-mtime") == 0) {
+                g_preserve_mtime = 1;
             } else if (strcmp(argv[i], "--split") == 0 && i + 1 < argc) {
                 g_split_size = parse_size_suffix(argv[++i]);
                 if (g_split_size == 0) {
