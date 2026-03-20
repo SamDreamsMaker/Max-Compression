@@ -575,4 +575,60 @@ if ! echo "$SB_OUT" | grep -q "saved"; then
 fi
 echo "OK: --save-baseline creates file"
 
+# Test --save-baseline + --delta workflow
+rm -f "$TMPDIR/workflow_bl.txt"
+"$MCX" bench --save-baseline "$TMPDIR/workflow_bl.txt" -l 1 "$TMPDIR/input.txt" 2>/dev/null
+WF_OUT=$("$MCX" bench --delta "$TMPDIR/workflow_bl.txt" -l 1 "$TMPDIR/input.txt" 2>/dev/null)
+WF_EXIT=$?
+if [ "$WF_EXIT" -ne 0 ]; then
+    echo "FAIL: --save-baseline + --delta should exit 0 (no regression)"
+    echo "$WF_OUT"
+    exit 1
+fi
+if ! echo "$WF_OUT" | grep -q "=\|+0"; then
+    echo "FAIL: --save-baseline + --delta should show MATCH"
+    echo "$WF_OUT"
+    exit 1
+fi
+echo "OK: --save-baseline + --delta workflow verified (MATCH, exit 0)"
+
+# Test --diff flag (ratio + speed comparison)
+rm -f "$TMPDIR/diff_bl.txt"
+DIFF_SAVE=$("$MCX" bench --diff "$TMPDIR/diff_bl.txt" -l 1 "$TMPDIR/input.txt" 2>/dev/null)
+if [ ! -f "$TMPDIR/diff_bl.txt" ]; then
+    echo "FAIL: --diff should create baseline file"
+    exit 1
+fi
+if ! echo "$DIFF_SAVE" | grep -q "saved"; then
+    echo "FAIL: --diff first run should show saved message"
+    echo "$DIFF_SAVE"
+    exit 1
+fi
+DIFF_CMP=$("$MCX" bench --diff "$TMPDIR/diff_bl.txt" -l 1 "$TMPDIR/input.txt" 2>/dev/null)
+if ! echo "$DIFF_CMP" | grep -q "ratio:"; then
+    echo "FAIL: --diff second run should show ratio comparison"
+    echo "$DIFF_CMP"
+    exit 1
+fi
+if ! echo "$DIFF_CMP" | grep -q "comp:"; then
+    echo "FAIL: --diff second run should show compress speed comparison"
+    echo "$DIFF_CMP"
+    exit 1
+fi
+echo "OK: bench --diff ratio + speed comparison works"
+
+# Test --block-size auto
+AUTO_BS=$("$MCX" compress --block-size auto -l 12 "$TMPDIR/input.txt" -o "$TMPDIR/auto_bs.mcx" -f 2>&1)
+if ! echo "$AUTO_BS" | grep -q "Auto block size"; then
+    echo "FAIL: --block-size auto should show auto block size"
+    echo "$AUTO_BS"
+    exit 1
+fi
+"$MCX" decompress "$TMPDIR/auto_bs.mcx" -o "$TMPDIR/auto_bs_rt.txt" -f -q 2>/dev/null
+if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/auto_bs_rt.txt" > /dev/null 2>&1; then
+    echo "FAIL: --block-size auto roundtrip failed"
+    exit 1
+fi
+echo "OK: --block-size auto roundtrip verified"
+
 echo "=== All bench flags tests passed ==="
