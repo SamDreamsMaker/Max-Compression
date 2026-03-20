@@ -160,7 +160,9 @@ ratio, level, strategy). Use \fB\-\-json\fR for machine\-readable output.
 Aliases: \fBlist\fR.
 .TP
 .B bench
-Benchmark compression on a file across all major levels.
+Benchmark compression on a file or directory across all major levels.
+When the input is a directory, each file is benchmarked individually.
+Use \fB\-\-exclude\fR to skip files matching a glob pattern.
 Use \fB\-l\fR for a specific level, \fB\-\-compare\fR to include
 gzip/bzip2/xz results, \fB\-\-csv\fR for CSV output,
 \fB\-\-warmup\fR to run one warmup iteration before timing,
@@ -401,9 +403,12 @@ filter impact on specific data. Valid values: \fBdelta\fR, \fBnibble\fR,
 \fBnone\fR. Passes the filter to the compressor for each benchmark run.
 .TP
 .BR \-\-exclude =\fIGLOB\fR
-For \fBcompress \-r\fR: skip files matching the given glob pattern.
+For \fBcompress \-r\fR and \fBbench\fR (directory input): skip files
+matching the given glob pattern.
 Example: \fB\-\-exclude '*.log'\fR skips all .log files. Uses
 \fBfnmatch\fR(3) pattern matching on filenames (not paths).
+For bench, when the input is a directory, each file is benchmarked
+individually and results are shown per file.
 .TP
 .BR \-\-keep\-broken
 For \fBcompress\fR: keep partial output on error instead of deleting.
