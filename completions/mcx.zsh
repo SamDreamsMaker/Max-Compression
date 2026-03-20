@@ -122,6 +122,7 @@ _mcx() {
         '--warmup[Run warmup iteration before timing]'
         '--warmup-iterations[Number of warmup iterations]:count:'
         '--cold[Flush filesystem cache between iterations]'
+        '--output[Write results to file (append mode)]:file:_files'
         '--decode-only[Benchmark decompression only]'
         '--iterations[Number of iterations]:iterations:'
         '--size[Benchmark on truncated prefix]:size:'
