@@ -115,6 +115,7 @@ _mcx() {
         '--iterations[Number of iterations]:iterations:'
         '--size[Benchmark on truncated prefix]:size:'
         '--memory[Report peak RSS memory usage]'
+        '--all-levels[Benchmark every level 1-26]'
         '-t[Thread count]:threads:'
         '-T[Thread count]:threads:'
         '*:input:_files'
