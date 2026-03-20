@@ -318,8 +318,8 @@ static void match_update(match_t *m, uint32_t pos) {
 
 /* ── SSE ───────────────────────────────────────────────────────── */
 
-#define SSE_CTXS 256
-#define SSE_BUCKETS 128
+#define SSE_CTXS 512
+#define SSE_BUCKETS 256
 
 typedef struct { uint16_t t[SSE_CTXS][SSE_BUCKETS]; } sse_t;
 
@@ -372,7 +372,8 @@ typedef struct {
     smap_t o8;              /* order-8 */
     match_t match;
     sse_t sse;
-    mixer_t mx1[256], mx2[8], mx3[8];
+    sse_t apm;  /* second-stage APM with different context */
+    mixer_t mx1[2048], mx2[64], mx3[8];
     float lr;
     uint8_t prev[8];
     uint32_t word_hash;
@@ -406,8 +407,9 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     smap_init(&cm->o8, 1<<24);
     match_init(&cm->match, data);
     sse_init(&cm->sse);
-    for (int i = 0; i < 256; i++) mixer_init(&cm->mx1[i], N_MODELS);
-    for (int i = 0; i < 8; i++) mixer_init(&cm->mx2[i], N_MODELS);
+    sse_init(&cm->apm);
+    for (int i = 0; i < 2048; i++) mixer_init(&cm->mx1[i], N_MODELS);
+    for (int i = 0; i < 64; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
     cm->lr = 0.012f;
     cm->partial = 1;
@@ -491,15 +493,15 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
         else str[i] = stretch((float)preds[i] / PROB_MAX);
     }
     
-    float m1 = mixer_mix(&cm->mx1[cm->prev[0]], str);
-    float m2 = mixer_mix(&cm->mx2[char_class(cm->prev[0])], str);
+    float m1 = mixer_mix(&cm->mx1[(cm->prev[0] << 3) | bp], str);
+    float m2 = mixer_mix(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str);
     float m3 = mixer_mix(&cm->mx3[bp], str);
     float mixed = (m1 + m2 + m3) / 3.0f;
     
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
     
-    uint16_t final = sse_map(&cm->sse, cm->partial & (SSE_CTXS-1), mp);
+    uint16_t final = sse_map(&cm->sse, ((cm->partial << 2) | bp) & (SSE_CTXS-1), mp);
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
@@ -534,11 +536,11 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     float lr = cm->total_bits < 2000 ? 0.05f :
                cm->total_bits < 20000 ? 0.020f :
                cm->total_bits < 200000 ? 0.010f : 0.005f;
-    mixer_learn(&cm->mx1[cm->prev[0]], str, bit, lr);
-    mixer_learn(&cm->mx2[char_class(cm->prev[0])], str, bit, lr);
+    mixer_learn(&cm->mx1[(cm->prev[0] << 3) | bp], str, bit, lr);
+    mixer_learn(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str, bit, lr);
     mixer_learn(&cm->mx3[bp], str, bit, lr);
     cm->total_bits++;
-    sse_update(&cm->sse, cm->partial & (SSE_CTXS-1), mp, bit);
+    sse_update(&cm->sse, ((cm->partial << 2) | bp) & (SSE_CTXS-1), mp, bit);
     
     cm->partial = (cm->partial << 1) | bit;
 }
@@ -580,8 +582,8 @@ static size_t cm_compress(uint8_t *dst, size_t cap,
             uint16_t prob = cm_predict(&cm, (uint32_t)i, bp, str);
             rcenc_bit(&rc, prob, b);
             
-            float em1 = mixer_mix(&cm.mx1[cm.prev[0]], str);
-            float em2 = mixer_mix(&cm.mx2[char_class(cm.prev[0])], str);
+            float em1 = mixer_mix(&cm.mx1[(cm.prev[0] << 3) | bp], str);
+            float em2 = mixer_mix(&cm.mx2[(char_class(cm.prev[0]) << 3) | bp], str);
             float em3 = mixer_mix(&cm.mx3[bp], str);
             float mixed = (em1 + em2 + em3) / 3.0f;
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
@@ -618,8 +620,8 @@ static size_t cm_decompress(uint8_t *dst, size_t cap,
             uint16_t prob = cm_predict(&cm, (uint32_t)i, bp, str);
             int b = rcdec_bit(&rc, prob);
             
-            float dm1 = mixer_mix(&cm.mx1[cm.prev[0]], str);
-            float dm2 = mixer_mix(&cm.mx2[char_class(cm.prev[0])], str);
+            float dm1 = mixer_mix(&cm.mx1[(cm.prev[0] << 3) | bp], str);
+            float dm2 = mixer_mix(&cm.mx2[(char_class(cm.prev[0]) << 3) | bp], str);
             float dm3 = mixer_mix(&cm.mx3[bp], str);
             float mixed = (dm1 + dm2 + dm3) / 3.0f;
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
