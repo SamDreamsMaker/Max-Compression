@@ -64,7 +64,7 @@ static void print_usage(void)
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
         "  mcx bench      [-l LEVEL] [--compare] <input>  # benchmark all (or specific) levels\n"
         "  mcx compare    <input>                   # alias for bench\n"
-        "  mcx upgrade    [-l LEVEL] <file.mcx>    # recompress at different level\n"
+        "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
         "  mcx test                                # run self-tests\n"
         "  mcx version [--build]                   # detailed build info\n"
@@ -2210,7 +2210,7 @@ int main(int argc, char* argv[])
     } else if (strcmp(argv[1], "upgrade") == 0 || strcmp(argv[1], "recompress") == 0) {
         /* Re-compress an .mcx file at a different level (decompress+recompress in one step) */
         int new_level = MCX_LEVEL_DEFAULT;
-        int quiet = 0, force = 0;
+        int quiet = 0, force = 0, in_place = 0;
         const char* input_file = NULL;
         const char* output_path = NULL;
         for (int i = 2; i < argc; i++) {
@@ -2224,6 +2224,8 @@ int main(int argc, char* argv[])
                 quiet = 1;
             } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--force") == 0) {
                 force = 1;
+            } else if (strcmp(argv[i], "--in-place") == 0 || strcmp(argv[i], "-i") == 0) {
+                in_place = 1;
             } else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) {
                 output_path = argv[++i];
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
@@ -2233,7 +2235,11 @@ int main(int argc, char* argv[])
             }
         }
         if (!input_file) {
-            fprintf(stderr, "Usage: mcx upgrade [-l LEVEL] [-o output.mcx] <input.mcx>\n");
+            fprintf(stderr, "Usage: mcx upgrade [-l LEVEL] [-o output.mcx] [--in-place] <input.mcx>\n");
+            return 1;
+        }
+        if (in_place && output_path) {
+            fprintf(stderr, "Error: --in-place and -o cannot be used together\n");
             return 1;
         }
 #ifdef _OPENMP
