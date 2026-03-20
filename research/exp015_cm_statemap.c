@@ -299,8 +299,16 @@ static void sse_init(sse_t *s) {
 }
 
 static uint16_t sse_map(sse_t *s, int ctx, uint16_t prob) {
-    int b = prob * (SSE_BUCKETS - 1) / PROB_MAX;
-    return s->t[ctx % SSE_CTXS][b];
+    /* Interpolated lookup between adjacent buckets */
+    int scaled = prob * (SSE_BUCKETS - 1);
+    int b = scaled / PROB_MAX;
+    int frac = scaled % PROB_MAX; /* fractional part */
+    int c = ctx % SSE_CTXS;
+    if (b >= SSE_BUCKETS - 1) return s->t[c][SSE_BUCKETS - 1];
+    /* Linear interpolation */
+    uint32_t p0 = s->t[c][b];
+    uint32_t p1 = s->t[c][b + 1];
+    return (uint16_t)(p0 + (p1 - p0) * frac / PROB_MAX);
 }
 
 static void sse_update(sse_t *s, int ctx, uint16_t prob, int bit) {
