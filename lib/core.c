@@ -29,6 +29,9 @@
 /* Runtime block size override (0 = use MCX_MAX_BLOCK_SIZE) */
 size_t mcx_block_size_override = 0;
 
+/* Skip multi-strategy trials at L20+ (use first strategy only, faster) */
+int mcx_no_trials = 0;
+
 /* Helper to get effective max block size */
 static inline size_t mcx_effective_block_size(void) {
     if (mcx_block_size_override > 0) return mcx_block_size_override;
@@ -1035,7 +1038,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
     }
 
     /* ── Multi-trial for L20+: try alternative strategies, keep smallest ── */
-    if (level >= 20 && level <= 22 && level != 21
+    if (!mcx_no_trials && level >= 20 && level <= 22 && level != 21
         && strategy != MCX_STRATEGY_STORE 
         && strategy != MCX_STRATEGY_LZ_HC && strategy != MCX_STRATEGY_LZ_FAST
         && strategy != MCX_STRATEGY_LZ24) {
@@ -1089,7 +1092,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
      * This converts relative x86 CALL/JMP addresses to absolute,
      * dramatically improving BWT compression of executable binaries.
      * Only try if data might contain x86 code (BINARY or EXECUTABLE). */
-    if (level == 20 &&
+    if (!mcx_no_trials && level == 20 &&
         analysis.type != MCX_DTYPE_TEXT_ASCII &&
         analysis.type != MCX_DTYPE_TEXT_UTF8 &&
         analysis.type != MCX_DTYPE_STRUCTURED &&
@@ -1129,7 +1132,7 @@ skip_e8e9:
      * Groups similar value ranges, improving BWT on structured binary
      * (databases, spreadsheets, binary records with fixed-width fields).
      * Skip on text (destroys ASCII patterns) and high-entropy data. */
-    if (level == 20 &&
+    if (!mcx_no_trials && level == 20 &&
         analysis.type != MCX_DTYPE_TEXT_ASCII &&
         analysis.type != MCX_DTYPE_TEXT_UTF8 &&
         analysis.type != MCX_DTYPE_STRUCTURED &&
@@ -1161,7 +1164,7 @@ skip_nibble_split:
      *   [8B lzp_intermediate_size]
      *   [complete inner MCX frame (decompresses to lzp_intermediate_size bytes)]
      * Decompress: inner decompress → LZP decode → final output. */
-    if (level >= 20 && level != 21 &&
+    if (!mcx_no_trials && level >= 20 && level != 21 &&
         strategy != MCX_STRATEGY_STORE &&
         analysis.type != MCX_DTYPE_HIGH_ENTROPY &&
         src_size >= 4096 && src_size <= (64 << 20)) {
@@ -1202,7 +1205,7 @@ skip_nibble_split:
     }
 
     /* ── Sorted integer delta trial (L10+, numeric/binary data) ── */
-    if (level >= 10 && level != 21 && /* 21 = E8/E9 recursive level */
+    if (!mcx_no_trials && level >= 10 && level != 21 && /* 21 = E8/E9 recursive level */
         (analysis.type == MCX_DTYPE_BINARY ||
          analysis.type == MCX_DTYPE_NUMERIC ||
          analysis.type == MCX_DTYPE_UNKNOWN) &&

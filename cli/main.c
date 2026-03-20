@@ -104,6 +104,7 @@ static void print_usage(void)
         "      --block-size SIZE  Override block size (e.g. 1M, 4M, 32M)\n"
         "  -n, --dry-run   Analyze file without compressing\n"
         "      --estimate  Estimate compressed size via sample (faster)\n"
+        "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
         "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
@@ -1708,6 +1709,9 @@ int main(int argc, char* argv[])
                 g_dryrun = 1;
             } else if (strcmp(argv[i], "--estimate") == 0) {
                 g_estimate = 1;
+            } else if (strcmp(argv[i], "--no-trials") == 0) {
+                extern int mcx_no_trials;
+                mcx_no_trials = 1;
             } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
                 g_verbose = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
