@@ -106,6 +106,7 @@ static void print_usage(void)
         "      --estimate  Estimate compressed size via sample (faster)\n"
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
         "      --level-scan Try L1-L20, pick best ratio automatically\n"
+        "      --filter F  Force preprocessing filter: auto, delta, nibble, none\n"
         "\n"
         "Examples:\n"
         "  mcx compress myfile.txt              # fast (L3)\n"
@@ -223,6 +224,7 @@ static int g_recursive = 0; /* Recurse into directories */
 static int g_verify = 0;    /* Verify after compress (decompress+compare) */
 static int g_verbose = 0;   /* Show extra info (peak memory, timings) */
 static int g_dryrun = 0;    /* Dry-run: analyze only, don't compress */
+static int g_force_filter = 0; /* 0=auto, 1=delta, 2=nibble, 3=none */
 static int g_estimate = 0;  /* Estimate compressed size via sample compress */
 static int g_level_scan = 0; /* Try L1-L12, pick best ratio automatically */
 
@@ -1850,6 +1852,22 @@ int main(int argc, char* argv[])
                 } else {
                     fprintf(stderr, "Error: unknown strategy '%s'\n"
                             "  Available: lz, bwt, cm, smart, lzrc\n", sname);
+                    return 1;
+                }
+            } else if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
+                const char* fname = argv[++i];
+                extern int mcx_force_filter;
+                if (strcmp(fname, "delta") == 0) {
+                    mcx_force_filter = 1;
+                } else if (strcmp(fname, "nibble") == 0) {
+                    mcx_force_filter = 2;
+                } else if (strcmp(fname, "none") == 0) {
+                    mcx_force_filter = 3;
+                } else if (strcmp(fname, "auto") == 0) {
+                    mcx_force_filter = 0;
+                } else {
+                    fprintf(stderr, "Error: unknown filter '%s'\n"
+                            "  Available: auto, delta, nibble, none\n", fname);
                     return 1;
                 }
             } else if (argv[i][0] != '-') {

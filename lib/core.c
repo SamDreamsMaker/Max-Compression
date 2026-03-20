@@ -31,6 +31,7 @@ size_t mcx_block_size_override = 0;
 
 /* Skip multi-strategy trials at L20+ (use first strategy only, faster) */
 int mcx_no_trials = 0;
+int mcx_force_filter = 0;  /* 0=auto, 1=delta, 2=nibble, 3=none */
 
 /* Helper to get effective max block size */
 static inline size_t mcx_effective_block_size(void) {
@@ -1134,12 +1135,14 @@ skip_e8e9:
      * Split bytes into high/low nibble streams before compression.
      * Groups similar value ranges, improving BWT on structured binary
      * (databases, spreadsheets, binary records with fixed-width fields).
-     * Skip on text (destroys ASCII patterns) and high-entropy data. */
-    if (!mcx_no_trials && level == 20 &&
+     * Skip on text (destroys ASCII patterns) and high-entropy data.
+     * mcx_force_filter==2 forces this trial; mcx_force_filter==3 skips all filters. */
+    if (mcx_force_filter != 3 && !mcx_no_trials &&
+        (mcx_force_filter == 2 || (level == 20 &&
         analysis.type != MCX_DTYPE_TEXT_ASCII &&
         analysis.type != MCX_DTYPE_TEXT_UTF8 &&
         analysis.type != MCX_DTYPE_STRUCTURED &&
-        analysis.type != MCX_DTYPE_HIGH_ENTROPY &&
+        analysis.type != MCX_DTYPE_HIGH_ENTROPY)) &&
         src_size >= 512) {
         uint8_t* ns_buf = (uint8_t*)malloc(src_size);
         uint8_t* ns_dst = (uint8_t*)malloc(dst_cap);
@@ -1207,11 +1210,13 @@ skip_nibble_split:
         }
     }
 
-    /* ── Sorted integer delta trial (L10+, numeric/binary data) ── */
-    if (!mcx_no_trials && level >= 10 && level != 21 && /* 21 = E8/E9 recursive level */
+    /* ── Sorted integer delta trial (L10+, numeric/binary data) ──
+     * mcx_force_filter==1 forces this trial; mcx_force_filter==3 skips all filters. */
+    if (mcx_force_filter != 3 && !mcx_no_trials && level != 21 &&
+        (mcx_force_filter == 1 || (level >= 10 &&
         (analysis.type == MCX_DTYPE_BINARY ||
          analysis.type == MCX_DTYPE_NUMERIC ||
-         analysis.type == MCX_DTYPE_UNKNOWN) &&
+         analysis.type == MCX_DTYPE_UNKNOWN))) &&
         src_size >= 64) {
         int int_width = mcx_sorted_int_detect(in, src_size);
         if (int_width > 0) {
