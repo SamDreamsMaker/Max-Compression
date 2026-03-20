@@ -62,7 +62,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] <input>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -1226,11 +1226,25 @@ static size_t run_external_compressor(const char* cmd_fmt, const char* input, do
     return size;
 }
 
-static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations)
+static size_t parse_size_suffix(const char* s) {
+    char* end = NULL;
+    size_t val = (size_t)strtoull(s, &end, 10);
+    if (end && (*end == 'k' || *end == 'K')) val *= 1024;
+    else if (end && (*end == 'm' || *end == 'M')) val *= 1024 * 1024;
+    else if (end && (*end == 'g' || *end == 'G')) val *= 1024 * 1024 * 1024;
+    return val;
+}
+
+static int cmd_bench(const char* input, int specific_level, int compare, int csv, int warmup, int json, int decode_only, int iterations, size_t max_size)
 {
     size_t src_size;
     uint8_t* src = read_file(input, &src_size);
     if (!src) return 1;
+
+    /* Truncate to --size if specified */
+    if (max_size > 0 && src_size > max_size) {
+        src_size = max_size;
+    }
 
     if (json) {
         printf("{\n");
@@ -2236,6 +2250,7 @@ int main(int argc, char* argv[])
         int bench_json = 0;
         int bench_decode_only = 0;
         int bench_iterations = 0; /* 0 = use default */
+        size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         for (int i = 2; i < argc; i++) {
             if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--level") == 0) && i + 1 < argc) {
@@ -2257,6 +2272,12 @@ int main(int argc, char* argv[])
             } else if (strcmp(argv[i], "--iterations") == 0 && i + 1 < argc) {
                 bench_iterations = atoi(argv[++i]);
                 if (bench_iterations < 1) bench_iterations = 1;
+            } else if (strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
+                bench_max_size = parse_size_suffix(argv[++i]);
+                if (bench_max_size == 0) {
+                    fprintf(stderr, "Error: --size must be > 0 (e.g. 64K, 1M)\n");
+                    return 1;
+                }
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (!bench_file) {
@@ -2264,13 +2285,13 @@ int main(int argc, char* argv[])
             }
         }
         if (!bench_file) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] <file>\n");
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx bench [-l LEVEL] [--compare] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--size SIZE] <file>\n");
             return 1;
         }
 #ifdef _OPENMP
         if (g_threads > 0) omp_set_num_threads(g_threads);
 #endif
-        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations);
+        return cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size);
 
     } else if (strcmp(argv[1], "test") == 0) {
         printf("MaxCompression v%s — Self-test\n\n", mcx_version_string());
