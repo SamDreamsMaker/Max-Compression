@@ -13,6 +13,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-level\-scan\fR]
 [\fB\-\-no\-trials\fR]
 [\fB\-\-filter\fR \fINAME\fR]
+[\fB\-\-split\fR \fISIZE\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -75,6 +76,8 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-json\fR]
 [\fB\-\-decode\-only\fR]
 [\fB\-\-iterations\fR \fIN\fR]
+[\fB\-\-size\fR \fISIZE\fR]
+[\fB\-\-memory\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -151,8 +154,9 @@ Use \fB\-l\fR for a specific level, \fB\-\-compare\fR to include
 gzip/bzip2/xz results, \fB\-\-csv\fR for CSV output,
 \fB\-\-warmup\fR to run one warmup iteration before timing,
 \fB\-\-json\fR for machine\-readable JSON output,
-\fB\-\-decode\-only\fR to benchmark decompression only, and
-\fB\-\-iterations\fR N to run N iterations and average.
+\fB\-\-decode\-only\fR to benchmark decompression only,
+\fB\-\-iterations\fR N to run N iterations and average,
+and \fB\-\-size\fR to benchmark on a truncated prefix of the input.
 Aliases: \fBcompare\fR.
 .TP
 .B test
@@ -290,6 +294,16 @@ decompression only. Runs multiple iterations (default 3, or set with
 .BR \-\-iterations =\fIN\fR
 For \fBbench\fR: run N compress/decompress iterations and average
 the timing. Default: 1 (or 3 when \fB\-\-decode\-only\fR is used).
+.TP
+.BR \-\-size =\fISIZE\fR
+For \fBbench\fR: benchmark on a truncated prefix of the input file.
+Accepts suffixes: K, M (e.g. \fB\-\-size 64K\fR). Useful for quick
+tests on large files.
+.TP
+.BR \-\-split =\fISIZE\fR
+For \fBcompress\fR: split compressed output into chunks of the given
+size (e.g. \fB\-\-split 10M\fR). Output files are named with a numeric
+suffix (.000, .001, etc.). Useful for large archives.
 .TP
 .BR \-V ", " \-\-version
 Print version string and exit.
