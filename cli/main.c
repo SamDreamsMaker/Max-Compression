@@ -748,7 +748,6 @@ static int cmd_decompress(const char* input, const char* output)
     }
 
     fwrite(dst_buf, 1, total_out, fout);
-    free(dst_buf);
 
     double dt_speed = (dt_elapsed > 0.001) ? (double)total_out / (1024*1024) / dt_elapsed : 0;
     if (!g_quiet) printf("Done!\n");
@@ -762,6 +761,39 @@ static int cmd_decompress(const char* input, const char* output)
         }
     }
 
+    /* Verify: re-compress and re-decompress, compare with decompressed output */
+    if (g_verify && total_out > 0) {
+        size_t vcomp_cap = mcx_compress_bound(total_out);
+        uint8_t* vcomp = (uint8_t*)malloc(vcomp_cap);
+        if (vcomp) {
+            size_t vcsz = mcx_compress(vcomp, vcomp_cap, dst_buf, total_out, MCX_LEVEL_DEFAULT);
+            if (!mcx_is_error(vcsz)) {
+                uint8_t* vdec = (uint8_t*)malloc(total_out + 1024);
+                if (vdec) {
+                    size_t vdsz = mcx_decompress(vdec, total_out + 1024, vcomp, vcsz);
+                    if (!mcx_is_error(vdsz) && vdsz == total_out &&
+                        memcmp(dst_buf, vdec, total_out) == 0) {
+                        if (!g_quiet) printf("  Verify: OK (re-compress roundtrip passed)\n");
+                    } else {
+                        fprintf(stderr, "  Verify: FAILED — re-compress roundtrip mismatch!\n");
+                        free(vdec); free(vcomp); free(dst_buf);
+                        fclose(fin); fclose(fout);
+                        return 1;
+                    }
+                    free(vdec);
+                }
+            } else {
+                fprintf(stderr, "  Verify: FAILED — re-compression error: %s\n",
+                        mcx_get_error_name(vcsz));
+                free(vcomp); free(dst_buf);
+                fclose(fin); fclose(fout);
+                return 1;
+            }
+            free(vcomp);
+        }
+    }
+
+    free(dst_buf);
     fclose(fin);
     fclose(fout);
 
@@ -1769,6 +1801,8 @@ int main(int argc, char* argv[])
                 g_recursive = 1;
             } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
                 g_verbose = 1;
+            } else if (strcmp(argv[i], "--verify") == 0) {
+                g_verify = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (argv[i][0] != '-') {
