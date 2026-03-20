@@ -316,7 +316,10 @@ static void match_update(match_t *m, uint32_t pos) {
         if (ref8 != 0xFFFFFFFF && ref8 >= 8 && ref8 + 8 <= pos &&
             m->data[ref8-1]==m->data[pos-1] && m->data[ref8-2]==m->data[pos-2] &&
             m->data[ref8-3]==m->data[pos-3] && m->data[ref8-4]==m->data[pos-4]) {
-            m->active = 1; m->mpos = ref8; m->mlen = 8;
+            { uint32_t len = 4;
+              while (len < pos && ref8 >= len + 1 &&
+                     m->data[ref8-1-len] == m->data[pos-1-len]) len++;
+              m->active = 1; m->mpos = ref8; m->mlen = len; }
             /* Extend match forward from ref8 */
         }
         m->tab8[h8] = pos;
@@ -330,7 +333,10 @@ static void match_update(match_t *m, uint32_t pos) {
             if (ref4 != 0xFFFFFFFF && ref4 >= 4 && ref4 + 4 <= pos &&
                 m->data[ref4-1]==m->data[pos-1] && m->data[ref4-2]==m->data[pos-2] &&
                 m->data[ref4-3]==m->data[pos-3] && m->data[ref4-4]==m->data[pos-4]) {
-                m->active = 1; m->mpos = ref4; m->mlen = 4;
+                { uint32_t len = 4;
+                  while (len < pos && ref4 >= len + 1 &&
+                         m->data[ref4-1-len] == m->data[pos-1-len]) len++;
+                  m->active = 1; m->mpos = ref4; m->mlen = len; }
             }
             m->tab4[h4] = pos;
         }
