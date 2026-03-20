@@ -64,7 +64,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] <input>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] <input>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -2820,6 +2820,17 @@ int main(int argc, char* argv[])
                 bench_histogram = 1;
             } else if (strcmp(argv[i], "--brief") == 0) {
                 bench_brief = 1;
+            } else if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
+                extern int mcx_force_filter;
+                const char* fval = argv[++i];
+                if (strcmp(fval, "delta") == 0) mcx_force_filter = 1;
+                else if (strcmp(fval, "nibble") == 0) mcx_force_filter = 2;
+                else if (strcmp(fval, "none") == 0) mcx_force_filter = 3;
+                else if (strcmp(fval, "auto") == 0) mcx_force_filter = 0;
+                else {
+                    fprintf(stderr, "Error: --filter must be auto, delta, nibble, or none\n");
+                    return 1;
+                }
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
                 const char* fmt = argv[++i];
                 if (strcmp(fmt, "csv") == 0) { bench_csv = 1; bench_json = 0; }
