@@ -94,6 +94,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-brief\fR]
 [\fB\-\-repeat\fR \fIN\fR]
 [\fB\-\-warmup\-iterations\fR \fIN\fR]
+[\fB\-\-cold\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -318,6 +319,13 @@ cold\-cache variance in benchmark results. See also \fB\-\-warmup\-iterations\fR
 For \fBbench\fR: run \fIN\fR warmup iterations instead of the default 1.
 Useful for systems with variable turbo boost or SSD caching where a
 single warmup may not be sufficient for stable cold\-start elimination.
+.TP
+.BR \-\-cold
+For \fBbench\fR: flush filesystem cache between each compress/decompress
+iteration using \fBsync\fR(2) and writing to
+\fI/proc/sys/vm/drop_caches\fR. Provides realistic cold\-cache
+benchmarks. Linux only, requires root privileges. Falls back silently
+if cache flushing is not available.
 .TP
 .BR \-\-blocks
 For \fBinfo\fR: show per\-block details (offset, compressed size,
