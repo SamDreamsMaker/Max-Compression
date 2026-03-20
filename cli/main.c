@@ -243,6 +243,7 @@ static double g_min_ratio = 0.0; /* Minimum ratio threshold (0=disabled) */
 static int g_atomic = 0;        /* Atomic write: use temp file + rename */
 static int g_keep_broken = 0;   /* Keep partial output on error (for debugging) */
 static const char* g_exclude_pattern = NULL; /* Glob pattern for --exclude */
+static int g_decompress_check = 0; /* In-memory decompress+verify after compress */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -610,6 +611,45 @@ static int cmd_compress(const char* input, const char* output, int level)
             fclose(fin); fclose(fout);
             cleanup_partial(write_path);
             return 1;
+        }
+
+        /* --decompress-check: in-memory decompress+verify immediately */
+        if (g_decompress_check && comp_size > 0) {
+            uint8_t* check_buf = (uint8_t*)malloc(src_size + 1024);
+            if (!check_buf) {
+                fprintf(stderr, "  Decompress-check FAILED: out of memory\n");
+                free(dst_buf);
+                fclose(fin); fclose(fout);
+                cleanup_partial(write_path);
+                return 1;
+            }
+            /* Re-read original for comparison */
+            size_t orig_sz;
+            uint8_t* orig_data = read_file(input, &orig_sz);
+            if (!orig_data) {
+                fprintf(stderr, "  Decompress-check FAILED: cannot re-read original\n");
+                free(check_buf); free(dst_buf);
+                fclose(fin); fclose(fout);
+                cleanup_partial(write_path);
+                return 1;
+            }
+            size_t dec_sz = mcx_decompress(check_buf, src_size + 1024, dst_buf, comp_size);
+            if (mcx_is_error(dec_sz)) {
+                fprintf(stderr, "  Decompress-check FAILED: decompression error: %s\n", mcx_get_error_name(dec_sz));
+                free(orig_data); free(check_buf); free(dst_buf);
+                fclose(fin); fclose(fout);
+                cleanup_partial(write_path);
+                return 1;
+            }
+            if (dec_sz != orig_sz || memcmp(orig_data, check_buf, orig_sz) != 0) {
+                fprintf(stderr, "  Decompress-check FAILED: decompressed data does not match original!\n");
+                free(orig_data); free(check_buf); free(dst_buf);
+                fclose(fin); fclose(fout);
+                cleanup_partial(write_path);
+                return 1;
+            }
+            free(orig_data); free(check_buf);
+            if (!g_quiet) printf("  Decompress-check OK ✓\n");
         }
 
         /* --min-ratio: skip writing if ratio is below threshold */
@@ -2355,6 +2395,8 @@ int main(int argc, char* argv[])
                 g_atomic = 1;
             } else if (strcmp(argv[i], "--keep-broken") == 0) {
                 g_keep_broken = 1;
+            } else if (strcmp(argv[i], "--decompress-check") == 0) {
+                g_decompress_check = 1;
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 g_exclude_pattern = argv[++i];
             } else if (strcmp(argv[i], "--min-ratio") == 0 && i + 1 < argc) {
