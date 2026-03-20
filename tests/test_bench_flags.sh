@@ -297,4 +297,61 @@ if ! echo "$BENCH_AGG" | grep -q "AGGREGATE"; then
 fi
 echo "OK: bench --aggregate shows aggregate summary"
 
+# Test --aggregate with --json
+BENCH_AGG_JSON=$("$MCX" bench -l 1 --ratio-only --aggregate --format json "$TMPDIR/benchdir" 2>&1)
+if ! echo "$BENCH_AGG_JSON" | grep -q '"aggregate"'; then
+    echo "FAIL: --aggregate --json should contain aggregate key"
+    echo "$BENCH_AGG_JSON"
+    exit 1
+fi
+if ! echo "$BENCH_AGG_JSON" | grep -q '"total_input"'; then
+    echo "FAIL: --aggregate --json should contain total_input"
+    echo "$BENCH_AGG_JSON"
+    exit 1
+fi
+echo "OK: bench --aggregate --json shows structured aggregate"
+
+# Test --aggregate with --csv
+BENCH_AGG_CSV=$("$MCX" bench -l 1 --ratio-only --aggregate --format csv "$TMPDIR/benchdir" 2>&1)
+if ! echo "$BENCH_AGG_CSV" | grep -q "TOTAL"; then
+    echo "FAIL: --aggregate --csv should contain TOTAL line"
+    echo "$BENCH_AGG_CSV"
+    exit 1
+fi
+echo "OK: bench --aggregate --csv shows TOTAL line"
+
+# Test --no-header flag
+BENCH_NH=$("$MCX" bench -l 1 "$TMPDIR/benchdir/keep.txt" --ratio-only --no-header 2>&1)
+if echo "$BENCH_NH" | grep -q "Benchmarking"; then
+    echo "FAIL: --no-header should suppress Benchmarking title"
+    echo "$BENCH_NH"
+    exit 1
+fi
+if echo "$BENCH_NH" | grep -q "Level"; then
+    echo "FAIL: --no-header should suppress column headers"
+    echo "$BENCH_NH"
+    exit 1
+fi
+if ! echo "$BENCH_NH" | grep -q "L1"; then
+    echo "FAIL: --no-header should still show data rows"
+    echo "$BENCH_NH"
+    exit 1
+fi
+echo "OK: bench --no-header suppresses headers, keeps data"
+
+# Test --no-header with --csv
+BENCH_NH_CSV=$("$MCX" bench -l 1 "$TMPDIR/benchdir/keep.txt" --csv --no-header 2>&1)
+if echo "$BENCH_NH_CSV" | grep -q "file,original"; then
+    echo "FAIL: --no-header --csv should suppress CSV header line"
+    echo "$BENCH_NH_CSV"
+    exit 1
+fi
+CSV_COLS=$(echo "$BENCH_NH_CSV" | head -1 | tr ',' '\n' | wc -l)
+if [ "$CSV_COLS" -lt 5 ]; then
+    echo "FAIL: --no-header --csv should still output data columns"
+    echo "$BENCH_NH_CSV"
+    exit 1
+fi
+echo "OK: bench --no-header --csv suppresses header, keeps data"
+
 echo "=== All bench flags tests passed ==="
