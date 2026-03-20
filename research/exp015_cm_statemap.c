@@ -144,7 +144,7 @@ static inline uint16_t smap_get(smap_t *s, uint32_t c) {
 
 /* Adaptation rate table: rate decreases as count increases */
 static const int adapt_rate[16] = {
-    128, 64, 48, 36, 28, 22, 18, 16, 14, 12, 10, 9, 8, 7, 7, 6
+    80, 52, 40, 32, 26, 21, 17, 14, 12, 10, 9, 8, 7, 6, 5, 5
 };
 
 static inline void smap_update(smap_t *s, uint32_t c, int bit) {
@@ -153,10 +153,14 @@ static inline void smap_update(smap_t *s, uint32_t c, int bit) {
     int count = v & SM_COUNT_MASK;
     int prob = v >> SM_PROB_SHIFT;
     
-    /* Rate based on count: high rate for new contexts, low for established */
-    int rate_idx = count >> 6; /* 0-15 based on count 0-1023 */
-    if (rate_idx > 15) rate_idx = 15;
-    int rate = adapt_rate[rate_idx];
+    /* Rate based on count: tuned curve */
+    int rate;
+    if (count < 2) rate = 80;
+    else if (count < 8) rate = 48;
+    else if (count < 32) rate = 28;
+    else if (count < 128) rate = 16;
+    else if (count < 512) rate = 8;
+    else rate = 5;
     
     /* Update probability */
     if (bit == 0)
