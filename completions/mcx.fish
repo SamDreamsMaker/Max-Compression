@@ -110,6 +110,7 @@ complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l baseline-dir -
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l diff -r -F -d 'Compare ratio and speed against baseline'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l profile -d 'Show per-phase time breakdown'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l chart -d 'ASCII bar chart of compression ratios'
+complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l suite -r -a 'quick standard full' -d 'Predefined benchmark suite'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l decode-only -d 'Benchmark decompression only'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l iterations -x -d 'Number of iterations'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l size -x -d 'Benchmark on truncated prefix (e.g. 64K)'

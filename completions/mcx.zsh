@@ -131,6 +131,7 @@ _mcx() {
         '--diff[Compare ratio and speed against baseline]:baseline:_files'
         '--profile[Show per-phase time breakdown]'
         '--chart[ASCII bar chart of compression ratios]'
+        '--suite[Predefined benchmark suite]:suite:(quick standard full)'
         '--decode-only[Benchmark decompression only]'
         '--iterations[Number of iterations]:iterations:'
         '--size[Benchmark on truncated prefix]:size:'
