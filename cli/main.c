@@ -2787,17 +2787,41 @@ int main(int argc, char* argv[])
     } else if (strcmp(argv[1], "info") == 0) {
         int json_flag = 0;
         int blocks_flag = 0;
+        int entropy_flag = 0;
         const char* info_input = NULL;
         for (int i = 2; i < argc; i++) {
             if (strcmp(argv[i], "--json") == 0) json_flag = 1;
             else if (strcmp(argv[i], "--blocks") == 0) blocks_flag = 1;
+            else if (strcmp(argv[i], "--entropy") == 0) entropy_flag = 1;
             else info_input = argv[i];
         }
         if (!info_input) {
-            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s [--json] [--blocks] <file>\n", argv[1]);
+            fprintf(stderr, "Error: no input file specified\n  Usage: mcx %s [--json] [--blocks] [--entropy] <file>\n", argv[1]);
             return 1;
         }
-        return cmd_info(info_input, json_flag, blocks_flag);
+        int ret = cmd_info(info_input, json_flag, blocks_flag);
+        if (ret == 0 && entropy_flag) {
+            /* Decompress and compute entropy of original data */
+            size_t comp_size;
+            uint8_t* comp = read_file(info_input, &comp_size);
+            if (comp) {
+                /* Allocate decompression buffer: try comp_size * 20 for high-ratio files */
+                size_t try_size = comp_size * 20;
+                if (try_size < 16 * 1024 * 1024) try_size = 16 * 1024 * 1024;
+                if (try_size > 512ULL * 1024 * 1024) try_size = 512ULL * 1024 * 1024;
+                uint8_t* orig = (uint8_t*)malloc(try_size);
+                if (orig) {
+                    size_t dec = mcx_decompress(orig, try_size, comp, comp_size);
+                    if (!mcx_is_error(dec) && dec > 0) {
+                        double ent = compute_entropy(orig, dec);
+                        printf("Entropy:          %.2f bits/byte (%.1f%% of maximum)\n", ent, ent / 8.0 * 100);
+                    }
+                    free(orig);
+                }
+                free(comp);
+            }
+        }
+        return ret;
 
     } else if (strcmp(argv[1], "ls") == 0 || strcmp(argv[1], "list") == 0) {
         int ls_json = 0;
