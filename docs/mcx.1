@@ -87,6 +87,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-median\fR]
 [\fB\-\-percentile\fR]
 [\fB\-\-histogram\fR]
+[\fB\-\-format\fR \fIFORMAT\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -366,6 +367,11 @@ benchmark variance.
 For \fBbench\fR: show compressed size distribution across block sizes.
 Useful for analyzing adaptive block behavior and understanding how
 different block sizes affect compression ratio.
+.TP
+.BR \-\-format =\fIFORMAT\fR
+For \fBbench\fR: choose output format. Valid values: \fBtable\fR (default),
+\fBcsv\fR, \fBjson\fR, or \fBmarkdown\fR. Unifies the older \fB\-\-csv\fR and
+\fB\-\-json\fR flags, which are still accepted as aliases.
 .TP
 .BR \-\-exclude =\fIGLOB\fR
 For \fBcompress \-r\fR: skip files matching the given glob pattern.
