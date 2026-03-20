@@ -4,6 +4,14 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 34)
+- **BWT prefetch review** — confirmed `__builtin_prefetch` already exists in both 32-bit and 64-bit BWT inverse paths, 2 steps ahead in unrolled loop. Deeper prefetch impossible due to serial LF-chain dependency.
+- **`mcx bench --diff BASELINE`** — like `--delta` but also measures and compares compress/decompress speeds. Baseline format includes timing (`L<N> <bytes> <comp_mbs> <dec_mbs>`). Speed variance ~5-10% between runs is expected.
+- **`mcx compress --block-size auto`** — automatically picks block size based on input size: <1MB→256KB, <16MB→4MB, <128MB→16MB, ≥128MB→64MB (default). Reduces BWT memory overhead on smaller files.
+- **L12 decompress profiling with --memory-limit 128M** — mozilla 51MB: 9MB blocks give 8.21s (5.9 MB/s, 494MB) vs default 64MB blocks 9.07s (5.4 MB/s, 532MB). Smaller blocks are +9% faster decompress and -38MB memory due to better cache utilization.
+- **Integration tests** — coverage for `--save-baseline` + `--delta` workflow (MATCH verification), `--diff` ratio+speed comparison, `--block-size auto` roundtrip.
+- **Man page + completions update** — `--save-baseline` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 33)
 - **Two-histogram frequency counting** — split input into halves, count into separate f1/f2 arrays (2×1KB, both fit L1 cache), merge at end. Reduces write conflicts when consecutive bytes map to same freq[] slot.
 - **`mcx bench --save-baseline FILE`** — explicitly save current benchmark results as baseline. Unlike `--delta` (auto-saves on first run), `--save-baseline` always overwrites. Compatible with `--delta` for subsequent comparisons.
