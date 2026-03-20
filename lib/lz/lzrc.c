@@ -21,6 +21,7 @@
 #include "lzrc.h"
 #include "bt_match.h"
 #include "hc_match.h"
+
 #include "../entropy/range_coder.h"
 #include "../entropy/lz_models.h"
 #include <stdlib.h>
@@ -470,6 +471,7 @@ size_t mcx_lzrc_compress(uint8_t* dst, size_t dst_cap,
     }
     
     size_t enc_size = rc_enc_flush(&enc);
+    
     bt_free(&bt);
     free(model);
     return 5 + enc_size;

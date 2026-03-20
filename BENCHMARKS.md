@@ -225,5 +225,19 @@ per-symbol during decode. This has:
 2. No table lookup parallelism (unlike rANS which pre-computes tables)
 3. Branch-heavy update logic per symbol
 
-**Potential fix (v3.0):** Add `--fast-decode` flag or decompress-speed-aware trial that
-penalizes Adaptive AC unless the ratio gain exceeds a threshold (e.g. >5%).
+**Fixed in v2.2.0:** Added decompress-speed-aware trial (AAC needs ≥5% gain over rANS)
+and `--fast-decode` flag (skips AAC entirely).
+
+## L20 Compress Profiling
+
+**L20 on dickens (text, 10MB):** 16.3s total, 0.6 MB/s.
+L20 detects text → uses BWT+rANS (same pipeline as L12), not LZRC.
+Breakdown matches L12 profiling: BWT ~35%, entropy encode (multi-trial rANS) ~60%, MTF+RLE ~5%.
+Multi-trial skips LZRC on text data (BWT always wins on text).
+
+**L20 on mozilla (binary, 1MB):** 3.0s total, 0.3 MB/s.
+L20 detects binary → uses LZRC (BT match finder + range coder).
+Breakdown: BT match finder ~95%, range encode ~5%.
+The BT match finder dominates because it maintains a binary tree per hash bucket,
+updating O(depth) nodes per position (depth=32). Range coding is a simple byte-level
+arithmetic coder that runs in constant time per symbol.
