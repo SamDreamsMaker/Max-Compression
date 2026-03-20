@@ -128,6 +128,7 @@ _mcx() {
         '--percentile[Report p5/p50/p95 speed distribution]'
         '--histogram[Show compressed size distribution across block sizes]'
         '--brief[Compact one-line-per-level output]'
+        '--worst[Show worst N results by ratio]:count:'
         '--format[Output format]:format:(table csv json markdown)'
         '-t[Thread count]:threads:'
         '-T[Thread count]:threads:'
