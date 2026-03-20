@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(maxcomp
-    VERSION 2.1.2
+    VERSION 2.2.0
     DESCRIPTION "MaxCompression — Revolutionary file compression library"
     LANGUAGES C
 )
