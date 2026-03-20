@@ -64,7 +64,7 @@ static void print_usage(void)
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
         "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
-        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] <input|dir>\n"
+        "  mcx bench      [-l LEVEL] [--compare] [--format table|csv|json|markdown] [--csv] [--json] [--warmup] [--decode-only] [--iterations N] [--median] [--percentile] [--histogram] [--brief] [--size SIZE] [--all-levels] [--ratio-only] [--sort ratio|speed|level] [--top N] [--worst N] [--filter F] [--exclude GLOB] [--aggregate] <input|dir>\n"
         "  mcx compare    <input>                   # alias for bench\n"
         "  mcx upgrade    [-l LEVEL] [--in-place] <file.mcx>  # recompress at different level\n"
         "  mcx pipe       [-l LEVEL] [-d]          # compress/decompress stdin→stdout\n"
@@ -2761,6 +2761,7 @@ int main(int argc, char* argv[])
         int bench_percentile = 0;
         int bench_histogram = 0;
         int bench_brief = 0;
+        int bench_aggregate = 0;
         size_t bench_max_size = 0; /* 0 = no limit */
         const char* bench_file = NULL;
         const char* bench_exclude = NULL;
@@ -2836,6 +2837,8 @@ int main(int argc, char* argv[])
                     fprintf(stderr, "Error: --filter must be auto, delta, nibble, or none\n");
                     return 1;
                 }
+            } else if (strcmp(argv[i], "--aggregate") == 0) {
+                bench_aggregate = 1;
             } else if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
                 bench_exclude = argv[++i];
             } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -2870,6 +2873,7 @@ int main(int argc, char* argv[])
                 return 1;
             }
             int ret = 0;
+            size_t agg_total_input = 0, agg_total_output = 0;
             for (size_t f = 0; f < fl.count; f++) {
                 if (fl.count > 1)
                     printf("=== %s ===\n", fl.paths[f]);
@@ -2879,6 +2883,50 @@ int main(int argc, char* argv[])
                     ret |= cmd_bench(fl.paths[f], bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief);
                 if (f + 1 < fl.count && !bench_csv && !bench_json)
                     printf("\n");
+                /* Accumulate totals for --aggregate */
+                if (bench_aggregate && !bench_histogram) {
+                    size_t fsz;
+                    uint8_t* fdata = read_file(fl.paths[f], &fsz);
+                    if (fdata) {
+                        if (bench_max_size > 0 && fsz > bench_max_size) fsz = bench_max_size;
+                        int lvl = bench_level > 0 ? bench_level : 6;
+                        size_t bound = mcx_compress_bound(fsz);
+                        uint8_t* cdst = (uint8_t*)malloc(bound);
+                        if (cdst) {
+                            size_t csz = mcx_compress(fdata, fsz, cdst, bound, lvl);
+                            if (csz > 0 && !mcx_is_error(csz)) {
+                                agg_total_input += fsz;
+                                agg_total_output += csz;
+                            }
+                            free(cdst);
+                        }
+                        free(fdata);
+                    }
+                }
+            }
+            /* Print aggregate summary */
+            if (bench_aggregate && agg_total_input > 0 && !bench_histogram) {
+                int lvl = bench_level > 0 ? bench_level : 6;
+                double ratio = (double)agg_total_input / (double)agg_total_output;
+                double saving = (1.0 - (double)agg_total_output / (double)agg_total_input) * 100.0;
+                if (!bench_csv && !bench_json)
+                    printf("\n=== AGGREGATE (%zu files, L%d) ===\n"
+                           "  Total input:      %12zu bytes (%.1f MB)\n"
+                           "  Total compressed:  %12zu bytes (%.1f MB)\n"
+                           "  Overall ratio:     %8.2fx (%.1f%% smaller)\n",
+                           fl.count, lvl,
+                           agg_total_input, (double)agg_total_input / (1024.0 * 1024.0),
+                           agg_total_output, (double)agg_total_output / (1024.0 * 1024.0),
+                           ratio, saving);
+                else if (bench_json)
+                    printf(",\n  \"aggregate\": { \"files\": %zu, \"level\": %d, \"total_input\": %zu, \"total_compressed\": %zu, \"ratio\": %.4f, \"saving_pct\": %.1f }\n",
+                           fl.count, lvl, agg_total_input, agg_total_output, ratio, saving);
+                else if (bench_csv == 2)
+                    printf("\n| **TOTAL** | **%zu** | **%.2fx** | **%.1f%%** | | |\n",
+                           agg_total_output, ratio, saving);
+                else
+                    printf("TOTAL,%zu,%zu,L%d,%zu,%.4f,%.1f\n",
+                           fl.count, agg_total_input, lvl, agg_total_output, ratio, saving);
             }
             file_list_free(&fl);
             return ret;
