@@ -139,3 +139,7 @@ set_tests_properties(silesia_roundtrip PROPERTIES TIMEOUT 600)
 add_test(NAME split_roundtrip
     COMMAND ${CMAKE_SOURCE_DIR}/tests/test_split.sh ${CMAKE_BINARY_DIR}/bin/mcx)
 set_tests_properties(split_roundtrip PROPERTIES TIMEOUT 30)
+
+add_test(NAME preserve_mtime
+    COMMAND ${CMAKE_SOURCE_DIR}/tests/test_preserve_mtime.sh ${CMAKE_BINARY_DIR}/bin/mcx)
+set_tests_properties(preserve_mtime PROPERTIES TIMEOUT 30)

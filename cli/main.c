@@ -2073,6 +2073,8 @@ int main(int argc, char* argv[])
                 g_verbose = 1;
             } else if (strcmp(argv[i], "--verify") == 0) {
                 g_verify = 1;
+            } else if (strcmp(argv[i], "--preserve-mtime") == 0) {
+                g_preserve_mtime = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
             } else if (argv[i][0] != '-') {
