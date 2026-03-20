@@ -108,6 +108,7 @@ static void print_usage(void)
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
         "      --level-scan Try L1-L20, pick best ratio automatically\n"
         "      --filter F  Force preprocessing filter: auto, delta, nibble, none\n"
+        "      --min-ratio N     Only write output if ratio >= N (else skip)\n"
         "      --preserve-mtime  Set output file mtime to match input\n"
         "\n"
         "Examples:\n"
@@ -231,6 +232,7 @@ static int g_estimate = 0;  /* Estimate compressed size via sample compress */
 static int g_level_scan = 0; /* Try L1-L12, pick best ratio automatically */
 static size_t g_split_size = 0; /* Split output into chunks of this size (0=disabled) */
 static int g_preserve_mtime = 0; /* Preserve source file mtime on output */
+static double g_min_ratio = 0.0; /* Minimum ratio threshold (0=disabled) */
 
 /** Get peak RSS in KB via getrusage. Returns 0 if unavailable. */
 static long get_peak_rss_kb(void) {
@@ -565,6 +567,21 @@ static int cmd_compress(const char* input, const char* output, int level)
             free(dst_buf);
             fclose(fin); fclose(fout);
             return 1;
+        }
+
+        /* --min-ratio: skip writing if ratio is below threshold */
+        if (g_min_ratio > 0.0 && src_size > 0) {
+            double actual_ratio = (double)src_size / comp_size;
+            if (actual_ratio < g_min_ratio) {
+                if (!g_quiet) {
+                    printf("Skipped '%s': ratio %.2fx below minimum %.2fx (compressed %zu → %zu bytes)\n",
+                           input, actual_ratio, g_min_ratio, src_size, comp_size);
+                }
+                free(dst_buf);
+                fclose(fin);
+                if (fout != stdout) { fclose(fout); remove(output); }
+                return 0;
+            }
         }
 
         if (g_split_size > 0 && !g_stdout && comp_size > g_split_size) {
@@ -2047,6 +2064,12 @@ int main(int argc, char* argv[])
                 }
             } else if (strcmp(argv[i], "--preserve-mtime") == 0) {
                 g_preserve_mtime = 1;
+            } else if (strcmp(argv[i], "--min-ratio") == 0 && i + 1 < argc) {
+                g_min_ratio = atof(argv[++i]);
+                if (g_min_ratio <= 0.0) {
+                    fprintf(stderr, "Error: --min-ratio must be > 0 (e.g. 1.5)\n");
+                    return 1;
+                }
             } else if (strcmp(argv[i], "--split") == 0 && i + 1 < argc) {
                 g_split_size = parse_size_suffix(argv[++i]);
                 if (g_split_size == 0) {
