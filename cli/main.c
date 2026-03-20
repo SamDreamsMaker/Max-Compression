@@ -2893,7 +2893,7 @@ int main(int argc, char* argv[])
                         size_t bound = mcx_compress_bound(fsz);
                         uint8_t* cdst = (uint8_t*)malloc(bound);
                         if (cdst) {
-                            size_t csz = mcx_compress(fdata, fsz, cdst, bound, lvl);
+                            size_t csz = mcx_compress(cdst, bound, fdata, fsz, lvl);
                             if (csz > 0 && !mcx_is_error(csz)) {
                                 agg_total_input += fsz;
                                 agg_total_output += csz;

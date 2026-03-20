@@ -255,4 +255,46 @@ if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/fast_decode_out.txt" >/dev/null 2>&1; 
 fi
 echo "OK: --fast-decode roundtrip verified"
 
+# Test bench --exclude with directory input
+mkdir -p "$TMPDIR/benchdir"
+# Files need to be >28 bytes (MCX frame overhead) for aggregate compress to work
+python3 -c "print('Include me for benchmarking. ' * 10)" > "$TMPDIR/benchdir/keep.txt"
+python3 -c "print('Also include me for testing. ' * 10)" > "$TMPDIR/benchdir/also.txt"
+python3 -c "print('Skip this log file content. ' * 10)" > "$TMPDIR/benchdir/skip.log"
+python3 -c "print('Skip this debug log too. ' * 10)" > "$TMPDIR/benchdir/debug.log"
+
+# Without --exclude: should see all 4 files
+BENCH_ALL=$("$MCX" bench -l 1 --ratio-only "$TMPDIR/benchdir" 2>&1)
+ALL_COUNT=$(echo "$BENCH_ALL" | grep -c "===.*===")
+if [ "$ALL_COUNT" -ne 4 ]; then
+    echo "FAIL: bench directory should show 4 files, got $ALL_COUNT"
+    echo "$BENCH_ALL"
+    exit 1
+fi
+echo "OK: bench directory shows all 4 files"
+
+# With --exclude '*.log': should see only 2 files
+BENCH_EXCL=$("$MCX" bench -l 1 --ratio-only --exclude '*.log' "$TMPDIR/benchdir" 2>&1)
+EXCL_COUNT=$(echo "$BENCH_EXCL" | grep -c "===.*===")
+if [ "$EXCL_COUNT" -ne 2 ]; then
+    echo "FAIL: bench --exclude '*.log' should show 2 files, got $EXCL_COUNT"
+    echo "$BENCH_EXCL"
+    exit 1
+fi
+# Verify .log files are not in output
+if echo "$BENCH_EXCL" | grep -q ".log"; then
+    echo "FAIL: bench --exclude should not show .log files"
+    exit 1
+fi
+echo "OK: bench --exclude correctly skips .log files"
+
+# Test --aggregate with directory
+BENCH_AGG=$("$MCX" bench -l 1 --ratio-only --aggregate "$TMPDIR/benchdir" 2>&1)
+if ! echo "$BENCH_AGG" | grep -q "AGGREGATE"; then
+    echo "FAIL: --aggregate should show AGGREGATE summary"
+    echo "$BENCH_AGG"
+    exit 1
+fi
+echo "OK: bench --aggregate shows aggregate summary"
+
 echo "=== All bench flags tests passed ==="
