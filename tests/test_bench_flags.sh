@@ -780,4 +780,17 @@ if [ "$CHART_LEVELS" -ne 7 ]; then
 fi
 echo "OK: bench --chart shows 7-level ASCII bar chart"
 
+# Test compress --best (alias for --level-scan)
+"$MCX" compress --best -f "$TMPDIR/input.txt" -o "$TMPDIR/best_out.mcx" >/dev/null 2>&1
+if [ ! -f "$TMPDIR/best_out.mcx" ]; then
+    echo "FAIL: --best should produce output file"
+    exit 1
+fi
+"$MCX" decompress -f "$TMPDIR/best_out.mcx" -o "$TMPDIR/best_rt.txt" >/dev/null 2>&1
+if ! diff -q "$TMPDIR/input.txt" "$TMPDIR/best_rt.txt" > /dev/null 2>&1; then
+    echo "FAIL: --best roundtrip mismatch"
+    exit 1
+fi
+echo "OK: compress --best roundtrip verified"
+
 echo "=== All bench flags tests passed ==="
