@@ -370,7 +370,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 25
+#define N_MODELS 27
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -383,6 +383,8 @@ typedef struct {
     smap_t sparse024;       /* sparse: bytes 0,2,4 */
     smap_t word_cc;         /* word hash × char class */
     smap_t o1_cc;           /* order-1 × char class sequence */
+    smap_t word_len;        /* word hash × word length */
+    smap_t prevword_byte;   /* prev word hash × current byte */
     match_t match;
     sse_t sse;
     sse_t apm;  /* second-stage APM with different context */
@@ -391,6 +393,7 @@ typedef struct {
     uint8_t prev[8];
     uint32_t word_hash;
     uint32_t prev_word_hash; /* hash of previous word */
+    uint8_t word_length;     /* current word length */
     uint8_t partial;
     uint8_t *ictx;
     uint32_t ictx_size;
@@ -423,6 +426,8 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     smap_init(&cm->sparse024, 1<<20);
     smap_init(&cm->word_cc, 1<<22);
     smap_init(&cm->o1_cc, 1<<20);
+    smap_init(&cm->word_len, 1<<22);
+    smap_init(&cm->prevword_byte, 1<<22);
     match_init(&cm->match, data);
     sse_init(&cm->sse);
     sse_init(&cm->apm);
@@ -446,7 +451,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->delta); smap_free(&cm->o1_nibble);
     smap_free(&cm->o8);
     smap_free(&cm->word2); smap_free(&cm->sparse024);
-    smap_free(&cm->word_cc); smap_free(&cm->o1_cc);
+    smap_free(&cm->word_cc); smap_free(&cm->o1_cc); smap_free(&cm->word_len); smap_free(&cm->prevword_byte);
     match_free(&cm->match);
     if (cm->ictx) free(cm->ictx);
 }
@@ -489,6 +494,10 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     /* Order-1 × char class sequence (3 consecutive classes) */
     ctx[23] = h32(((uint32_t)p[0]<<16) | ((uint32_t)char_class(p[0])<<12) |
                   ((uint32_t)char_class(p[1])<<8) | ((uint32_t)char_class(p[2])<<4)) ^ par;
+    /* Word hash × word length */
+    ctx[24] = h32(cm->word_hash ^ ((uint32_t)cm->word_length << 24)) ^ par;
+    /* Previous word × current byte */
+    ctx[25] = h32(cm->prev_word_hash ^ ((uint32_t)p[0] << 16)) ^ par;
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
@@ -520,7 +529,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[21] = smap_get(&cm->sparse024, ctx[21]);
     preds[22] = smap_get(&cm->word_cc, ctx[22]);
     preds[23] = smap_get(&cm->o1_cc, ctx[23]);
-    preds[24] = match_predict(&cm->match, pos, bp);
+    preds[24] = smap_get(&cm->word_len, ctx[24]);
+    preds[25] = smap_get(&cm->prevword_byte, ctx[25]);
+    preds[26] = match_predict(&cm->match, pos, bp);
     
     for (int i = 0; i < N_MODELS; i++) {
         if (preds[i] == PROB_HALF) str[i] = 0.0f;
@@ -571,6 +582,8 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->sparse024, ctx[21], bit);
     smap_update(&cm->word_cc, ctx[22], bit);
     smap_update(&cm->o1_cc, ctx[23], bit);
+    smap_update(&cm->word_len, ctx[24], bit);
+    smap_update(&cm->prevword_byte, ctx[25], bit);
     
     /* Adaptive mixer learning rate: fast early, slow later */
     float lr = cm->total_bits < 2000 ? 0.05f :
@@ -596,11 +609,13 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
     for (int j = 7; j > 0; j--) cm->prev[j] = cm->prev[j-1];
     cm->prev[0] = byte;
     cm->partial = 1;
-    if ((byte>='a'&&byte<='z')||(byte>='A'&&byte<='Z')||byte=='\'')
+    if ((byte>='a'&&byte<='z')||(byte>='A'&&byte<='Z')||byte=='\'') {
         cm->word_hash = cm->word_hash * 31 + byte;
-    else {
+        if (cm->word_length < 255) cm->word_length++;
+    } else {
         if (cm->word_hash) cm->prev_word_hash = cm->word_hash;
         cm->word_hash = 0;
+        cm->word_length = 0;
     }
 }
 
