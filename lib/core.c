@@ -811,6 +811,7 @@ size_t mcx_compress(void* dst, size_t dst_cap,
             }
 
             uint64_t pidx64 = 0;
+            int double_bwt = 0; /* Will be set to 1 if double-BWT wins */
             if (genome.use_bwt) {
                 size_t primary_idx;
                 size_t bwt_result = mcx_bwt_forward(buf1, &primary_idx, stage_in, stage_size);
@@ -824,6 +825,34 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 memcpy(out1 + payload_offset, &pidx64, 8);
                 payload_offset += 8;
                 stage_in = buf1;
+                
+                /* Double-BWT trial: apply BWT again for very repetitive text.
+                 * Only at L20+ where we can afford the extra compute.
+                 * Store second primary_idx after the first one;
+                 * signal via cm_learning=5 (unused by multi-rANS/RLE2). */
+                if (level >= 20 && stage_size >= 512 && stage_size <= 2000000
+                    && genome.cm_learning < 5) {
+                    size_t primary_idx2;
+                    size_t bwt2 = mcx_bwt_forward(buf2, &primary_idx2, buf1, stage_size);
+                    if (!MCX_IS_ERROR(bwt2)) {
+                        /* Quick heuristic: count runs in single vs double BWT output.
+                         * More runs = worse for MTF. Fewer = better. */
+                        size_t runs1 = 0, runs2 = 0;
+                        for (size_t r = 1; r < stage_size; r++) {
+                            if (buf1[r] != buf1[r-1]) runs1++;
+                            if (buf2[r] != buf2[r-1]) runs2++;
+                        }
+                        /* Use double-BWT only if it reduces runs by at least 5% */
+                        if (runs2 < runs1 * 95 / 100) {
+                            double_bwt = 1;
+                            uint64_t pidx2_64 = (uint64_t)primary_idx2;
+                            memcpy(out1 + payload_offset, &pidx2_64, 8);
+                            payload_offset += 8;
+                            memcpy(buf1, buf2, stage_size);
+                            stage_in = buf1;
+                        }
+                    }
+                }
             }
             
             uint32_t rle32 = (uint32_t)stage_size;
@@ -883,7 +912,13 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 }
             }
 
-            /* Write genome byte now (after all RLE2 flags have been set) */
+            /* Signal double-BWT via cm_learning=5 (doesn't conflict with
+             * cm_learning=6 multi-rANS or cm_learning=7 RLE2) */
+            if (double_bwt && genome.cm_learning < 5) {
+                genome.cm_learning = 5;
+            }
+            
+            /* Write genome byte now (after all RLE2/double-BWT flags have been set) */
             out1[0] = mcx_encode_genome(&genome);
 
             size_t entropy_size;
@@ -1556,6 +1591,8 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
 
             uint64_t pidx64 = 0;
             size_t primary_idx = 0;
+            size_t primary_idx2 = 0; /* For double-BWT (cm_learning=5) */
+            int is_double_bwt = (genome.use_bwt && genome.cm_learning == 5);
             if (genome.use_bwt) {
                 if (payload_offset + 8 > chunk_comp_size) {
                     #pragma omp critical
@@ -1565,6 +1602,19 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 memcpy(&pidx64, in + chunk_src_offset + payload_offset, 8);
                 primary_idx = (size_t)pidx64;
                 payload_offset += 8;
+                
+                /* Double-BWT: read second primary index */
+                if (is_double_bwt) {
+                    if (payload_offset + 8 > chunk_comp_size) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        continue;
+                    }
+                    uint64_t pidx2_64;
+                    memcpy(&pidx2_64, in + chunk_src_offset + payload_offset, 8);
+                    primary_idx2 = (size_t)pidx2_64;
+                    payload_offset += 8;
+                }
             }
 
             uint32_t rle32 = 0;
@@ -1684,6 +1734,22 @@ size_t mcx_decompress(void* dst, size_t dst_cap,
                 /* For Babel, decode BWT into intermediate buffer, not final output */
                 uint8_t* bwt_dst = ((strategy == MCX_STRATEGY_BABEL || strategy == MCX_STRATEGY_STRIDE) && babel_dec_buf)
                                  ? babel_dec_buf : (out + dst_offset);
+                
+                /* Double-BWT: first undo the outer BWT (second applied),
+                 * then undo the inner BWT (first applied) */
+                if (is_double_bwt) {
+                    /* Outer BWT inverse → buf1 (temporary) */
+                    size_t bwt_dec1 = mcx_bwt_inverse(buf1, primary_idx2, stage_out, stage_size);
+                    if (MCX_IS_ERROR(bwt_dec1) || bwt_dec1 != bwt_target_size) {
+                        #pragma omp critical
+                        { omp_err = 1; }
+                        free(buf1); free(buf2); if (babel_dec_buf) free(babel_dec_buf);
+                        continue;
+                    }
+                    stage_out = buf1;
+                    /* primary_idx for inner BWT is used below */
+                }
+                
                 size_t bwt_dec = mcx_bwt_inverse(bwt_dst, primary_idx, stage_out, stage_size);
                 if (_do_prof) clock_gettime(CLOCK_MONOTONIC, &_prof_t4);
                 if (MCX_IS_ERROR(bwt_dec) || bwt_dec != bwt_target_size) {
