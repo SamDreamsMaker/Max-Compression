@@ -338,13 +338,15 @@ size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
     size_t si = header_size;
     size_t di = 0;
 
-    /* Bit buffer: accumulate bits from source bytes, MSB-first */
-    uint32_t bit_buf = 0;
+    /* 64-bit buffer: accumulate bits from source bytes, MSB-first.
+     * With 64 bits we can hold up to 56 bits of data, enough for
+     * ~6 symbols between refills (vs ~3 with 32-bit). */
+    uint64_t bit_buf = 0;
     int      bit_cnt = 0;
 
-    /* Refill macro: ensure at least HUFF_FAST_BITS bits in buffer */
+    /* Refill macro: fill buffer to at least 56 bits when possible */
     #define HUFF_REFILL() do { \
-        while (bit_cnt < HUFF_FAST_BITS && si < src_size) { \
+        while (bit_cnt <= 56 && si < src_size) { \
             bit_buf = (bit_buf << 8) | src[si++]; \
             bit_cnt += 8; \
         } \
@@ -352,7 +354,7 @@ size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
 
     /* Decode one symbol from fast table; returns 0 on success, -1 on error */
     #define HUFF_DECODE_ONE() do { \
-        uint32_t idx_ = (bit_buf >> (bit_cnt - HUFF_FAST_BITS)) & (HUFF_FAST_SIZE - 1); \
+        uint64_t idx_ = (bit_buf >> (bit_cnt - HUFF_FAST_BITS)) & (HUFF_FAST_SIZE - 1); \
         if (bit_cnt < HUFF_FAST_BITS) \
             idx_ = (bit_buf << (HUFF_FAST_BITS - bit_cnt)) & (HUFF_FAST_SIZE - 1); \
         uint32_t e_ = fast_table[idx_]; \
@@ -378,7 +380,7 @@ size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
     } while (0)
 
     /* Unrolled 2-symbol-per-iteration fast path.
-     * Refill guarantees 32 bits in buffer; with max 15-bit codes,
+     * 64-bit refill guarantees 56+ bits in buffer; with max 15-bit codes,
      * 2 symbols consume at most 30 bits before next refill. */
     while (di + 1 < orig_size) {
         HUFF_REFILL();
