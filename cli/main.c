@@ -143,6 +143,7 @@ static void print_usage(void)
         "  -s, --strategy  Force strategy: lz, bwt, cm, smart, lzrc\n"
         "  -t, -T, --threads N  Use N threads (default: all cores)\n"
         "      --block-size SIZE  Override block size (e.g. 1M, 4M, 32M)\n"
+        "      --memory-limit SIZE Cap memory usage (e.g. 256M, 1G)\n"
         "  -n, --dry-run   Analyze file without compressing\n"
         "      --estimate  Estimate compressed size via sample (faster)\n"
         "      --no-trials Skip multi-strategy trials at L20+ (faster)\n"
@@ -2528,6 +2529,26 @@ int main(int argc, char* argv[])
                 g_verbose = 1;
             } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 || strcmp(argv[i], "--threads") == 0) {
                 if (i + 1 < argc) g_threads = atoi(argv[++i]);
+            } else if (strcmp(argv[i], "--memory-limit") == 0 && i + 1 < argc) {
+                /* Parse memory limit, compute block size from it.
+                 * BWT peak RSS ≈ block_size × 10 (suffix array + LF mapping).
+                 * Reserve 32MB for overhead. */
+                size_t limit = parse_size_suffix(argv[++i]);
+                if (limit < 64 * 1024 * 1024) {
+                    fprintf(stderr, "Error: --memory-limit must be >= 64M\n");
+                    return 1;
+                }
+                size_t usable = limit > 32 * 1024 * 1024 ? limit - 32 * 1024 * 1024 : limit;
+                size_t block = usable / 10;
+                /* Clamp to valid range */
+                if (block < 64 * 1024) block = 64 * 1024;
+                if (block > 256 * 1024 * 1024) block = 256 * 1024 * 1024;
+                extern size_t mcx_block_size_override;
+                mcx_block_size_override = block;
+                if (!g_quiet) {
+                    fprintf(stderr, "Memory limit %zuMB → block size %zuMB\n",
+                            limit / (1024*1024), block / (1024*1024));
+                }
             } else if (strcmp(argv[i], "--block-size") == 0 && i + 1 < argc) {
                 /* Parse block size with optional K/M suffix */
                 char* endp;
