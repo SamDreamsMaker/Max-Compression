@@ -373,17 +373,31 @@ size_t mcx_bwt_inverse(uint8_t* dst, size_t primary_idx,
         uint32_t pidx32 = (uint32_t)primary_idx;
 #if defined(__GNUC__) || defined(__clang__)
         if (size > 256 * 1024) {
-            /* Prefetch 2 steps ahead for better pipeline overlap */
+            /* Unrolled 2× with prefetch 2 steps ahead for pipeline overlap */
             uint32_t idx_L = r - (r >= pidx32);
             uint32_t val = M[idx_L];
             r = (val & 0x00FFFFFF) + 1;
 
-            for (i = 0; i < size - 1; i++) {
+            size_t end = size - 1;
+            /* Unrolled 2× main loop */
+            for (i = 0; i + 1 < end; i += 2) {
                 dst[size - 1 - i] = (uint8_t)(val >> 24);
                 idx_L = r - (r >= pidx32);
                 val = M[idx_L];
                 r = (val & 0x00FFFFFF) + 1;
+
+                dst[size - 2 - i] = (uint8_t)(val >> 24);
+                idx_L = r - (r >= pidx32);
+                val = M[idx_L];
+                r = (val & 0x00FFFFFF) + 1;
                 __builtin_prefetch(&M[r - (r >= pidx32)], 0, 0);
+            }
+            /* Handle odd remainder */
+            for (; i < end; i++) {
+                dst[size - 1 - i] = (uint8_t)(val >> 24);
+                idx_L = r - (r >= pidx32);
+                val = M[idx_L];
+                r = (val & 0x00FFFFFF) + 1;
             }
             dst[0] = (uint8_t)(val >> 24);
         } else
@@ -415,12 +429,24 @@ size_t mcx_bwt_inverse(uint8_t* dst, size_t primary_idx,
             uint64_t val = M[idx_L];
             r = (uint32_t)(val & 0xFFFFFFFF) + 1;
 
-            for (i = 0; i < size - 1; i++) {
+            size_t end = size - 1;
+            for (i = 0; i + 1 < end; i += 2) {
                 dst[size - 1 - i] = (uint8_t)(val >> 32);
                 idx_L = r - (r >= pidx32);
                 val = M[idx_L];
                 r = (uint32_t)(val & 0xFFFFFFFF) + 1;
+
+                dst[size - 2 - i] = (uint8_t)(val >> 32);
+                idx_L = r - (r >= pidx32);
+                val = M[idx_L];
+                r = (uint32_t)(val & 0xFFFFFFFF) + 1;
                 __builtin_prefetch(&M[r - (r >= pidx32)], 0, 0);
+            }
+            for (; i < end; i++) {
+                dst[size - 1 - i] = (uint8_t)(val >> 32);
+                idx_L = r - (r >= pidx32);
+                val = M[idx_L];
+                r = (uint32_t)(val & 0xFFFFFFFF) + 1;
             }
             dst[0] = (uint8_t)(val >> 32);
         }
