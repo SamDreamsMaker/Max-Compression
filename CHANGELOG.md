@@ -7,11 +7,20 @@ All notable changes to MaxCompression are documented in this file.
 ### Added
 - **`--json` flag** for `mcx info` and `mcx stat` — machine-readable JSON output for scripting/CI.
 - **`mcx checksum` command** — CRC32 of compressed file with header metadata for transfer verification.
+- **`mcx version --build`** — extended build info (SIMD, optimization, C std, BWT engine).
+- **CMake export targets** — `find_package(MaxCompression)` support for downstream projects.
+- **Fuzz corpus seed generator** — `tests/generate_fuzz_corpus.sh` creates 31 diverse seed files.
+- **GitHub Sponsors** — `.github/FUNDING.yml` funding configuration.
 - **Rust bindings** — `version()`, `get_frame_info()`, `check_error()`, `MaxCompressionError` type.
+- **Python bindings docs** — `verify()` and `diff()` API reference and usage examples.
 
 ### Changed
 - **Table-based Huffman decoder** — 9-bit lookup table replaces bit-by-bit tree walk; O(1) for codes ≤9 bits.
+- **BWT inverse 2× unrolled** — reduced loop overhead in LF-mapping reconstruction.
 - **Better CLI error messages** — decompress errors now include filename and specific error name.
+
+### Documentation
+- **FORMAT.md** — updated with all 8 frame flags (adaptive blocks, int-delta, LZP, nibble-split).
 
 ## [2.1.1] — 2026-03-19
 
