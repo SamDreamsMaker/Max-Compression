@@ -158,8 +158,27 @@ L3 decompress is also ~3-5% faster (fewer literals, longer matches → less over
 Lazy matching at L3 is a good default: significant ratio improvement at modest speed cost.
 Binary/unstructured data (sao, x-ray) sees minimal ratio gain but still no regression.
 
-**Note (L2 vs L3):** L2 and L3 currently produce byte-identical output on all 12 Silesia
-files. Both use `mcx_lz_compress_lazy()` with the same parameters. The differentiation
-between L2 and L3 exists only in name. The meaningful jump is L1→L2 (greedy→lazy).
-Best ratio gains from lazy: xml +18%, nci +9%, webster +7%, reymont +6%.
-Speed cost: ~20% slower compress, ~3-5% faster decompress (fewer tokens).
+**Note (L2 vs L3):** Since Batch 20, L2 and L3 are differentiated:
+- L2 uses lazy depth 1 (check ip+1 only)
+- L3 uses lazy depth 2 (check ip+1 and ip+2)
+
+## L2 vs L3 Profiling (Silesia Corpus)
+
+| File     | L2 Size   | L3 Size   | Ratio Gain | L2 Ratio | L3 Ratio |
+|----------|-----------|-----------|------------|----------|----------|
+| dickens  | 4,677,982 | 4,664,904 | +0.28%     | 2.179x   | 2.185x   |
+| mozilla  | 21,161,438| 21,127,642| +0.16%     | 2.420x   | 2.424x   |
+| mr       | 4,026,686 | 4,005,798 | +0.52%     | 2.476x   | 2.489x   |
+| nci      | 4,201,350 | 4,163,890 | +0.89%     | 7.986x   | 8.058x   |
+| ooffice  | 3,481,726 | 3,479,438 | +0.07%     | 1.767x   | 1.768x   |
+| osdb     | 3,770,040 | 3,769,574 | +0.01%     | 2.675x   | 2.676x   |
+| reymont  | 2,478,276 | 2,464,004 | +0.58%     | 2.674x   | 2.690x   |
+| samba    | 6,309,706 | 6,282,688 | +0.43%     | 3.424x   | 3.439x   |
+| sao      | 5,821,782 | 5,820,576 | +0.02%     | 1.246x   | 1.246x   |
+| webster  | 14,930,312| 14,850,654| +0.53%     | 2.777x   | 2.792x   |
+| xml      | 971,330   | 950,636   | +2.13%     | 5.503x   | 5.623x   |
+| x-ray    | 6,498,338 | 6,497,184 | +0.02%     | 1.304x   | 1.304x   |
+
+**Summary:** L3 lazy depth 2 wins on all 12 files (avg +0.43% ratio, max +2.13% on xml).
+Speed: L3 ~4% slower compress (7.5 vs 7.8 MB/s on alice29), negligible decompress difference.
+Best gains on text-heavy/structured data (xml, nci, reymont). Minimal on binary (sao, x-ray).
