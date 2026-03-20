@@ -229,7 +229,7 @@ size_t mcx_lz_compress(
 
 size_t mcx_lz_compress_lazy(
     void* dst, size_t dst_cap,
-    const void* src, size_t src_size, int accel)
+    const void* src, size_t src_size, int accel, int lazy_depth)
 {
     const uint8_t* ip     = (const uint8_t*)src;
     const uint8_t* ip_end = ip + src_size;
@@ -348,6 +348,57 @@ size_t mcx_lz_compress_lazy(
                 match_len = ml2;
                 offset = off2;
                 ref = ref2;
+            }
+        }
+
+        /* Lazy depth 2: also check ip+1 from current (which is ip+2 from original) */
+        if (lazy_depth >= 2 && ip + 1 < mflimit) {
+            uint32_t h1d2 = lz_hash4(ip + 1, hash_log);
+            uint32_t pos1d2 = ht[h1d2];
+            ht[h1d2] = (uint32_t)(ip + 1 - (const uint8_t*)src);
+
+            const uint8_t* ref3 = (const uint8_t*)src + pos1d2;
+            size_t off3 = (size_t)(ip + 1 - ref3);
+            size_t ml3 = 0;
+
+            if (off3 > 0 && off3 <= MCX_LZ_MAX_OFFSET && lz_read32(ref3) == lz_read32(ip + 1)) {
+                size_t max_m3 = (size_t)(match_limit - (ip + 1));
+                if (max_m3 >= MCX_LZ_MIN_MATCH)
+                    ml3 = MCX_LZ_MIN_MATCH +
+                        lz_count_match(ip + 1 + MCX_LZ_MIN_MATCH, ref3 + MCX_LZ_MIN_MATCH,
+                                       max_m3 - MCX_LZ_MIN_MATCH);
+            }
+
+            /* Also check secondary hash at ip+1 */
+            if (ml3 <= match_len) {
+                uint32_t h2d2 = lz_hash4_alt(ip + 1, hash_log);
+                uint32_t pos2d2 = ht2[h2d2];
+                ht2[h2d2] = (uint32_t)(ip + 1 - (const uint8_t*)src);
+
+                const uint8_t* ref3b = (const uint8_t*)src + pos2d2;
+                size_t off3b = (size_t)(ip + 1 - ref3b);
+
+                if (off3b > 0 && off3b <= MCX_LZ_MAX_OFFSET && lz_read32(ref3b) == lz_read32(ip + 1)) {
+                    size_t max_m3b = (size_t)(match_limit - (ip + 1));
+                    if (max_m3b >= MCX_LZ_MIN_MATCH) {
+                        size_t ml3b = MCX_LZ_MIN_MATCH +
+                            lz_count_match(ip + 1 + MCX_LZ_MIN_MATCH, ref3b + MCX_LZ_MIN_MATCH,
+                                           max_m3b - MCX_LZ_MIN_MATCH);
+                        if (ml3b > ml3) {
+                            ml3 = ml3b;
+                            ref3 = ref3b;
+                            off3 = off3b;
+                        }
+                    }
+                }
+            }
+
+            if (ml3 > match_len + 1) {
+                /* Better match at ip+2 (original position) */
+                ip++;
+                match_len = ml3;
+                offset = off3;
+                ref = ref3;
             }
         }
 

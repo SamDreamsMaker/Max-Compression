@@ -420,8 +420,9 @@ size_t mcx_compress(void* dst, size_t dst_cap,
                 if (strategy == MCX_STRATEGY_LZ_HC) {
                     lz_size = mcx_lz_compress_hc(lz_buf, lz_cap, in + src_offset, block_src_size, level);
                 } else if (level >= 2) {
-                    /* L2-L3: lazy matching (check ip+1), better ratio than greedy */
-                    lz_size = mcx_lz_compress_lazy(lz_buf, lz_cap, in + src_offset, block_src_size, 1);
+                    /* L2: lazy depth 1 (check ip+1), L3: lazy depth 2 (check ip+1 and ip+2) */
+                    int lazy_depth = (level >= 3) ? 2 : 1;
+                    lz_size = mcx_lz_compress_lazy(lz_buf, lz_cap, in + src_offset, block_src_size, 1, lazy_depth);
                 } else {
                     lz_size = mcx_lz_compress(lz_buf, lz_cap, in + src_offset, block_src_size, 1);
                 }
@@ -1965,7 +1966,8 @@ static size_t stream_compress_block(mcx_cctx* cctx)
         if (strategy == MCX_STRATEGY_LZ_HC) {
             lz_size = mcx_lz_compress_hc(lz_buf, lz_cap, cctx->in_buf, cctx->in_pos, cctx->level);
         } else if (cctx->level >= 2) {
-            lz_size = mcx_lz_compress_lazy(lz_buf, lz_cap, cctx->in_buf, cctx->in_pos, 1);
+            int lazy_depth = (cctx->level >= 3) ? 2 : 1;
+            lz_size = mcx_lz_compress_lazy(lz_buf, lz_cap, cctx->in_buf, cctx->in_pos, 1, lazy_depth);
         } else {
             lz_size = mcx_lz_compress(lz_buf, lz_cap, cctx->in_buf, cctx->in_pos, 1);
         }

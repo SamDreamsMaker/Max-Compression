@@ -69,15 +69,17 @@ size_t mcx_lz_compress(
 
 /**
  * Lazy LZ77 compression with dual-probe hash (no chains).
- * Checks ip+1 for a longer match before emitting. Faster than HC
- * but better ratio than pure greedy. Good for L2-L3.
+ * Checks ip+1 (and optionally ip+2 when lazy_depth>=2) for a longer
+ * match before emitting. Faster than HC but better ratio than pure
+ * greedy. L2 uses lazy_depth=1, L3 uses lazy_depth=2.
  */
 size_t mcx_lz_compress_lazy(
     void*       dst,
     size_t      dst_cap,
     const void* src,
     size_t      src_size,
-    int         accel
+    int         accel,
+    int         lazy_depth
 );
 
 /**
