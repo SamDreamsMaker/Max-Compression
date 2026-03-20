@@ -57,6 +57,7 @@ static void print_usage(void)
         "  mcx ls/list    <file.mcx> [file2.mcx ...]\n"
         "  mcx stat       <file>                     # file statistics (entropy, bytes)\n"
         "  mcx hash       <file.mcx> [file2.mcx ...] # CRC32/FNV hash of content\n"
+        "  mcx checksum   <file.mcx> [file2.mcx ...] # verify header CRC32 integrity\n"
         "  mcx cat        <input.mcx>              # decompress to stdout\n"
         "  mcx bench      [-l LEVEL] <input>       # benchmark all (or specific) levels\n"
         "  mcx test                                # run self-tests\n"
@@ -1097,6 +1098,57 @@ static int cmd_hash(int argc, char** argv)
     return errors > 0 ? 1 : 0;
 }
 
+/* ─── Checksum command ───────────────────────────────────────────────── */
+
+static int cmd_checksum(int argc, char** argv)
+{
+    if (argc < 3) {
+        fprintf(stderr, "Usage: mcx checksum <file.mcx> [file2.mcx ...]\n"
+                "  Show CRC32 of compressed file and verify header integrity.\n");
+        return 1;
+    }
+
+    int errors = 0;
+    for (int i = 2; i < argc; i++) {
+        if (argv[i][0] == '-') continue;
+
+        size_t src_size;
+        uint8_t* src = read_file(argv[i], &src_size);
+        if (!src) { errors++; continue; }
+
+        if (src_size < MCX_FRAME_HEADER_SIZE) {
+            fprintf(stderr, "%s: FAIL (too small, %zu bytes)\n", argv[i], src_size);
+            free(src); errors++; continue;
+        }
+
+        /* Check magic number */
+        uint32_t magic;
+        memcpy(&magic, src, 4);
+        if (magic != 0x0158434D) { /* "MCX\x01" LE */
+            fprintf(stderr, "%s: FAIL (bad magic: 0x%08X, not an MCX file)\n", argv[i], magic);
+            free(src); errors++; continue;
+        }
+
+        /* Parse header */
+        uint8_t version  = src[4];
+        uint8_t level    = src[6];
+        uint8_t strategy = src[7];
+        uint64_t orig_size;
+        memcpy(&orig_size, src + 8, 8);
+
+        /* CRC32 of entire compressed file (for transfer verification) */
+        uint32_t file_crc = compute_crc32(src, src_size);
+
+        printf("%s: %08x  v%u L%u %s  %zu → %llu bytes (%.2fx)\n",
+               argv[i], file_crc, version, level, strategy_name(strategy),
+               src_size, (unsigned long long)orig_size,
+               orig_size > 0 ? (double)orig_size / src_size : 0.0);
+
+        free(src);
+    }
+    return errors > 0 ? 1 : 0;
+}
+
 /* ─── Stat command ───────────────────────────────────────────────────── */
 
 static int cmd_stat(const char* input, int json)
@@ -1664,6 +1716,9 @@ int main(int argc, char* argv[])
 
     } else if (strcmp(argv[1], "hash") == 0) {
         return cmd_hash(argc, argv);
+
+    } else if (strcmp(argv[1], "checksum") == 0) {
+        return cmd_checksum(argc, argv);
 
     } else if (strcmp(argv[1], "bench") == 0) {
         if (argc < 3) {
