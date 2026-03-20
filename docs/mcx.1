@@ -15,6 +15,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-filter\fR \fINAME\fR]
 [\fB\-\-split\fR \fISIZE\fR]
 [\fB\-\-preserve\-mtime\fR]
+[\fB\-\-keep\-broken\fR]
 [\fB\-f\fR]
 [\fB\-k\fR]
 [\fB\-c\fR]
@@ -82,6 +83,7 @@ mcx \- high\-ratio lossless data compression tool
 [\fB\-\-memory\fR]
 [\fB\-\-all\-levels\fR]
 [\fB\-\-ratio\-only\fR]
+[\fB\-\-median\fR]
 \fIINPUT\fR
 .br
 .B mcx test
@@ -346,6 +348,15 @@ suffix (.000, .001, etc.). Useful for large archives.
 For \fBcompress\fR and \fBdecompress\fR: set the output file's
 modification time to match the input file's mtime. Useful for
 backup and archival workflows.
+.TP
+.BR \-\-median
+For \fBbench\fR: report median instead of mean when \fB\-\-iterations\fR > 1.
+More robust to outliers than arithmetic mean.
+.TP
+.BR \-\-keep\-broken
+For \fBcompress\fR: keep partial output on error instead of deleting.
+Useful for debugging compression failures. By default, partial output
+is removed when compression encounters an error.
 .TP
 .BR \-V ", " \-\-version
 Print version string and exit.
