@@ -347,6 +347,7 @@ typedef struct {
     uint8_t partial;
     uint8_t *ictx;
     uint32_t ictx_size;
+    uint32_t total_bits; /* total bits processed */
 } cm_t;
 
 static void cm_init(cm_t *cm, const uint8_t *data) {
@@ -491,9 +492,14 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->delta, ctx[17], bit);
     smap_update(&cm->o1_nibble, ctx[18], bit);
     
-    mixer_learn(&cm->mx1[cm->prev[0]], str, bit, cm->lr);
-    mixer_learn(&cm->mx2[char_class(cm->prev[0])], str, bit, cm->lr);
-    mixer_learn(&cm->mx3[bp], str, bit, cm->lr);
+    /* Adaptive mixer learning rate: fast early, slow later */
+    float lr = cm->total_bits < 2000 ? 0.05f :
+               cm->total_bits < 20000 ? 0.020f :
+               cm->total_bits < 200000 ? 0.010f : 0.005f;
+    mixer_learn(&cm->mx1[cm->prev[0]], str, bit, lr);
+    mixer_learn(&cm->mx2[char_class(cm->prev[0])], str, bit, lr);
+    mixer_learn(&cm->mx3[bp], str, bit, lr);
+    cm->total_bits++;
     sse_update(&cm->sse, cm->partial & (SSE_CTXS-1), mp, bit);
     
     cm->partial = (cm->partial << 1) | bit;
