@@ -384,6 +384,11 @@ For \fBbench\fR: compact one\-line\-per\-level output. Example:
 \fBL6: 2.38x 6.4/87.2 MB/s\fR. Useful for scripting and quick
 comparisons.
 .TP
+.BR \-\-worst =\fIN\fR
+For \fBbench\fR: only show the worst N results by compression ratio.
+Useful for identifying hard\-to\-compress files in a batch. Opposite
+of \fB\-\-top\fR.
+.TP
 .BR \-\-exclude =\fIGLOB\fR
 For \fBcompress \-r\fR: skip files matching the given glob pattern.
 Example: \fB\-\-exclude '*.log'\fR skips all .log files. Uses
