@@ -132,6 +132,7 @@ _mcx() {
         '--worst[Show worst N results by ratio]:count:'
         '--filter[Force preprocessing filter]:filter:(delta nibble none)'
         '--format[Output format]:format:(table csv json markdown)'
+        '--exclude[Skip files matching glob (directory input)]:pattern:'
         '-t[Thread count]:threads:'
         '-T[Thread count]:threads:'
         '*:input:_files'

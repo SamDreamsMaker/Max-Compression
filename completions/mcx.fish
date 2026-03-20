@@ -111,6 +111,7 @@ complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l brief    -d 'C
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l worst -x -d 'Show worst N results by ratio'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l filter -x -a 'delta nibble none' -d 'Force preprocessing filter for benchmark'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l format -x -a 'table csv json markdown' -d 'Output format (table/csv/json/markdown)'
+complete -c mcx -n '__fish_seen_subcommand_from bench compare' -l exclude -x -d 'Skip files matching glob pattern (directory input)'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -s t -l threads -x -d 'Thread count'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -s T -x -d 'Thread count'
 complete -c mcx -n '__fish_seen_subcommand_from bench compare' -F -d 'Input file'
