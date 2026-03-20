@@ -549,7 +549,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[14] = smap_get(&cm->indirect, ctx[14]);
     preds[15] = smap_get(&cm->o2_word, ctx[15]);
     preds[16] = smap_get(&cm->gap15, ctx[16]);
-    preds[17] = smap_get(&cm->delta, ctx[17]);
+    preds[17] = PROB_HALF; /* delta model disabled — hurts on all file types */
     preds[18] = smap_get(&cm->o1_nibble, ctx[18]);
     preds[19] = smap_get(&cm->o8, ctx[19]);
     preds[20] = smap_get(&cm->word2, ctx[20]);
@@ -559,7 +559,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[24] = smap_get(&cm->word_len, ctx[24]);
     preds[25] = smap_get(&cm->prevword_byte, ctx[25]);
     preds[26] = smap_get(&cm->upper2, ctx[26]);
-    preds[27] = smap_get(&cm->o4_cc, ctx[27]);
+    preds[27] = PROB_HALF; /* o4_cc disabled — hurts alice, marginal on binary */
     preds[28] = smap_get(&cm->word3, ctx[29]);
     preds[29] = smap_get(&cm->word4, ctx[30]);
     uint32_t run_ctx = h32(((uint32_t)cm->prev[0] << 8) | cm->run_length) ^ cm->partial;
