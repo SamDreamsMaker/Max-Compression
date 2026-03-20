@@ -45,3 +45,9 @@ cargo_err.txt
 # Test corpora (large binary files)
 corpora/
 *.zip
+
+# WASM build artifacts
+wasm/maxcomp.js
+wasm/maxcomp.wasm
+# WASM build directory
+build-wasm/
