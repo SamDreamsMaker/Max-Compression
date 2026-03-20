@@ -4,6 +4,13 @@ All notable changes to MaxCompression are documented in this file.
 
 ## [2.2.0] — 2026-03-20
 
+### Added (Batch 35)
+- **`mcx bench --profile`** — enables per-phase time breakdown via `MCX_PROFILE=1`. Shows BWT forward/MTF+RLE/entropy encode times for compress, and rANS decode/RLE2/MTF/BWT inverse times for decompress, with percentage breakdown per block.
+- **BWT 64-bit threshold review** — 16MB threshold is already optimal. 24-bit LF indices in merged 32-bit format cap at 16M entries. Lowering threshold pushes blocks to slower 64-bit path. No change needed.
+- **`--block-size auto` Silesia L12 profiling** — most files show +4 bytes (header overhead). mozilla (51MB) shows -2.8% improvement with 16MB auto blocks on mixed binary data. samba +0.2% degradation. Overall neutral — auto is safe to use.
+- **Integration tests** — coverage for `--diff` regression detection and `--profile` flag acceptance.
+- **Man page + completions update** — `--diff`, `--block-size auto`, and `--profile` documented across man page, Bash, Zsh, and Fish completions.
+
 ### Added (Batch 34)
 - **BWT prefetch review** — confirmed `__builtin_prefetch` already exists in both 32-bit and 64-bit BWT inverse paths, 2 steps ahead in unrolled loop. Deeper prefetch impossible due to serial LF-chain dependency.
 - **`mcx bench --diff BASELINE`** — like `--delta` but also measures and compares compress/decompress speeds. Baseline format includes timing (`L<N> <bytes> <comp_mbs> <dec_mbs>`). Speed variance ~5-10% between runs is expected.
