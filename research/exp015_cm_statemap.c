@@ -404,6 +404,7 @@ typedef struct {
     match_t match;
     sse_t sse;
     sse_t apm;  /* second-stage APM with different context */
+    sse_t apm2; /* third-stage APM with prev>>4 context */
     mixer_t mx1[2048], mx2[64], mx3[8], mx4[1024], mx5[256];
     float lr;
     uint8_t prev[14];
@@ -455,6 +456,7 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     match_init(&cm->match, data);
     sse_init(&cm->sse);
     sse_init(&cm->apm);
+    sse_init(&cm->apm2);
     for (int i = 0; i < 2048; i++) mixer_init(&cm->mx1[i], N_MODELS);
     for (int i = 0; i < 64; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
@@ -604,7 +606,10 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     if (apm_p < 1) apm_p = 1; if (apm_p > PROB_MAX-1) apm_p = PROB_MAX-1;
     
     /* Blend: 0 SSE + 5 APM + 27 mixer = 32 */
-    uint16_t final = (apm_p * 5 + mp * 27) / 32;
+    int apm2_ctx = ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
+    uint16_t apm2_p = sse_map(&cm->apm2, apm2_ctx, mp);
+    if (apm2_p < 1) apm2_p = 1; if (apm2_p > PROB_MAX-1) apm2_p = PROB_MAX-1;
+    uint16_t final = (apm_p * 5 + apm2_p * 2 + mp * 25) / 32;
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
@@ -663,6 +668,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     cm->total_bits++;
     sse_update(&cm->sse, ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
+    sse_update(&cm->apm2, ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     
     cm->partial = (cm->partial << 1) | bit;
 }
