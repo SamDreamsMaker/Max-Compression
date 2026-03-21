@@ -19,13 +19,15 @@ jobs:
 
       - name: Build WASM module
         run: |
+          set -ex
           mkdir -p build-wasm
           cd build-wasm
           emcmake cmake -S .. -B . \
             -DCMAKE_BUILD_TYPE=Release \
             -DMCX_BUILD_CLI=OFF \
             -DMCX_BUILD_TESTS=OFF
-          emmake make maxcomp_static -j$(nproc)
+          emmake make maxcomp_static -j$(nproc) VERBOSE=1
+          ls -la lib/
 
           emcc -O3 -s WASM=1 \
             -s EXPORTED_FUNCTIONS='["_mcx_compress","_mcx_decompress","_mcx_compress_bound","_mcx_version_string","_mcx_is_error","_mcx_get_decompressed_size","_malloc","_free"]' \
