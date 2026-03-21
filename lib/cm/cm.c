@@ -621,14 +621,16 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     uint16_t sse_p = sse_map(&cm->sse, sse_ctx, mp);
     if (sse_p < 1) sse_p = 1; if (sse_p > PROB_MAX-1) sse_p = PROB_MAX-1;
     
-    /* APM with match context */
+    /* APM: second SSE with different context (match state) */
     int apm_ctx = ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1);
-    uint16_t apm_p = sse_map(&cm->sse, apm_ctx, mp);  /* reuse sse_map for APM */
-    apm_p = sse_map(&cm->apm, apm_ctx, mp);
+    uint16_t apm_p = sse_map(&cm->apm, apm_ctx, mp);
     if (apm_p < 1) apm_p = 1; if (apm_p > PROB_MAX-1) apm_p = PROB_MAX-1;
     
-    /* Blend: 0 SSE + 5 APM + 27 mixer = 32 */
-    uint16_t final = (apm_p * 5 + mp * 27) / 32;
+    /* Blend: 0 SSE + 5 APM + 2 APM2 + 25 mixer = 32 */
+    int apm2_ctx = ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
+    uint16_t apm2_p = sse_map(&cm->apm2, apm2_ctx, mp);
+    if (apm2_p < 1) apm2_p = 1; if (apm2_p > PROB_MAX-1) apm2_p = PROB_MAX-1;
+    uint16_t final = (apm_p * 5 + apm2_p * 2 + mp * 25) / 32;
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
