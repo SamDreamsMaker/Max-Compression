@@ -403,7 +403,6 @@ typedef struct {
     smap_t run;             /* byte × run length context */
     smap_t o10;             /* o4_cc slot reused for o10 */
     match_t match;
-    sse_t sse;
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
     mixer_t mx1[2048], mx2[64], mx3[8], mx4[1024], mx5[256];
@@ -455,7 +454,6 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     smap_init(&cm->run, 1<<24);
     smap_init(&cm->o10, 1<<25); cm->o10.rate_n = 500;
     match_init(&cm->match, data);
-    sse_init(&cm->sse);
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
     for (int i = 0; i < 2048; i++) mixer_init(&cm->mx1[i], N_MODELS);
@@ -598,8 +596,6 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
     
     int sse_ctx = ((cm->prev[0] >> 4) << 8 | (cm->prev[1] >> 6) << 6 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
-    uint16_t sse_p = sse_map(&cm->sse, sse_ctx, mp);
-    if (sse_p < 1) sse_p = 1; if (sse_p > PROB_MAX-1) sse_p = PROB_MAX-1;
     
     /* APM: second SSE with different context (match state) */
     int apm_ctx = ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1);
@@ -667,7 +663,6 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr);
     }
     cm->total_bits++;
-    sse_update(&cm->sse, ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
     sse_update(&cm->apm2, ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     
