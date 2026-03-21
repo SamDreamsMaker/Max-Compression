@@ -425,10 +425,11 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     /* Scale table sizes: ~1.5GB budget at log=25, ~100MB at log=22 */
     /* 26 smaps at 1<<25 × 4B = 26×128MB = 3.3GB — too much for most systems */
     /* Use 1<<23 as a safe default, bump to 1<<25 only for small files */
-    int hi_log = 23; /* high-order models (o2-o14) */
-    int lo_log = 22; /* word/misc models */
-    if (data_size <= 256*1024) { hi_log = 25; lo_log = 24; } /* best ratio for small files */
-    else if (data_size <= 4*1024*1024) { hi_log = 24; lo_log = 23; }
+    int hi_log = 21; /* high-order models (o2-o14) — default for large files */
+    int lo_log = 20; /* word/misc models */
+    if (data_size <= 256*1024) { hi_log = 25; lo_log = 24; } /* ~1.5GB, best ratio */
+    else if (data_size <= 2*1024*1024) { hi_log = 23; lo_log = 22; } /* ~700MB */
+    else if (data_size <= 16*1024*1024) { hi_log = 22; lo_log = 21; } /* ~180MB */
     smap_init(&cm->o0, 512);
     smap_init(&cm->o1, 256*256);
     smap_init(&cm->o2, 1<<hi_log);
