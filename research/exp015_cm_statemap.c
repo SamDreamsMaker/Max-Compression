@@ -420,39 +420,46 @@ typedef struct {
     uint32_t total_bits; /* total bits processed */
 } cm_t;
 
-static void cm_init(cm_t *cm, const uint8_t *data) {
+static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     memset(cm, 0, sizeof(cm_t));
+    /* Scale table sizes: ~1.5GB budget at log=25, ~100MB at log=22 */
+    /* 26 smaps at 1<<25 × 4B = 26×128MB = 3.3GB — too much for most systems */
+    /* Use 1<<23 as a safe default, bump to 1<<25 only for small files */
+    int hi_log = 23; /* high-order models (o2-o14) */
+    int lo_log = 22; /* word/misc models */
+    if (data_size <= 256*1024) { hi_log = 25; lo_log = 24; } /* best ratio for small files */
+    else if (data_size <= 4*1024*1024) { hi_log = 24; lo_log = 23; }
     smap_init(&cm->o0, 512);
     smap_init(&cm->o1, 256*256);
-    smap_init(&cm->o2, 1<<25);
-    smap_init(&cm->o3, 1<<25);
-    smap_init(&cm->o4, 1<<25);
-    smap_init(&cm->o5, 1<<25);
-    smap_init(&cm->o6, 1<<25);
-    smap_init(&cm->o7, 1<<25);
-    smap_init(&cm->word, 1<<24);
-    smap_init(&cm->sparse13, 1<<24);
-    smap_init(&cm->sparse14, 1<<24);
-    smap_init(&cm->sparse24, 1<<24);
-    smap_init(&cm->charclass, 1<<24);
-    smap_init(&cm->o13, 1<<25); cm->o13.rate_n = 500;
-    smap_init(&cm->indirect, 1<<24);
-    smap_init(&cm->o2_word, 1<<24);
-    smap_init(&cm->o11, 1<<25); cm->o11.rate_n = 500;
-    smap_init(&cm->o9, 1<<25); cm->o9.rate_n = 500;
-    smap_init(&cm->o12, 1<<25); cm->o12.rate_n = 500;
-    smap_init(&cm->o8, 1<<25); cm->o8.rate_n = 500;
-    smap_init(&cm->word2, 1<<24);
-    smap_init(&cm->o14, 1<<25); cm->o14.rate_n = 500;
-    smap_init(&cm->word_cc, 1<<24);
-    smap_init(&cm->o1_cc, 1<<24);
-    smap_init(&cm->word_len, 1<<24);
-    smap_init(&cm->prevword_byte, 1<<24);
-    smap_init(&cm->upper2, 1<<24);
-    smap_init(&cm->word3, 1<<24);
-    smap_init(&cm->word4, 1<<24);
-    smap_init(&cm->run, 1<<24);
-    smap_init(&cm->o10, 1<<25); cm->o10.rate_n = 500;
+    smap_init(&cm->o2, 1<<hi_log);
+    smap_init(&cm->o3, 1<<hi_log);
+    smap_init(&cm->o4, 1<<hi_log);
+    smap_init(&cm->o5, 1<<hi_log);
+    smap_init(&cm->o6, 1<<hi_log);
+    smap_init(&cm->o7, 1<<hi_log);
+    smap_init(&cm->word, 1<<lo_log);
+    smap_init(&cm->sparse13, 1<<lo_log);
+    smap_init(&cm->sparse14, 1<<lo_log);
+    smap_init(&cm->sparse24, 1<<lo_log);
+    smap_init(&cm->charclass, 1<<lo_log);
+    smap_init(&cm->o13, 1<<hi_log); cm->o13.rate_n = 500;
+    smap_init(&cm->indirect, 1<<lo_log);
+    smap_init(&cm->o2_word, 1<<lo_log);
+    smap_init(&cm->o11, 1<<hi_log); cm->o11.rate_n = 500;
+    smap_init(&cm->o9, 1<<hi_log); cm->o9.rate_n = 500;
+    smap_init(&cm->o12, 1<<hi_log); cm->o12.rate_n = 500;
+    smap_init(&cm->o8, 1<<hi_log); cm->o8.rate_n = 500;
+    smap_init(&cm->word2, 1<<lo_log);
+    smap_init(&cm->o14, 1<<hi_log); cm->o14.rate_n = 500;
+    smap_init(&cm->word_cc, 1<<lo_log);
+    smap_init(&cm->o1_cc, 1<<lo_log);
+    smap_init(&cm->word_len, 1<<lo_log);
+    smap_init(&cm->prevword_byte, 1<<lo_log);
+    smap_init(&cm->upper2, 1<<lo_log);
+    smap_init(&cm->word3, 1<<lo_log);
+    smap_init(&cm->word4, 1<<lo_log);
+    smap_init(&cm->run, 1<<lo_log);
+    smap_init(&cm->o10, 1<<hi_log); cm->o10.rate_n = 500;
     match_init(&cm->match, data);
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
@@ -704,7 +711,7 @@ static size_t cm_compress(uint8_t *dst, size_t cap,
     dst[0]=size&0xFF; dst[1]=(size>>8)&0xFF;
     dst[2]=(size>>16)&0xFF; dst[3]=(size>>24)&0xFF;
     
-    cm_t *cmp = (cm_t*)calloc(1, sizeof(cm_t)); cm_init(cmp, src);
+    cm_t *cmp = (cm_t*)calloc(1, sizeof(cm_t)); cm_init(cmp, src, size);
     #define cm (*cmp)
     rcenc_t rc; rcenc_init(&rc, dst+4, cap-4);
     float str[N_MODELS];
@@ -751,7 +758,7 @@ static size_t cm_decompress(uint8_t *dst, size_t cap,
                   ((size_t)src[2]<<16) | ((size_t)src[3]<<24);
     if (orig > cap) return 0;
     
-    cm_t *cmp = (cm_t*)calloc(1, sizeof(cm_t)); cm_init(cmp, dst);
+    cm_t *cmp = (cm_t*)calloc(1, sizeof(cm_t)); cm_init(cmp, dst, orig);
     #define cm (*cmp)
     rcdec_t rc; rcdec_init(&rc, src+4, src_size-4);
     float str[N_MODELS];
