@@ -224,7 +224,11 @@ static void mixer_init(mixer_t *mx, int n) {
 
 static float mixer_mix(mixer_t *mx, float *s) {
     float sum = 0;
-    for (int i = 0; i < mx->n; i++) sum += mx->w[i] * s[i];
+    const float *w = mx->w;
+    int i = 0;
+    for (; i + 3 < mx->n; i += 4)
+        sum += w[i]*s[i] + w[i+1]*s[i+1] + w[i+2]*s[i+2] + w[i+3]*s[i+3];
+    for (; i < mx->n; i++) sum += w[i] * s[i];
     sum += mx->bias;
     float r = squash(sum);
     if (r < 0.001f) r = 0.001f;
