@@ -664,7 +664,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
-    float lr = 0.05f / (1.0f + (float)cm->total_bits / 10000.0f);
+    float lr = 0.002f + 0.033f / (1.0f + (float)cm->total_bits / 3000.0f);
     if (lr < 0.002f) lr = 0.002f;
     mixer_learn(&cm->mx1[(cm->prev[0] << 3) | bp], str, bit, lr);
     mixer_learn(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str, bit, lr);
