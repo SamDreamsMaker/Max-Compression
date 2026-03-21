@@ -697,7 +697,8 @@ static size_t cm_compress(uint8_t *dst, size_t cap,
     dst[0]=size&0xFF; dst[1]=(size>>8)&0xFF;
     dst[2]=(size>>16)&0xFF; dst[3]=(size>>24)&0xFF;
     
-    cm_t cm; cm_init(&cm, src);
+    cm_t *cmp = (cm_t*)calloc(1, sizeof(cm_t)); cm_init(cmp, src);
+    #define cm (*cmp)
     rcenc_t rc; rcenc_init(&rc, dst+4, cap-4);
     float str[N_MODELS];
     
@@ -731,6 +732,8 @@ static size_t cm_compress(uint8_t *dst, size_t cap,
     
     size_t comp = rcenc_flush(&rc) + 4;
     cm_free(&cm);
+    #undef cm
+    free(cmp);
     return comp;
 }
 
@@ -741,7 +744,8 @@ static size_t cm_decompress(uint8_t *dst, size_t cap,
                   ((size_t)src[2]<<16) | ((size_t)src[3]<<24);
     if (orig > cap) return 0;
     
-    cm_t cm; cm_init(&cm, dst);
+    cm_t *cmp = (cm_t*)calloc(1, sizeof(cm_t)); cm_init(cmp, dst);
+    #define cm (*cmp)
     rcdec_t rc; rcdec_init(&rc, src+4, src_size-4);
     float str[N_MODELS];
     
@@ -774,6 +778,8 @@ static size_t cm_decompress(uint8_t *dst, size_t cap,
     }
     
     cm_free(&cm);
+    #undef cm
+    free(cmp);
     return orig;
 }
 
