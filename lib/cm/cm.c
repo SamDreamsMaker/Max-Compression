@@ -419,7 +419,8 @@ typedef struct {
     smap_t run;             /* byte × run length */
     match_t match;
     sse_t sse;
-    sse_t apm;  /* second-stage APM with different context */
+    sse_t apm;
+    sse_t apm2;  /* second-stage APM with different context */
     mixer_t mx1[2048], mx2[64], mx3[8], mx4[1024], mx5[256];
     float lr;
     uint8_t prev[14];
@@ -471,6 +472,7 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     match_init(&cm->match, data);
     sse_init(&cm->sse);
     sse_init(&cm->apm);
+    sse_init(&cm->apm2);
     for (int i = 0; i < 2048; i++) mixer_init(&cm->mx1[i], N_MODELS);
     for (int i = 0; i < 64; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
@@ -678,6 +680,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     cm->total_bits++;
     sse_update(&cm->sse, ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
+    sse_update(&cm->apm2, ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     
     cm->partial = (cm->partial << 1) | bit;
 }
