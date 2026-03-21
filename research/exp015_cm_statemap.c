@@ -155,7 +155,7 @@ static inline void smap_update(smap_t *s, uint32_t c, int bit) {
     
     /* Rate based on count: tuned curve */
     int rate;
-    rate = 645 / (count + 3);
+    rate = 655 / (count + 3);
     if (rate < 1) rate = 1;
     
     /* Update probability */
