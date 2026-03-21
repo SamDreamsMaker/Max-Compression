@@ -598,8 +598,8 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     uint16_t apm_p = sse_map(&cm->apm, apm_ctx, mp);
     if (apm_p < 1) apm_p = 1; if (apm_p > PROB_MAX-1) apm_p = PROB_MAX-1;
     
-    /* Blend: 1 SSE + 2 APM + 29 mixer = 32 */
-    uint16_t final = (sse_p * 1 + apm_p * 2 + mp * 29) / 32;
+    /* Blend: 0 SSE + 5 APM + 27 mixer = 32 */
+    uint16_t final = (apm_p * 5 + mp * 27) / 32;
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
