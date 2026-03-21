@@ -128,11 +128,12 @@ static inline int rcdec_bit(rcdec_t *d, uint16_t prob) {
 typedef struct {
     uint32_t *t;   /* packed (prob << 10) | count */
     uint32_t n;
+    uint32_t mask; /* n-1 for fast masking */
     int rate_n;
 } smap_t;
 
 static void smap_init(smap_t *s, uint32_t n) {
-    s->n = n; s->rate_n = 655;
+    s->n = n; s->mask = n - 1; s->rate_n = 655;
     s->t = (uint32_t*)malloc(n * sizeof(uint32_t));
     for (uint32_t i = 0; i < n; i++)
         s->t[i] = SM_PROB_INIT; /* prob=HALF, count=0 */
