@@ -380,7 +380,7 @@ static void sse_update(sse_t *s, int ctx, uint16_t prob, int bit) {
     int c = ctx & (SSE_CTXS - 1);
     uint16_t p = s->t[c][b];
     int count = s->n[c][b];
-    int rate = (count < 4) ? 3 : (count < 16) ? 4 : (count < 64) ? 5 : 6;
+    int rate = (count < 4) ? 2 : (count < 16) ? 3 : (count < 64) ? 4 : 5;
     if (count < 255) s->n[c][b] = count + 1;
     if (bit == 0) s->t[c][b] = p + ((PROB_MAX - p) >> rate);
     else          s->t[c][b] = p - (p >> rate);
