@@ -211,12 +211,14 @@ static inline float squash(float x) {
 
 typedef struct {
     float w[MAX_INPUTS];
+    float bias;
     int n;
 } mixer_t;
 
 static void mixer_init(mixer_t *mx, int n) {
     mx->n = n;
     for (int i = 0; i < n; i++) mx->w[i] = 1.0f / n;
+    mx->bias = 0.0f;
 }
 
 static inline float mixer_mix(mixer_t *mx, float * __restrict__ s) {
@@ -227,6 +229,7 @@ static inline float mixer_mix(mixer_t *mx, float * __restrict__ s) {
         sum += w[i]*s[i] + w[i+1]*s[i+1] + w[i+2]*s[i+2] + w[i+3]*s[i+3];
     for (; i < mx->n; i++)
         sum += w[i]*s[i];
+    sum += mx->bias;
     float r = squash(sum);
     if (r < 0.001f) r = 0.001f;
     if (r > 0.999f) r = 0.999f;
@@ -241,6 +244,7 @@ static inline void mixer_learn(mixer_t *mx, float * __restrict__ s, int bit, flo
         sum += w[i]*s[i] + w[i+1]*s[i+1] + w[i+2]*s[i+2] + w[i+3]*s[i+3];
     for (; i < mx->n; i++)
         sum += w[i]*s[i];
+    sum += mx->bias;
     float err_lr = ((1.0f - bit) - squash(sum)) * lr;
     for (i = 0; i + 3 < mx->n; i += 4) {
         w[i]   += err_lr * s[i];
@@ -250,6 +254,7 @@ static inline void mixer_learn(mixer_t *mx, float * __restrict__ s, int bit, flo
     }
     for (; i < mx->n; i++)
         w[i] += err_lr * s[i];
+    mx->bias += err_lr;
 }
 
 /* ── Hash ──────────────────────────────────────────────────────── */
