@@ -222,7 +222,13 @@ static void mixer_init(mixer_t *mx, int n) {
     mx->bias = 0.0f;
 }
 
-static inline float mixer_mix(mixer_t *mx, float * __restrict__ s) {
+#ifdef _MSC_VER
+#define MCX_RESTRICT __restrict
+#else
+#define MCX_RESTRICT __restrict__
+#endif
+
+static inline float mixer_mix(mixer_t *mx, float * MCX_RESTRICT s) {
     float sum = 0;
     const float *w = mx->w;
     int i = 0;
@@ -237,7 +243,7 @@ static inline float mixer_mix(mixer_t *mx, float * __restrict__ s) {
     return r;
 }
 
-static inline void mixer_learn(mixer_t *mx, float * __restrict__ s, int bit, float lr) {
+static inline void mixer_learn(mixer_t *mx, float * MCX_RESTRICT s, int bit, float lr) {
     float sum = 0;
     float *w = mx->w;
     int i = 0;

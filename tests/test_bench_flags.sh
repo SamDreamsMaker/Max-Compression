@@ -398,7 +398,7 @@ echo "OK: --adaptive-level roundtrip verified"
 # High-entropy random data should select L1
 dd if=/dev/urandom of="$TMPDIR/random.bin" bs=1024 count=64 2>/dev/null
 RAND_OUT=$("$MCX" compress --adaptive-level "$TMPDIR/random.bin" -o "$TMPDIR/rand.mcx" -f 2>/dev/null)
-RAND_LEVEL=$(echo "$RAND_OUT" | grep -oP 'auto-selected L\K\d+')
+RAND_LEVEL=$(echo "$RAND_OUT" | sed -n 's/.*auto-selected L\([0-9]*\).*/\1/p')
 if [ "$RAND_LEVEL" != "1" ]; then
     echo "FAIL: random data should auto-select L1, got L$RAND_LEVEL"
     echo "$RAND_OUT"
@@ -410,7 +410,7 @@ echo "OK: --adaptive-level selects L1 for high-entropy random data"
 python3 -c "print('hello world test data ' * 5000)" > "$TMPDIR/repeat.txt" 2>/dev/null || \
     printf 'hello world test data %.0s' $(seq 1 5000) > "$TMPDIR/repeat.txt"
 TEXT_OUT=$("$MCX" compress --adaptive-level "$TMPDIR/repeat.txt" -o "$TMPDIR/text.mcx" -f 2>/dev/null)
-TEXT_LEVEL=$(echo "$TEXT_OUT" | grep -oP 'auto-selected L\K\d+')
+TEXT_LEVEL=$(echo "$TEXT_OUT" | sed -n 's/.*auto-selected L\([0-9]*\).*/\1/p')
 if [ "$TEXT_LEVEL" != "12" ]; then
     echo "FAIL: repetitive text should auto-select L12, got L$TEXT_LEVEL"
     echo "$TEXT_OUT"
@@ -504,7 +504,7 @@ echo "x" > "$TMPDIR/tiny_input.txt"
 "$MCX" compress -l 1 "$TMPDIR/tiny_input.txt" -o "$TMPDIR/tiny_ref.mcx" -f -q 2>/dev/null
 # Compare against larger input — sizes will differ
 CS_REG=$("$MCX" bench --compare-self "$TMPDIR/tiny_ref.mcx" -l 1 "$TMPDIR/input.txt" 2>/dev/null; echo "EXIT:$?")
-CS_EXIT=$(echo "$CS_REG" | grep -oP 'EXIT:\K\d+')
+CS_EXIT=$(echo "$CS_REG" | sed -n 's/.*EXIT:\([0-9]*\).*/\1/p')
 if echo "$CS_REG" | grep -q "REGRESSION"; then
     echo "OK: bench --compare-self detects REGRESSION (exit=$CS_EXIT)"
 elif echo "$CS_REG" | grep -q "IMPROVED"; then
