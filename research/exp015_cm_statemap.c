@@ -210,17 +210,20 @@ static inline float squash(float x) {
 
 typedef struct {
     float w[MAX_INPUTS];
+    float bias;
     int n;
 } mixer_t;
 
 static void mixer_init(mixer_t *mx, int n) {
     mx->n = n;
     for (int i = 0; i < n; i++) mx->w[i] = 1.0f / n;
+    mx->bias = 0.0f;
 }
 
 static float mixer_mix(mixer_t *mx, float *s) {
     float sum = 0;
     for (int i = 0; i < mx->n; i++) sum += mx->w[i] * s[i];
+    sum += mx->bias;
     float r = squash(sum);
     if (r < 0.001f) r = 0.001f;
     if (r > 0.999f) r = 0.999f;
@@ -230,9 +233,11 @@ static float mixer_mix(mixer_t *mx, float *s) {
 static void mixer_learn(mixer_t *mx, float *s, int bit, float lr) {
     float sum = 0;
     for (int i = 0; i < mx->n; i++) sum += mx->w[i] * s[i];
+    sum += mx->bias;
     float err = (1.0f - bit) - squash(sum);
     for (int i = 0; i < mx->n; i++)
         mx->w[i] += lr * err * s[i];
+    mx->bias += lr * err;
 }
 
 /* ── Hash ──────────────────────────────────────────────────────── */
