@@ -127,10 +127,11 @@ static inline int rcdec_bit(rcdec_t *d, uint16_t prob) {
 typedef struct {
     uint32_t *t;   /* packed (prob << 10) | count */
     uint32_t n;
+    int rate_n;    /* numerator for adaptation rate */
 } smap_t;
 
 static void smap_init(smap_t *s, uint32_t n) {
-    s->n = n;
+    s->n = n; s->rate_n = 655;
     s->t = (uint32_t*)malloc(n * sizeof(uint32_t));
     for (uint32_t i = 0; i < n; i++)
         s->t[i] = SM_PROB_INIT; /* prob=HALF, count=0 */
@@ -155,7 +156,7 @@ static inline void smap_update(smap_t *s, uint32_t c, int bit) {
     
     /* Rate based on count: tuned curve */
     int rate;
-    rate = 655 / (count + 3);
+    rate = s->rate_n / (count + 3);
     if (rate < 1) rate = 1;
     
     /* Update probability */
@@ -435,15 +436,15 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     smap_init(&cm->sparse14, 1<<24);
     smap_init(&cm->sparse24, 1<<24);
     smap_init(&cm->charclass, 1<<24);
-    smap_init(&cm->o13, 1<<25);
+    smap_init(&cm->o13, 1<<25); cm->o13.rate_n = 500;
     smap_init(&cm->indirect, 1<<24);
     smap_init(&cm->o2_word, 1<<24);
-    smap_init(&cm->o11, 1<<25);
-    smap_init(&cm->o9, 1<<25);
-    smap_init(&cm->o12, 1<<25);
-    smap_init(&cm->o8, 1<<25);
+    smap_init(&cm->o11, 1<<25); cm->o11.rate_n = 500;
+    smap_init(&cm->o9, 1<<25); cm->o9.rate_n = 500;
+    smap_init(&cm->o12, 1<<25); cm->o12.rate_n = 500;
+    smap_init(&cm->o8, 1<<25); cm->o8.rate_n = 500;
     smap_init(&cm->word2, 1<<24);
-    smap_init(&cm->o14, 1<<25);
+    smap_init(&cm->o14, 1<<25); cm->o14.rate_n = 500;
     smap_init(&cm->word_cc, 1<<24);
     smap_init(&cm->o1_cc, 1<<24);
     smap_init(&cm->word_len, 1<<24);
@@ -452,7 +453,7 @@ static void cm_init(cm_t *cm, const uint8_t *data) {
     smap_init(&cm->word3, 1<<24);
     smap_init(&cm->word4, 1<<24);
     smap_init(&cm->run, 1<<24);
-    smap_init(&cm->o10, 1<<25);
+    smap_init(&cm->o10, 1<<25); cm->o10.rate_n = 500;
     match_init(&cm->match, data);
     sse_init(&cm->sse);
     sse_init(&cm->apm);
