@@ -141,7 +141,7 @@ static void smap_init(smap_t *s, uint32_t n) {
 static void smap_free(smap_t *s) { free(s->t); s->t = NULL; }
 
 static inline uint16_t smap_get(smap_t *s, uint32_t c) {
-    return (uint16_t)(s->t[c % s->n] >> SM_PROB_SHIFT);
+    return (uint16_t)(s->t[c & s->mask] >> SM_PROB_SHIFT);
 }
 
 /* Adaptation rate table: rate decreases as count increases */
@@ -514,7 +514,7 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     /* order-13 */
     ctx[13] = h32(h32(h0123 ^ ((uint32_t)p[4]<<24|p[5]<<16|p[6]<<8|p[7])) ^ h32((uint32_t)p[8]<<24|p[9]<<16|p[10]<<8|p[11]) ^ ((uint32_t)p[12]<<8)) ^ par;
     
-    uint32_t o2h = h32(h01) % cm->ictx_size;
+    uint32_t o2h = h32(h01) & (cm->ictx_size - 1);
     ctx[14] = h32(((uint32_t)cm->ictx[o2h] << 8) | par);
     ctx[15] = h32(h01 ^ cm->word_hash) ^ par;
     /* order-11: hash of prev 11 bytes */
@@ -679,7 +679,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
 }
 
 static void cm_byte_done(cm_t *cm, uint8_t byte) {
-    uint32_t o2h = h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]) % cm->ictx_size;
+    uint32_t o2h = h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx_size - 1);
     cm->ictx[o2h] = byte;
     
     /* Update run length */

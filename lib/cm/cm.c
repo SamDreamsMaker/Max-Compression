@@ -142,7 +142,7 @@ static void smap_init(smap_t *s, uint32_t n) {
 static void smap_free(smap_t *s) { free(s->t); s->t = NULL; }
 
 static inline uint16_t smap_get(smap_t *s, uint32_t c) {
-    return (uint16_t)(s->t[c & (s->n - 1)] >> SM_PROB_SHIFT);
+    return (uint16_t)(s->t[c & s->mask] >> SM_PROB_SHIFT);
 }
 
 /* Adaptation rate table: rate decreases as count increases */
