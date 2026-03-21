@@ -3462,14 +3462,24 @@ int main(int argc, char* argv[])
 #endif
         /* Redirect bench output to file if --output specified */
         FILE* saved_stdout = NULL;
+#ifdef _WIN32
+        int saved_fd = -1;
+#endif
         if (bench_output_file) {
             FILE* of = fopen(bench_output_file, "a");
             if (!of) {
                 fprintf(stderr, "Error: cannot open output file '%s'\n", bench_output_file);
                 return 1;
             }
+#ifdef _WIN32
+            /* MSVC: stdout is not an l-value; use _dup/_dup2 */
+            saved_fd = _dup(_fileno(stdout));
+            _dup2(_fileno(of), _fileno(stdout));
+            fclose(of);
+#else
             saved_stdout = stdout;
             stdout = of;
+#endif
         }
         if (bench_baseline_dir) {
             /* --baseline-dir DIR: per-file baselines — handled separately,
@@ -3544,7 +3554,12 @@ int main(int argc, char* argv[])
                            fl.count, agg_total_input, lvl, agg_total_output, ratio, saving);
             }
             file_list_free(&fl);
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return ret;
         }
         /* Enable per-phase profiling if --profile flag is set */
@@ -3552,12 +3567,22 @@ int main(int argc, char* argv[])
 
         if (bench_histogram) {
             int r = cmd_bench_histogram(bench_file, bench_level);
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return r;
         }
         if (bench_chart) {
             int r = cmd_bench_chart(bench_file, bench_all_levels);
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return r;
         }
         if (bench_compare_self) {
@@ -3586,7 +3611,12 @@ int main(int argc, char* argv[])
             if (delta == 0) printf(" ✓ MATCH\n");
             else if (delta < 0) printf(" ✓ IMPROVED\n");
             else printf(" ✗ REGRESSION\n");
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return (delta > 0) ? 1 : 0;
         }
         if (bench_save_baseline) {
@@ -3612,7 +3642,12 @@ int main(int argc, char* argv[])
                 printf("L%-2d  %zu (saved)\n", levels[li], comp_size);
             }
             fclose(bf); free(src); free(dst);
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return 0;
         }
         handle_baseline_dir:
@@ -3703,7 +3738,12 @@ int main(int argc, char* argv[])
                 free(fdata); free(cdst);
             }
             file_list_free(&fl);
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return has_regression ? 1 : 0;
         }
         if (bench_diff_file) {
@@ -3773,7 +3813,12 @@ int main(int argc, char* argv[])
             }
             free(src); free(dst); free(dec);
             if (of) fclose(of);
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return regression ? 1 : 0;
         }
         if (bench_delta_file) {
@@ -3832,12 +3877,22 @@ int main(int argc, char* argv[])
             }
             free(src); free(dst);
             if (out_f) fclose(out_f);
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return regression ? 1 : 0;
         }
         if (bench_repeat <= 1) {
             int r = cmd_bench(bench_file, bench_level, bench_compare, bench_csv, bench_warmup, bench_json, bench_decode_only, bench_iterations, bench_max_size, bench_memory, bench_all_levels, bench_ratio_only, bench_sort_mode, bench_top_n, bench_worst_n, bench_median, bench_percentile, bench_brief, bench_no_header, bench_cold);
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return r;
         } else {
             /* --repeat N: run entire benchmark N times, show per-run timing */
@@ -3865,7 +3920,12 @@ int main(int argc, char* argv[])
                 printf("  Min: %.3fs  Max: %.3fs  Avg: %.3fs\n", tmin, tmax, tavg);
             }
             free(run_times);
-            if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+            
+#ifdef _WIN32
+                if (saved_fd >= 0) { fflush(stdout); _dup2(saved_fd, _fileno(stdout)); _close(saved_fd); saved_fd = -1; }
+#else
+                if (saved_stdout) { fclose(stdout); stdout = saved_stdout; }
+#endif
             return ret;
         }
 
