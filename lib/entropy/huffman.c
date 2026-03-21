@@ -9,6 +9,15 @@
 
 #include "entropy.h"
 
+/* Branch prediction hints (portable) */
+#if defined(__GNUC__) || defined(__clang__)
+#define MCX_LIKELY(x)   __builtin_expect(!!(x), 1)
+#define MCX_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define MCX_LIKELY(x)   (x)
+#define MCX_UNLIKELY(x) (x)
+#endif
+
 /* ─── Huffman Tree Node ──────────────────────────────────────────────── */
 
 typedef struct {
@@ -355,11 +364,11 @@ size_t mcx_huffman_decompress(uint8_t* dst, size_t dst_cap,
     /* Decode one symbol from fast table; returns 0 on success, -1 on error */
     #define HUFF_DECODE_ONE() do { \
         uint64_t idx_ = (bit_buf >> (bit_cnt - HUFF_FAST_BITS)) & (HUFF_FAST_SIZE - 1); \
-        if (__builtin_expect(bit_cnt < HUFF_FAST_BITS, 0)) \
+        if (MCX_UNLIKELY(bit_cnt < HUFF_FAST_BITS)) \
             idx_ = (bit_buf << (HUFF_FAST_BITS - bit_cnt)) & (HUFF_FAST_SIZE - 1); \
         uint32_t e_ = fast_table[idx_]; \
         uint8_t  l_ = HUFF_ENTRY_LEN(e_); \
-        if (__builtin_expect(l_ != 0 && l_ != HUFF_SENTINEL, 1)) { \
+        if (MCX_LIKELY(l_ != 0 && l_ != HUFF_SENTINEL)) { \
             dst[di++] = (uint8_t)HUFF_ENTRY_SYM(e_); \
             bit_cnt -= l_; \
         } else if (l_ == HUFF_SENTINEL) { \

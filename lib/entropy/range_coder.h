@@ -11,12 +11,21 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* Branch prediction hints (portable) */
+#if defined(__GNUC__) || defined(__clang__)
+#define MCX_LIKELY(x)   __builtin_expect(!!(x), 1)
+#define MCX_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define MCX_LIKELY(x)   (x)
+#define MCX_UNLIKELY(x) (x)
+#endif
+
 #ifdef _MSC_VER
 #define RC_LIKELY(x)   (x)
 #define RC_UNLIKELY(x) (x)
 #else
-#define RC_LIKELY(x)   __builtin_expect(!!(x), 1)
-#define RC_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#define RC_LIKELY(x)   MCX_LIKELY(x)
+#define RC_UNLIKELY(x) MCX_UNLIKELY(x)
 #endif
 
 /* ── Constants ──────────────────────────────────────────────────── */
