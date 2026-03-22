@@ -639,7 +639,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     int apm2_ctx = ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
     uint16_t apm2_p = sse_map(&cm->apm2, apm2_ctx, apm_p);
     if (apm2_p < 1) apm2_p = 1; if (apm2_p > PROB_MAX-1) apm2_p = PROB_MAX-1;
-    uint16_t final = (apm_p * 5 + apm2_p * 2 + mp * 25) / 32;
+    uint16_t final = (apm_p * 3 + apm2_p * 3 + mp * 26) / 32;
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
