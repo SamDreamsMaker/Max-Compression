@@ -413,6 +413,7 @@ typedef struct {
     match_t match;
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
+    sse_t apm3; /* fourth-stage APM — deepest in chain */
     mixer_t mx1[2048], mx2[64], mx3[8], mx4[1024], mx5[256];
     float lr;
     uint8_t prev[14];
@@ -475,6 +476,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     match_init(&cm->match, data);
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
+    sse_init(&cm->apm3);
     for (int i = 0; i < 2048; i++) mixer_init(&cm->mx1[i], N_MODELS);
     for (int i = 0; i < 64; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
@@ -639,7 +641,10 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     int apm2_ctx = ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
     uint16_t apm2_p = sse_map(&cm->apm2, apm2_ctx, apm_p);
     if (apm2_p < 1) apm2_p = 1; if (apm2_p > PROB_MAX-1) apm2_p = PROB_MAX-1;
-    uint16_t final = (apm_p * 3 + apm2_p * 3 + mp * 26) / 32;
+    int apm3_ctx = ((cm->prev[0] >> 3) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 6)) & (SSE_CTXS-1);
+    uint16_t apm3_p = sse_map(&cm->apm3, apm3_ctx, apm2_p);
+    if (apm3_p < 1) apm3_p = 1; if (apm3_p > PROB_MAX-1) apm3_p = PROB_MAX-1;
+    uint16_t final = (apm_p * 2 + apm2_p * 2 + apm3_p * 2 + mp * 26) / 32;
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
@@ -700,6 +705,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     cm->total_bits++;
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
     sse_update(&cm->apm2, ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
+    sse_update(&cm->apm3, ((cm->prev[0] >> 3) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 6)) & (SSE_CTXS-1), mp, bit);
     
     cm->partial = (cm->partial << 1) | bit;
 }
