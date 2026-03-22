@@ -406,7 +406,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 38
+#define N_MODELS 39
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -432,6 +432,7 @@ typedef struct {
     smap_t o3ind;           /* o3-indirect context */
     smap_t colmod;          /* column/line-position model */
     smap_t colmod2;         /* column model with line length */
+    smap_t colmod3;         /* column model 3 */
     match_t match;
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
@@ -502,6 +503,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o3ind, 1<<lo_log);
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
+    smap_init(&cm->colmod3, 1<<lo_log);
     match_init(&cm->match, data);
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
@@ -537,7 +539,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->cc_seq3);
     smap_free(&cm->word_boundary);
     smap_free(&cm->wind);
-    smap_free(&cm->o3ind); smap_free(&cm->colmod); smap_free(&cm->colmod2);
+    smap_free(&cm->o3ind); smap_free(&cm->colmod); smap_free(&cm->colmod2); smap_free(&cm->colmod3);
     match_free(&cm->match);
     if (cm->ictx) free(cm->ictx);
     if (cm->ictx2) free(cm->ictx2);
@@ -616,6 +618,7 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     /* Column model: position within line */
     ctx[34] = h32(((uint32_t)(cm->line_pos & 0xFF) << 11) | ((uint32_t)char_class(p[0]) << 8) | par);
     ctx[35] = h32(((uint32_t)(cm->line_pos & 0xFF) << 16) | ((uint32_t)cm->last_line_len << 8) | par);
+    ctx[36] = h32(((uint32_t)(cm->line_pos & 0xFF) << 16) | ((uint32_t)p[0] << 8) | par);
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
@@ -662,6 +665,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[35] = smap_get(&cm->o3ind, ctx[33]);
     preds[36] = smap_get(&cm->colmod, ctx[34]);
     preds[37] = smap_get(&cm->colmod2, ctx[35]);
+    preds[38] = smap_get(&cm->colmod3, ctx[36]);
     
     for (int i = 0; i < N_MODELS; i++) {
         str[i] = stretch_tab[preds[i]]; /* direct lookup, no float division */
@@ -739,6 +743,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->o3ind, ctx[33], bit);
     smap_update(&cm->colmod, ctx[34], bit);
     smap_update(&cm->colmod2, ctx[35], bit);
+    smap_update(&cm->colmod3, ctx[36], bit);
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
