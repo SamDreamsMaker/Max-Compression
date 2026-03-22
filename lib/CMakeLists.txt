@@ -60,6 +60,7 @@ set_source_files_properties(
 )
 set_target_properties(maxcomp_static PROPERTIES
     OUTPUT_NAME maxcomp
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
 )
 if(OpenMP_C_FOUND)
     target_link_libraries(maxcomp_static PUBLIC OpenMP::OpenMP_C)
