@@ -598,7 +598,7 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
       ctx[34] = h32(((uint32_t)cm->ictx3[o3h] << 8) | par);
     }
     /* Column model: position within line */
-    ctx[35] = h32(((uint32_t)(cm->line_pos & 0xFF) << 16) | ((uint32_t)cm->last_line_len << 8) | par);
+    ctx[35] = h32(((uint32_t)(cm->line_pos & 0xFF) << 11) | ((uint32_t)char_class(p[0]) << 8) | par);
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
