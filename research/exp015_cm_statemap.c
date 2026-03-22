@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 43
+#define N_MODELS 44
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -424,7 +424,7 @@ typedef struct {
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
     sse_t apm3; /* fourth-stage APM — deepest in chain */
-    mixer_t mx1[4096], mx2[64], mx3[8], mx4[1024], mx5[256];
+    mixer_t mx1[4096], mx2[64], mx3[8], mx4[1024], mx5[512];
     float lr;
     uint8_t prev[14];
     uint32_t word_hash;
@@ -509,7 +509,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     for (int i = 0; i < 64; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
     for (int i = 0; i < 1024; i++) mixer_init(&cm->mx4[i], N_MODELS);
-    for (int i = 0; i < 256; i++) mixer_init(&cm->mx5[i], N_MODELS);
+    for (int i = 0; i < 512; i++) mixer_init(&cm->mx5[i], N_MODELS);
     cm->lr = 0.012f;
     cm->partial = 1;
     cm->ictx_size = 1 << 22;
@@ -625,11 +625,11 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[40] = h32(((uint32_t)(cm->run_len & 31) << 11) | ((uint32_t)cm->run_class << 8) | par);
     { uint32_t sp = cm->sent_pos;
       int sp_bucket = (sp < 4) ? sp : (sp < 16) ? 4 + (sp>>2) : (sp < 64) ? 8 + (sp>>4) : 12;
-      ctx[40] = h32(((uint32_t)sp_bucket << 12) | ((uint32_t)p[0] << 4) | par);
+      ctx[41] = h32(((uint32_t)sp_bucket << 12) | ((uint32_t)p[0] << 4) | par);
     }
     { uint32_t wh5 = cm->word_hash & (cm->ictx5_size - 1);
       uint16_t w2 = cm->ictx5[wh5];
-      ctx[41] = h32(((uint32_t)w2 << 8) | par);
+      ctx[42] = h32(((uint32_t)w2 << 8) | par);
     }
 }
 
@@ -681,8 +681,8 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[39] = smap_get(&cm->colmod4, ctx[38]);
     preds[40] = smap_get(&cm->colmod5, ctx[39]);
     preds[41] = smap_get(&cm->wlenmod, ctx[40]);
-    preds[41] = smap_get(&cm->sentmod, ctx[40]);
-    preds[42] = smap_get(&cm->wind2, ctx[41]);
+    preds[42] = smap_get(&cm->sentmod, ctx[41]);
+    preds[43] = smap_get(&cm->wind2, ctx[42]);
     
     for (int i = 0; i < N_MODELS; i++) {
         if (preds[i] == PROB_HALF) str[i] = 0.0f;
@@ -694,7 +694,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     float m3 = mixer_mix(&cm->mx3[bp], str);
     int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
     float m4 = mixer_mix(&cm->mx4[mx4_ctx], str);
-    int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 8)) & 255;
+    int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
     float m5 = mixer_mix(&cm->mx5[mx5_ctx], str);
     float mixed = squash((stretch(m1)*4 + stretch(m2)*2 + stretch(m3) + stretch(m4)*2 + stretch(m5)) / 10.0f);
     
@@ -768,8 +768,8 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->colmod4, ctx[38], bit);
     smap_update(&cm->colmod5, ctx[39], bit);
     smap_update(&cm->wlenmod, ctx[40], bit);
-    smap_update(&cm->sentmod, ctx[40], bit);
-    smap_update(&cm->wind2, ctx[41], bit);
+    smap_update(&cm->sentmod, ctx[41], bit);
+    smap_update(&cm->wind2, ctx[42], bit);
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
@@ -781,7 +781,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     {
         int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
         mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr);
-        int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 8)) & 255;
+        int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
         mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr);
     }
     cm->total_bits++;
