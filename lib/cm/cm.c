@@ -406,7 +406,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 33
+#define N_MODELS 34
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -427,6 +427,7 @@ typedef struct {
     smap_t word4;           /* word order-4 */
     smap_t run;             /* byte × run length */
     smap_t cc_seq3;         /* char-class 4-gram × byte value */
+    smap_t word_boundary;   /* word boundary context */
     match_t match;
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
@@ -485,6 +486,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->run, 1<<lo_log);
     smap_init(&cm->o10, 1<<hi_log); cm->o10.rate_n = 400;
     smap_init(&cm->cc_seq3, 1<<lo_log);
+    smap_init(&cm->word_boundary, 1<<lo_log); cm->word_boundary.rate_n = 400;
     match_init(&cm->match, data);
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
@@ -513,6 +515,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->upper2); smap_free(&cm->o10);
     smap_free(&cm->word3); smap_free(&cm->word4); smap_free(&cm->run);
     smap_free(&cm->cc_seq3);
+    smap_free(&cm->word_boundary);
     match_free(&cm->match);
     if (cm->ictx) free(cm->ictx);
 }
@@ -573,6 +576,11 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[30] = h32(((uint32_t)char_class(p[0])<<18)|((uint32_t)char_class(p[1])<<15)|
                   ((uint32_t)char_class(p[2])<<12)|((uint32_t)char_class(p[3])<<9)|
                   ((uint32_t)p[0]<<1)) ^ par;
+    /* word boundary: transition type × recent context */
+    { int wb = (char_class(p[0]) != char_class(p[1])) ? 1 : 0;
+      int wb2 = (char_class(p[1]) != char_class(p[2])) ? 1 : 0;
+      ctx[31] = h32(((uint32_t)wb<<17)|((uint32_t)wb2<<16)|((uint32_t)p[0]<<8)|p[1]) ^ par;
+    }
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
@@ -614,6 +622,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
       preds[30] = smap_get(&cm->run, run_ctx); }
     preds[31] = match_predict(&cm->match, pos, bp);
     preds[32] = smap_get(&cm->cc_seq3, ctx[30]);
+    preds[33] = smap_get(&cm->word_boundary, ctx[31]);
     
     for (int i = 0; i < N_MODELS; i++) {
         str[i] = stretch_tab[preds[i]]; /* direct lookup, no float division */
@@ -683,6 +692,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     { uint32_t run_ctx = h32(((uint32_t)cm->prev[0] << 8) | cm->run_length) ^ cm->partial;
       smap_update(&cm->run, run_ctx, bit); }
     smap_update(&cm->cc_seq3, ctx[30], bit);
+    smap_update(&cm->word_boundary, ctx[31], bit);
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
