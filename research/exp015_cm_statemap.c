@@ -417,6 +417,7 @@ typedef struct {
     smap_t colmod3;         /* column model 3 */
     smap_t colmod4;
     smap_t colmod5;
+    smap_t wlenmod;
     smap_t sentmod;
     smap_t wind2;
     match_t match;
@@ -444,6 +445,8 @@ typedef struct {
     uint32_t total_bits; /* total bits processed */
     uint32_t line_pos;      /* position within current line */
     uint32_t last_line_len;
+    uint32_t run_len;
+    uint8_t run_class;
     uint32_t sent_pos;  /* distance from last .!? */ /* length of previous line */
     uint16_t last_apm_p; /* stored for chained APM update */
 } cm_t;
@@ -495,7 +498,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o3ind, 1<<lo_log);
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
-    smap_init(&cm->colmod3, 1<<lo_log); smap_init(&cm->colmod4, 1<<lo_log); smap_init(&cm->colmod5, 1<<lo_log);
+    smap_init(&cm->colmod3, 1<<lo_log); smap_init(&cm->colmod4, 1<<lo_log); smap_init(&cm->colmod5, 1<<lo_log); smap_init(&cm->wlenmod, 1<<lo_log);
     smap_init(&cm->sentmod, 1<<lo_log);
     smap_init(&cm->wind2, 1<<lo_log);
     match_init(&cm->match, data);
@@ -534,7 +537,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->cc_seq3);
     smap_free(&cm->word_boundary);
     smap_free(&cm->wind);
-    smap_free(&cm->o3ind); smap_free(&cm->colmod); smap_free(&cm->colmod2); smap_free(&cm->colmod3); smap_free(&cm->colmod4); smap_free(&cm->colmod5);
+    smap_free(&cm->o3ind); smap_free(&cm->colmod); smap_free(&cm->colmod2); smap_free(&cm->colmod3); smap_free(&cm->colmod4); smap_free(&cm->colmod5); smap_free(&cm->wlenmod);
     match_free(&cm->match);
     if (cm->ictx) free(cm->ictx);
     if (cm->ictx2) free(cm->ictx2);
@@ -619,6 +622,7 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[37] = h32(((uint32_t)(cm->line_pos & 0xFF) << 16) | ((uint32_t)p[0] << 8) | par);
     ctx[38] = h32(((uint32_t)(cm->line_pos & 0xFF) << 8) | par);
     ctx[39] = h32(((uint32_t)(cm->line_pos & 0xFF) << 14) | ((uint32_t)char_class(p[0]) << 11) | ((uint32_t)char_class(p[1]) << 8) | par);
+    ctx[40] = h32(((uint32_t)(cm->run_len & 31) << 11) | ((uint32_t)cm->run_class << 8) | par);
     { uint32_t sp = cm->sent_pos;
       int sp_bucket = (sp < 4) ? sp : (sp < 16) ? 4 + (sp>>2) : (sp < 64) ? 8 + (sp>>4) : 12;
       ctx[40] = h32(((uint32_t)sp_bucket << 12) | ((uint32_t)p[0] << 4) | par);
@@ -676,6 +680,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[38] = smap_get(&cm->colmod3, ctx[37]);
     preds[39] = smap_get(&cm->colmod4, ctx[38]);
     preds[40] = smap_get(&cm->colmod5, ctx[39]);
+    preds[41] = smap_get(&cm->wlenmod, ctx[40]);
     preds[41] = smap_get(&cm->sentmod, ctx[40]);
     preds[42] = smap_get(&cm->wind2, ctx[41]);
     
@@ -762,6 +767,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->colmod3, ctx[37], bit);
     smap_update(&cm->colmod4, ctx[38], bit);
     smap_update(&cm->colmod5, ctx[39], bit);
+    smap_update(&cm->wlenmod, ctx[40], bit);
     smap_update(&cm->sentmod, ctx[40], bit);
     smap_update(&cm->wind2, ctx[41], bit);
     
@@ -787,6 +793,10 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
 }
 
 static void cm_byte_done(cm_t *cm, uint8_t byte) {
+    { uint8_t cc = char_class(byte);
+      if (cc == cm->run_class) cm->run_len++;
+      else { cm->run_len = 1; cm->run_class = cc; }
+    }
     if (byte == 10) { cm->last_line_len = cm->line_pos & 0xFF; cm->line_pos = 0; }
     else { cm->line_pos++; }
     uint32_t o2h = h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx_size - 1);

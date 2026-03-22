@@ -406,7 +406,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 40
+#define N_MODELS 42
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -434,7 +434,8 @@ typedef struct {
     smap_t colmod2;         /* column model with line length */
     smap_t colmod3;         /* column model 3 */
     smap_t colmod4;
-    /* colmod5 available in research only (OOM at L28 multi-trial) */
+    smap_t colmod5;
+    smap_t wlenmod;
     match_t match;
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
@@ -458,6 +459,8 @@ typedef struct {
     uint32_t total_bits; /* total bits processed */
     uint32_t line_pos;
     uint32_t last_line_len;
+    uint32_t run_len;
+    uint8_t run_class;
 } cm_t;
 
 static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
@@ -506,6 +509,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
     smap_init(&cm->colmod3, 1<<lo_log); smap_init(&cm->colmod4, 1<<lo_log);
+    smap_init(&cm->colmod5, 1<<lo_log); smap_init(&cm->wlenmod, 1<<lo_log);
     match_init(&cm->match, data);
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
@@ -542,6 +546,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->word_boundary);
     smap_free(&cm->wind);
     smap_free(&cm->o3ind); smap_free(&cm->colmod); smap_free(&cm->colmod2); smap_free(&cm->colmod3); smap_free(&cm->colmod4);
+    smap_free(&cm->colmod5); smap_free(&cm->wlenmod);
     match_free(&cm->match);
     if (cm->ictx) free(cm->ictx);
     if (cm->ictx2) free(cm->ictx2);
@@ -622,7 +627,8 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[35] = h32(((uint32_t)(cm->line_pos & 0xFF) << 16) | ((uint32_t)cm->last_line_len << 8) | par);
     ctx[36] = h32(((uint32_t)(cm->line_pos & 0xFF) << 16) | ((uint32_t)p[0] << 8) | par);
     ctx[37] = h32(((uint32_t)(cm->line_pos & 0xFF) << 8) | par);
-    /* col5 context not in lib (memory limit) */
+    ctx[38] = h32(((uint32_t)(cm->line_pos & 0xFF) << 14) | ((uint32_t)char_class(p[0]) << 11) | ((uint32_t)char_class(p[1]) << 8) | par);
+    ctx[39] = h32(((uint32_t)(cm->run_len & 31) << 11) | ((uint32_t)cm->run_class << 8) | par);
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
@@ -671,7 +677,8 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[37] = smap_get(&cm->colmod2, ctx[35]);
     preds[38] = smap_get(&cm->colmod3, ctx[36]);
     preds[39] = smap_get(&cm->colmod4, ctx[37]);
-    /* col5 not in lib */
+    preds[40] = smap_get(&cm->colmod5, ctx[38]);
+    preds[41] = smap_get(&cm->wlenmod, ctx[39]);
     
     for (int i = 0; i < N_MODELS; i++) {
         str[i] = stretch_tab[preds[i]]; /* direct lookup, no float division */
@@ -751,7 +758,8 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->colmod2, ctx[35], bit);
     smap_update(&cm->colmod3, ctx[36], bit);
     smap_update(&cm->colmod4, ctx[37], bit);
-    /* col5 not in lib */
+    smap_update(&cm->colmod5, ctx[38], bit);
+    smap_update(&cm->wlenmod, ctx[39], bit);
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
@@ -775,6 +783,10 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
 }
 
 static void cm_byte_done(cm_t *cm, uint8_t byte) {
+    { uint8_t cc = char_class(byte);
+      if (cc == cm->run_class) cm->run_len++;
+      else { cm->run_len = 1; cm->run_class = cc; }
+    }
     if (byte == 10) { cm->last_line_len = cm->line_pos & 0xFF; cm->line_pos = 0; }
     else { cm->line_pos++; }
     uint32_t o2h = h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx_size - 1);
