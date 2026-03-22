@@ -208,7 +208,7 @@ static inline float squash(float x) {
 
 /* ── Mixer ─────────────────────────────────────────────────────── */
 
-#define MAX_INPUTS 36
+#define MAX_INPUTS 48  /* room for future models */
 
 typedef struct {
     float w[MAX_INPUTS];
