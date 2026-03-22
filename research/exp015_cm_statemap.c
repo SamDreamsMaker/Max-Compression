@@ -719,7 +719,12 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     int apm3_ctx = ((cm->prev[0] >> 3) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 6)) & (SSE_CTXS-1);
     uint16_t apm3_p = sse_map(&cm->apm3, apm3_ctx, apm2_p);
     if (apm3_p < 1) apm3_p = 1; if (apm3_p > PROB_MAX-1) apm3_p = PROB_MAX-1;
-    uint16_t final = (apm_p * 2 + apm2_p * 2 + apm3_p * 2 + mp * 26) / 32;
+    uint16_t final;
+    if (cm->match.active) {
+        final = (apm_p * 1 + apm2_p * 1 + apm3_p * 1 + mp * 29) / 32;
+    } else {
+        final = (apm_p * 2 + apm2_p * 2 + apm3_p * 2 + mp * 26) / 32;
+    }
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
