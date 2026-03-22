@@ -434,6 +434,7 @@ typedef struct {
     smap_t colmod2;         /* column model with line length */
     smap_t colmod3;         /* column model 3 */
     smap_t colmod4;
+    /* colmod5 available in research only (OOM at L28 multi-trial) */
     match_t match;
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
@@ -464,7 +465,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     /* Scale tables with file size to avoid OOM */
     int hi_log = 21; /* high-order models — default for large files */
     int lo_log = 20;
-    if (data_size <= 256*1024) { hi_log = 25; lo_log = 24; }
+    if (data_size <= 256*1024) { hi_log = 24; lo_log = 23; }
     else if (data_size <= 2*1024*1024) { hi_log = 23; lo_log = 22; }
     else if (data_size <= 16*1024*1024) { hi_log = 22; lo_log = 21; }
     smap_init(&cm->o0, 512);
@@ -621,6 +622,7 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[35] = h32(((uint32_t)(cm->line_pos & 0xFF) << 16) | ((uint32_t)cm->last_line_len << 8) | par);
     ctx[36] = h32(((uint32_t)(cm->line_pos & 0xFF) << 16) | ((uint32_t)p[0] << 8) | par);
     ctx[37] = h32(((uint32_t)(cm->line_pos & 0xFF) << 8) | par);
+    /* col5 context not in lib (memory limit) */
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
@@ -669,6 +671,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[37] = smap_get(&cm->colmod2, ctx[35]);
     preds[38] = smap_get(&cm->colmod3, ctx[36]);
     preds[39] = smap_get(&cm->colmod4, ctx[37]);
+    /* col5 not in lib */
     
     for (int i = 0; i < N_MODELS; i++) {
         str[i] = stretch_tab[preds[i]]; /* direct lookup, no float division */
@@ -748,6 +751,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->colmod2, ctx[35], bit);
     smap_update(&cm->colmod3, ctx[36], bit);
     smap_update(&cm->colmod4, ctx[37], bit);
+    /* col5 not in lib */
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
