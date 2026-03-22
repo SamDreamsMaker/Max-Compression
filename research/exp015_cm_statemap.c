@@ -545,7 +545,7 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[13] = h32(h32(h0123 ^ ((uint32_t)p[4]<<24|p[5]<<16|p[6]<<8|p[7])) ^ h32((uint32_t)p[8]<<24|p[9]<<16|p[10]<<8|p[11]) ^ ((uint32_t)p[12]<<8)) ^ par;
     
     uint32_t o2h = h32(h01) & (cm->ictx_size - 1);
-    ctx[14] = h32(((uint32_t)cm->ictx[o2h] << 8) | par);
+    ctx[14] = h32(((uint32_t)cm->ictx[o2h] << 11) | ((uint32_t)char_class(p[0]) << 8) | par);
     ctx[15] = h32(h01 ^ cm->word_hash) ^ par;
     /* order-11: hash of prev 11 bytes */
     ctx[16] = h32(h32(h0123 ^ ((uint32_t)p[4]<<24|p[5]<<16|p[6]<<8|p[7])) ^ ((uint32_t)p[8]<<24|p[9]<<16|p[10]<<8)) ^ par;
