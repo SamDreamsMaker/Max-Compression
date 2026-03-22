@@ -587,7 +587,7 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     }
     /* word-indirect: word_hash → predicted next byte */
     { uint32_t wh = cm->word_hash & (cm->ictx2_size - 1);
-      ctx[33] = h32(((uint32_t)cm->ictx2[wh] << 8) | par);
+      ctx[33] = h32(((uint32_t)cm->ictx2[wh] << 11) | ((uint32_t)char_class(p[0]) << 8) | par);
     }
     /* o3-indirect: h(p[0],p[1],p[2]) → predicted next byte */
     { uint32_t o3h = h32(((uint32_t)p[2]<<16)|((uint32_t)p[1]<<8)|p[0]) & (cm->ictx3_size - 1);
