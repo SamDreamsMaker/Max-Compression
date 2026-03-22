@@ -787,7 +787,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
         mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr);
         int mx6_ctx = ((cm->match.active ? 1 : 0) << 6) | (char_class(cm->prev[0]) << 3) | bp;
-        mixer_learn(&cm->mx6[mx6_ctx], str, bit, lr);
+        mixer_learn(&cm->mx6[mx6_ctx], str, bit, lr * 0.5f);
     }
     cm->total_bits++;
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
