@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 33
+#define N_MODELS 34
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -409,6 +409,7 @@ typedef struct {
     smap_t run;             /* byte × run length context */
     smap_t o10;             /* o4_cc slot reused for o10 */
     smap_t cc_seq3;         /* char-class 4-gram × byte value */
+    smap_t word_boundary;   /* word boundary context */
     match_t match;
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
@@ -425,6 +426,7 @@ typedef struct {
     uint8_t *ictx;
     uint32_t ictx_size;
     uint32_t total_bits; /* total bits processed */
+    uint16_t last_apm_p; /* stored for chained APM update */
 } cm_t;
 
 static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
@@ -469,6 +471,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->run, 1<<lo_log);
     smap_init(&cm->o10, 1<<hi_log); cm->o10.rate_n = 400;
     smap_init(&cm->cc_seq3, 1<<lo_log);
+    smap_init(&cm->word_boundary, 1<<lo_log);
     match_init(&cm->match, data);
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
@@ -496,6 +499,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->word_cc); smap_free(&cm->o1_cc); smap_free(&cm->word_len); smap_free(&cm->prevword_byte);
     smap_free(&cm->upper2); smap_free(&cm->o10); smap_free(&cm->word3); smap_free(&cm->word4); smap_free(&cm->run);
     smap_free(&cm->cc_seq3);
+    smap_free(&cm->word_boundary);
     match_free(&cm->match);
     if (cm->ictx) free(cm->ictx);
 }
@@ -558,6 +562,11 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[31] = h32(((uint32_t)char_class(p[0])<<18)|((uint32_t)char_class(p[1])<<15)|
                   ((uint32_t)char_class(p[2])<<12)|((uint32_t)char_class(p[3])<<9)|
                   ((uint32_t)p[0]<<1)) ^ par;
+    /* word boundary: transition type × recent context */
+    { int wb = (char_class(p[0]) != char_class(p[1])) ? 1 : 0;
+      int wb2 = (char_class(p[1]) != char_class(p[2])) ? 1 : 0;
+      ctx[32] = h32(((uint32_t)wb<<17)|((uint32_t)wb2<<16)|((uint32_t)p[0]<<8)|p[1]) ^ par;
+    }
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
@@ -599,6 +608,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[30] = smap_get(&cm->run, run_ctx);
     preds[31] = match_predict(&cm->match, pos, bp);
     preds[32] = smap_get(&cm->cc_seq3, ctx[31]);
+    preds[33] = smap_get(&cm->word_boundary, ctx[32]);
     
     for (int i = 0; i < N_MODELS; i++) {
         if (preds[i] == PROB_HALF) str[i] = 0.0f;
@@ -623,10 +633,11 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     int apm_ctx = ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1);
     uint16_t apm_p = sse_map(&cm->apm, apm_ctx, mp);
     if (apm_p < 1) apm_p = 1; if (apm_p > PROB_MAX-1) apm_p = PROB_MAX-1;
+    cm->last_apm_p = apm_p;
     
     /* Blend: 0 SSE + 5 APM + 27 mixer = 32 */
     int apm2_ctx = ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
-    uint16_t apm2_p = sse_map(&cm->apm2, apm2_ctx, mp);
+    uint16_t apm2_p = sse_map(&cm->apm2, apm2_ctx, apm_p);
     if (apm2_p < 1) apm2_p = 1; if (apm2_p > PROB_MAX-1) apm2_p = PROB_MAX-1;
     uint16_t final = (apm_p * 5 + apm2_p * 2 + mp * 25) / 32;
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
@@ -671,6 +682,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     { uint32_t run_ctx = h32(((uint32_t)cm->prev[0] << 8) | cm->run_length) ^ cm->partial;
       smap_update(&cm->run, run_ctx, bit); }
     smap_update(&cm->cc_seq3, ctx[31], bit);
+    smap_update(&cm->word_boundary, ctx[32], bit);
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
