@@ -247,4 +247,12 @@ MCXAPI size_t mcx_lz_fast_decompress(uint8_t* dst, size_t dst_cap,
 }
 #endif
 
+/* ── Tuning globals (set before calling mcx_compress) ──────────── */
+/** Skip multi-trial compression (faster, may produce slightly larger output) */
+extern MCXAPI int mcx_no_trials;
+/** Force a specific pre-filter: 0=auto, 1=delta, 2=nibble, 3=none */
+extern MCXAPI int mcx_force_filter;
+/** Prefer fast decoders (skip Adaptive AC) */
+extern MCXAPI int mcx_fast_decode;
+
 #endif /* MAXCOMP_H */
