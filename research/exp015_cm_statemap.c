@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 41
+#define N_MODELS 42
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -417,6 +417,7 @@ typedef struct {
     smap_t colmod3;         /* column model 3 */
     smap_t colmod4;
     smap_t colmod5;
+    smap_t sentmod;
     match_t match;
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
@@ -439,7 +440,8 @@ typedef struct {
     uint32_t ictx3_size;
     uint32_t total_bits; /* total bits processed */
     uint32_t line_pos;      /* position within current line */
-    uint32_t last_line_len; /* length of previous line */
+    uint32_t last_line_len;
+    uint32_t sent_pos;  /* distance from last .!? */ /* length of previous line */
     uint16_t last_apm_p; /* stored for chained APM update */
 } cm_t;
 
@@ -491,6 +493,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
     smap_init(&cm->colmod3, 1<<lo_log); smap_init(&cm->colmod4, 1<<lo_log); smap_init(&cm->colmod5, 1<<lo_log);
+    smap_init(&cm->sentmod, 1<<lo_log);
     match_init(&cm->match, data);
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
@@ -609,6 +612,10 @@ static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
     ctx[37] = h32(((uint32_t)(cm->line_pos & 0xFF) << 16) | ((uint32_t)p[0] << 8) | par);
     ctx[38] = h32(((uint32_t)(cm->line_pos & 0xFF) << 8) | par);
     ctx[39] = h32(((uint32_t)(cm->line_pos & 0xFF) << 14) | ((uint32_t)char_class(p[0]) << 11) | ((uint32_t)char_class(p[1]) << 8) | par);
+    { uint32_t sp = cm->sent_pos;
+      int sp_bucket = (sp < 4) ? sp : (sp < 16) ? 4 + (sp>>2) : (sp < 64) ? 8 + (sp>>4) : 12;
+      ctx[40] = h32(((uint32_t)sp_bucket << 12) | ((uint32_t)p[0] << 4) | par);
+    }
 }
 
 static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
@@ -658,6 +665,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[38] = smap_get(&cm->colmod3, ctx[37]);
     preds[39] = smap_get(&cm->colmod4, ctx[38]);
     preds[40] = smap_get(&cm->colmod5, ctx[39]);
+    preds[41] = smap_get(&cm->sentmod, ctx[40]);
     
     for (int i = 0; i < N_MODELS; i++) {
         if (preds[i] == PROB_HALF) str[i] = 0.0f;
@@ -742,6 +750,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->colmod3, ctx[37], bit);
     smap_update(&cm->colmod4, ctx[38], bit);
     smap_update(&cm->colmod5, ctx[39], bit);
+    smap_update(&cm->sentmod, ctx[40], bit);
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
@@ -769,6 +778,8 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
     else { cm->line_pos++; }
     uint32_t o2h = h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx_size - 1);
     cm->ictx[o2h] = byte;
+    cm->sent_pos++;
+    if (byte == '.' || byte == '!' || byte == '?') cm->sent_pos = 0;
     { uint32_t wh2 = cm->word_hash & (cm->ictx2_size - 1); cm->ictx2[wh2] = byte; }
     { uint32_t o3h2 = h32(((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx3_size - 1); cm->ictx3[o3h2] = byte; }
     
