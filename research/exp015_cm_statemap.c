@@ -280,12 +280,13 @@ static uint16_t match_predict(match_t *m, uint32_t pos, int bp) {
     if (!m->active || m->mpos >= pos) return PROB_HALF;
     int pred = (m->data[m->mpos] >> (7 - bp)) & 1;
     int len = m->mlen > 256 ? 256 : (int)m->mlen;
-    /* Nonlinear confidence: fast ramp for short matches, saturates near max */
+    /* Logarithmic confidence curve */
     int delta;
-    if (len < 8) delta = len * 180;         /* 0-1440 */
-    else if (len < 32) delta = 1440 + (len-8) * 20; /* 1440-1920 */
-    else delta = 1920 + (len-32) * 2;       /* 1920-2048 cap */
-    if (delta > 2000) delta = 2000;
+    if (len < 4) delta = len * 250;         /* 0-1000 */
+    else if (len < 12) delta = 1000 + (len-4) * 100; /* 1000-1800 */
+    else if (len < 32) delta = 1800 + (len-12) * 8;  /* 1800-1960 */
+    else delta = 1960 + (len-32) * 1;       /* very slow ramp */
+    if (delta > 2020) delta = 2020;
     return pred ? (PROB_HALF - delta) : (PROB_HALF + delta);
 }
 
