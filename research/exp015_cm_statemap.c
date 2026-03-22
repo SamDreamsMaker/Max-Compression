@@ -699,7 +699,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     float m5 = mixer_mix(&cm->mx5[mx5_ctx], str);
     int mx6_ctx = ((cm->match.active ? 1 : 0) << 6) | (char_class(cm->prev[0]) << 3) | bp;
     float m6 = mixer_mix(&cm->mx6[mx6_ctx], str);
-    float mixed = squash((stretch(m1)*4 + stretch(m2)*2 + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)) / 11.0f);
+    float mixed = squash((stretch(m1)*5 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*3) / 13.0f);
     
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
