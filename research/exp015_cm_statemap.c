@@ -132,7 +132,7 @@ typedef struct {
 } smap_t;
 
 static void smap_init(smap_t *s, uint32_t n) {
-    s->n = n; s->mask = n - 1; s->rate_n = 655;
+    s->n = n; s->mask = n - 1; s->rate_n = 670;
     s->t = (uint32_t*)malloc(n * sizeof(uint32_t));
     for (uint32_t i = 0; i < n; i++)
         s->t[i] = SM_PROB_INIT; /* prob=HALF, count=0 */
@@ -449,15 +449,15 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->sparse14, 1<<lo_log);
     smap_init(&cm->sparse24, 1<<lo_log);
     smap_init(&cm->charclass, 1<<lo_log);
-    smap_init(&cm->o13, 1<<hi_log); cm->o13.rate_n = 445;
+    smap_init(&cm->o13, 1<<hi_log); cm->o13.rate_n = 400;
     smap_init(&cm->indirect, 1<<lo_log);
     smap_init(&cm->o2_word, 1<<lo_log);
-    smap_init(&cm->o11, 1<<hi_log); cm->o11.rate_n = 445;
-    smap_init(&cm->o9, 1<<hi_log); cm->o9.rate_n = 445;
-    smap_init(&cm->o12, 1<<hi_log); cm->o12.rate_n = 445;
-    smap_init(&cm->o8, 1<<hi_log); cm->o8.rate_n = 445;
+    smap_init(&cm->o11, 1<<hi_log); cm->o11.rate_n = 400;
+    smap_init(&cm->o9, 1<<hi_log); cm->o9.rate_n = 400;
+    smap_init(&cm->o12, 1<<hi_log); cm->o12.rate_n = 400;
+    smap_init(&cm->o8, 1<<hi_log); cm->o8.rate_n = 400;
     smap_init(&cm->word2, 1<<lo_log);
-    smap_init(&cm->o14, 1<<hi_log); cm->o14.rate_n = 445;
+    smap_init(&cm->o14, 1<<hi_log); cm->o14.rate_n = 400;
     smap_init(&cm->word_cc, 1<<lo_log);
     smap_init(&cm->o1_cc, 1<<lo_log);
     smap_init(&cm->word_len, 1<<lo_log);
@@ -466,7 +466,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->word3, 1<<lo_log);
     smap_init(&cm->word4, 1<<lo_log);
     smap_init(&cm->run, 1<<lo_log);
-    smap_init(&cm->o10, 1<<hi_log); cm->o10.rate_n = 445;
+    smap_init(&cm->o10, 1<<hi_log); cm->o10.rate_n = 400;
     match_init(&cm->match, data);
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
