@@ -437,7 +437,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     /* Use 1<<23 as a safe default, bump to 1<<25 only for small files */
     int hi_log = 21; /* high-order models (o2-o14) — default for large files */
     int lo_log = 20; /* word/misc models */
-    if (data_size <= 256*1024) { hi_log = 25; lo_log = 24; } /* ~1.5GB, best ratio */
+    if (data_size <= 256*1024) { hi_log = 24; lo_log = 23; } /* ~700MB, fits in 4GB */
     else if (data_size <= 2*1024*1024) { hi_log = 23; lo_log = 22; } /* ~700MB */
     else if (data_size <= 16*1024*1024) { hi_log = 22; lo_log = 21; } /* ~180MB */
     smap_init(&cm->o0, 512);
