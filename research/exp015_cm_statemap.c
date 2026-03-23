@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 45
+#define N_MODELS 46
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -415,7 +415,9 @@ typedef struct {
     smap_t colmod;          /* column/line-position model */
     smap_t colmod2;         /* column model with line length */
     smap_t colmod3;
-    smap_t nibcross;  /* top-nibble predicts bottom-nibble */         /* column model 3 */
+    smap_t nibcross;
+    smap_t wposmod;  /* word-position model */
+    int word_pos; /* position within current word */  /* top-nibble predicts bottom-nibble */         /* column model 3 */
     smap_t colmod4;
     smap_t colmod5;
     smap_t wlenmod;
@@ -499,6 +501,8 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o3ind, 1<<lo_log);
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
+    smap_init(&cm->wposmod, 1 << hi_log);
+    cm->word_pos = 0;
     smap_init(&cm->nibcross, 1 << hi_log);
     smap_init(&cm->colmod3, 1<<lo_log); smap_init(&cm->colmod4, 1<<lo_log); smap_init(&cm->colmod5, 1<<lo_log); smap_init(&cm->wlenmod, 1<<lo_log);
     smap_init(&cm->sentmod, 1<<lo_log);
@@ -683,6 +687,12 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[37] = smap_get(&cm->colmod2, ctx[36]);
     preds[38] = smap_get(&cm->colmod3, ctx[37]);
     preds[44] = smap_get(&cm->nibcross, ctx[43]);
+    {
+        int wp = cm->word_pos;
+        int wp_bucket = (wp < 2) ? wp : (wp < 5) ? 2 : (wp < 10) ? 3 : 4;
+        uint32_t wpos_ctx = h32(((uint32_t)wp_bucket << 16) | ((uint32_t)cm->prev[0] << 8) | cm->prev[1]) ^ (cm->partial << 20);
+        preds[45] = smap_get(&cm->wposmod, wpos_ctx);
+    }
     preds[39] = smap_get(&cm->colmod4, ctx[38]);
     preds[40] = smap_get(&cm->colmod5, ctx[39]);
     preds[41] = smap_get(&cm->wlenmod, ctx[40]);
@@ -785,6 +795,19 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->colmod2, ctx[36], bit);
     smap_update(&cm->colmod3, ctx[37], bit);
     smap_update(&cm->nibcross, ctx[43], bit);
+    {
+        int wp = cm->word_pos;
+        int wp_bucket = (wp < 2) ? wp : (wp < 5) ? 2 : (wp < 10) ? 3 : 4;
+        uint32_t wpos_ctx = h32(((uint32_t)wp_bucket << 16) | ((uint32_t)cm->prev[0] << 8) | cm->prev[1]) ^ (cm->partial << 20);
+        smap_update(&cm->wposmod, wpos_ctx, bit);
+    }
+    if (bp == 7) {
+        uint8_t c = cm->prev[0]; /* just completed byte */
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '\'' || c == '-')
+            cm->word_pos++;
+        else
+            cm->word_pos = 0;
+    }
     smap_update(&cm->colmod4, ctx[38], bit);
     smap_update(&cm->colmod5, ctx[39], bit);
     smap_update(&cm->wlenmod, ctx[40], bit);
