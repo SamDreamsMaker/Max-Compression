@@ -446,7 +446,7 @@ typedef struct {
     sse_t apm2; /* third-stage APM with prev>>4 context */
     sse_t apm3; /* fourth-stage APM — deepest in chain */
     mixer_t mx1[4096], mx2[128], mx3[8], mx4[1024], mx5[512], mx6[256], mx7[128];
-    mixer_t mx8[64]; /* word_length bucket × bp */
+    mixer_t mx8[128]; /* word_length bucket × bp */
     float lr;
     uint8_t prev[14];
     uint32_t word_hash;
@@ -549,7 +549,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     for (int i = 0; i < 512; i++) mixer_init(&cm->mx5[i], N_MODELS);
     for (int i = 0; i < 256; i++) mixer_init(&cm->mx6[i], N_MODELS);
     for (int i = 0; i < 128; i++) mixer_init(&cm->mx7[i], N_MODELS);
-    for (int i = 0; i < 64; i++) mixer_init(&cm->mx8[i], N_MODELS);
+    for (int i = 0; i < 128; i++) mixer_init(&cm->mx8[i], N_MODELS);
     cm->lr = 0.012f;
     cm->partial = 1;
     cm->ictx_size = 1 << 22;
@@ -792,7 +792,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     int mx7_ctx = ((cm->line_pos < 8 ? 0 : cm->line_pos < 24 ? 1 : cm->line_pos < 48 ? 2 : cm->line_pos < 80 ? 3 : 4) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
     float m7 = mixer_mix(&cm->mx7[mx7_ctx], str);
     int wl_bucket = cm->word_length < 2 ? 0 : cm->word_length < 4 ? 1 : cm->word_length < 6 ? 2 : cm->word_length < 10 ? 3 : cm->word_length < 16 ? 4 : cm->word_length < 30 ? 5 : cm->word_length < 60 ? 6 : 7;
-    int mx8_ctx = (wl_bucket << 3) | bp;
+    int mx8_ctx = (wl_bucket << 4) | (bp << 1) | (char_class(cm->prev[0]) >> 1);
     float m8 = mixer_mix(&cm->mx8[mx8_ctx], str);
     float mixed = squash((stretch(m1)*7 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2 + stretch(m8)*4) / 22.0f);
     
@@ -959,7 +959,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         int mx7_ctx = ((cm->line_pos < 8 ? 0 : cm->line_pos < 24 ? 1 : cm->line_pos < 48 ? 2 : cm->line_pos < 80 ? 3 : 4) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
         mixer_learn(&cm->mx7[mx7_ctx], str, bit, lr * 0.5f);
         int wl_bucket = cm->word_length < 2 ? 0 : cm->word_length < 4 ? 1 : cm->word_length < 6 ? 2 : cm->word_length < 10 ? 3 : cm->word_length < 16 ? 4 : cm->word_length < 30 ? 5 : cm->word_length < 60 ? 6 : 7;
-        int mx8_ctx = (wl_bucket << 3) | bp;
+        int mx8_ctx = (wl_bucket << 4) | (bp << 1) | (char_class(cm->prev[0]) >> 1);
         mixer_learn(&cm->mx8[mx8_ctx], str, bit, lr * 0.5f);
     }
     cm->total_bits++;
