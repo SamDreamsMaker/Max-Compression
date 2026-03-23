@@ -437,7 +437,7 @@ typedef struct {
     smap_t wind2;
     match_t match;
     /* Sparse match: hash of prev[1]×prev[2]×prev[3] to find matches */
-    uint32_t smatch_tab[1<<18];  /* hash → position */
+    uint32_t *smatch_tab;  /* hash → position */
     int smatch_active;
     uint32_t smatch_pos;
     int smatch_len;
