@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 55
+#define N_MODELS 56
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -443,6 +443,9 @@ typedef struct {
     int smatch_len;
     smap_t digram;
     uint16_t digram_count[65536]; /* bigram frequency counts */
+    smap_t errmod;
+    uint8_t err_history; /* last 8 bit prediction errors packed */
+    uint32_t err_bits; /* running error count */
     uint32_t byte_pos; /* total bytes processed */
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
@@ -566,6 +569,8 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     memset(cm->smatch_tab, 0xFF, (1<<18) * sizeof(uint32_t));
     cm->smatch_active = 0; cm->smatch_len = 0; cm->byte_pos = 0;
     smap_init(&cm->digram, 1 << lo_log); cm->digram.rate_n = 550;
+    smap_init(&cm->errmod, 1 << lo_log); cm->errmod.rate_n = 550;
+    cm->err_history = 0; cm->err_bits = 0;
     memset(cm->digram_count, 0, sizeof(cm->digram_count));
 }
 
@@ -578,7 +583,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->indirect); smap_free(&cm->o2_word); smap_free(&cm->o11);
     smap_free(&cm->o9); smap_free(&cm->o12);
     smap_free(&cm->o8);
-    smap_free(&cm->word2); smap_free(&cm->o14); smap_free(&cm->digram);
+    smap_free(&cm->word2); smap_free(&cm->o14); smap_free(&cm->digram); smap_free(&cm->errmod);
     smap_free(&cm->word_cc); smap_free(&cm->o1_cc); smap_free(&cm->word_len); smap_free(&cm->prevword_byte);
     smap_free(&cm->upper2); smap_free(&cm->o10); smap_free(&cm->word3); smap_free(&cm->word4); smap_free(&cm->run);
     smap_free(&cm->cc_seq3);
@@ -768,6 +773,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
                           int fb = freq < 2 ? 0 : freq < 8 ? 1 : freq < 32 ? 2 : 3;
                           uint32_t dg_ctx = h32((fb << 16) | bg);
                           preds[54] = smap_get(&cm->digram, dg_ctx); }
+                        /* error history model */
+                        { uint32_t eh_ctx = h32((cm->err_history << 16) | ((uint16_t)cm->prev[0] << 8) | cm->partial);
+                          preds[55] = smap_get(&cm->errmod, eh_ctx); }
                     }
                 }
             }
@@ -912,6 +920,13 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
                   int fb = freq < 2 ? 0 : freq < 8 ? 1 : freq < 32 ? 2 : 3;
                   uint32_t dg_ctx = h32((fb << 16) | bg);
                   smap_update(&cm->digram, dg_ctx, bit); }
+                /* error history update */
+                { uint32_t eh_ctx = h32((cm->err_history << 16) | ((uint16_t)cm->prev[0] << 8) | cm->partial);
+                  smap_update(&cm->errmod, eh_ctx, bit);
+                  /* track if prediction was wrong */
+                  int predicted = (mp > (PROB_MAX/2)) ? 1 : 0;
+                  int err = (predicted != bit) ? 1 : 0;
+                  cm->err_history = ((cm->err_history << 1) | err) & 0xFF; }
                 }
             }
         }
