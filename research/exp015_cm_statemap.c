@@ -811,9 +811,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     if (apm3_p < 1) apm3_p = 1; if (apm3_p > PROB_MAX-1) apm3_p = PROB_MAX-1;
     uint16_t final;
     if (cm->match.active) {
-        final = (apm_p * 1 + apm2_p * 1 + apm3_p * 1 + mp * 29) / 32;
+        final = (apm_p * 1 + apm2_p * 1 + apm3_p * 2 + mp * 28) / 32;
     } else {
-        final = (apm_p * 1 + apm2_p * 1 + apm3_p * 1 + mp * 29) / 32;
+        final = (apm_p * 1 + apm2_p * 1 + apm3_p * 2 + mp * 28) / 32;
     }
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
