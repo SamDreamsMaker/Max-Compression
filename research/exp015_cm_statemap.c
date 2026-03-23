@@ -425,7 +425,7 @@ typedef struct {
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
     sse_t apm3; /* fourth-stage APM — deepest in chain */
-    mixer_t mx1[4096], mx2[64], mx3[8], mx4[1024], mx5[512], mx6[128], mx7[64];
+    mixer_t mx1[4096], mx2[128], mx3[8], mx4[1024], mx5[512], mx6[128], mx7[64];
     float lr;
     uint8_t prev[14];
     uint32_t word_hash;
@@ -508,7 +508,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     sse_init(&cm->apm2);
     sse_init(&cm->apm3);
     for (int i = 0; i < 4096; i++) mixer_init(&cm->mx1[i], N_MODELS);
-    for (int i = 0; i < 64; i++) mixer_init(&cm->mx2[i], N_MODELS);
+    for (int i = 0; i < 128; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
     for (int i = 0; i < 1024; i++) mixer_init(&cm->mx4[i], N_MODELS);
     for (int i = 0; i < 512; i++) mixer_init(&cm->mx5[i], N_MODELS);
@@ -695,7 +695,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     }
     
     float m1 = mixer_mix(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str);
-    float m2 = mixer_mix(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str);
+    float m2 = mixer_mix(&cm->mx2[((char_class(cm->prev[0]) << 4) | (bp << 1) | (cm->prev[1] >> 7)) & 127], str);
     float m3 = mixer_mix(&cm->mx3[bp], str);
     int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
     float m4 = mixer_mix(&cm->mx4[mx4_ctx], str);
@@ -796,7 +796,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     float lr = 0.002f + 0.018f / (1.0f + (float)cm->total_bits / 4000.0f);
     if (lr < 0.002f) lr = 0.002f;
     mixer_learn(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str, bit, lr);
-    mixer_learn(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str, bit, lr);
+    mixer_learn(&cm->mx2[((char_class(cm->prev[0]) << 4) | (bp << 1) | (cm->prev[1] >> 7)) & 127], str, bit, lr);
     mixer_learn(&cm->mx3[bp], str, bit, lr);
     {
         int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
