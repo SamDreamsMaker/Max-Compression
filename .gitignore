@@ -53,3 +53,4 @@ wasm/maxcomp.wasm
 build-wasm/
 research/exp014/
 research/test_cm/
+core

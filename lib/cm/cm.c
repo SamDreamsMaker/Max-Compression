@@ -219,7 +219,7 @@ typedef struct {
 
 static void mixer_init(mixer_t *mx, int n) {
     mx->n = n;
-    for (int i = 0; i < n; i++) mx->w[i] = 1.9f / n;
+    for (int i = 0; i < n; i++) mx->w[i] = 1.0f / n;
     mx->bias = 0.0f;
 }
 
@@ -238,7 +238,6 @@ static inline float mixer_mix(mixer_t *mx, float * MCX_RESTRICT s) {
     for (; i < mx->n; i++)
         sum += w[i]*s[i];
     sum += mx->bias;
-    sum *= 1.17f;
     float r = squash(sum);
     if (r < 0.001f) r = 0.001f;
     if (r > 0.999f) r = 0.999f;
@@ -254,7 +253,6 @@ static inline void mixer_learn(mixer_t *mx, float * MCX_RESTRICT s, int bit, flo
     for (; i < mx->n; i++)
         sum += w[i]*s[i];
     sum += mx->bias;
-    sum *= 1.17f;
     float err_lr = ((1.0f - bit) - squash(sum)) * lr;
     for (i = 0; i + 3 < mx->n; i += 4) {
         w[i]   += err_lr * s[i];
@@ -444,7 +442,7 @@ typedef struct {
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
     sse_t apm3;  /* third-stage APM — deepest in chain */
-    mixer_t mx1[4096], mx2[64], mx3[8], mx4[1024], mx5[512], mx6[128], mx7[64];
+    mixer_t mx1[4096], mx2[64], mx3[8], mx4[1024], mx5[512], mx6[128];
     float lr;
     uint8_t prev[14];
     uint32_t word_hash;
@@ -530,7 +528,6 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     for (int i = 0; i < 1024; i++) mixer_init(&cm->mx4[i], N_MODELS);
     for (int i = 0; i < 512; i++) mixer_init(&cm->mx5[i], N_MODELS);
     for (int i = 0; i < 128; i++) mixer_init(&cm->mx6[i], N_MODELS);
-    for (int i = 0; i < 64; i++) mixer_init(&cm->mx7[i], N_MODELS);
     cm->lr = 0.012f;
     cm->partial = 1;
     cm->ictx_size = 1 << 22;
@@ -722,9 +719,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     }
     int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
     float m6 = mixer_mix(&cm->mx6[mx6_ctx], str);
-    int mx7_ctx = ((cm->line_pos < 16 ? 0 : cm->line_pos < 40 ? 1 : cm->line_pos < 72 ? 2 : 3) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
-    float m7 = mixer_mix(&cm->mx7[mx7_ctx], str);
-    float mixed = squash((stretch(m1)*5 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2) / 16.0f);
+    float mixed = squash((stretch(m1)*5 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*3) / 13.0f);
     
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
@@ -803,7 +798,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
-    float lr = 0.002f + 0.018f / (1.0f + (float)cm->total_bits / 4000.0f);
+    float lr = 0.002f + 0.024f / (1.0f + (float)cm->total_bits / 4000.0f);
     if (lr < 0.002f) lr = 0.002f;
     mixer_learn(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str, bit, lr);
     mixer_learn(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str, bit, lr);
@@ -820,8 +815,6 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         }
         int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
         mixer_learn(&cm->mx6[mx6_ctx], str, bit, lr * 0.5f);
-        int mx7_ctx = ((cm->line_pos < 16 ? 0 : cm->line_pos < 40 ? 1 : cm->line_pos < 72 ? 2 : 3) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
-        mixer_learn(&cm->mx7[mx7_ctx], str, bit, lr * 0.5f);
     }
     cm->total_bits++;
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
@@ -902,9 +895,7 @@ size_t mcx_cm_compress(uint8_t *dst, size_t cap,
             if (cm.match.active) { int ml = cm.match.mlen > 256 ? 256 : (int)cm.match.mlen; emlen_b = (ml < 5) ? 1 : (ml < 17) ? 2 : 3; }
             int emx6 = (emlen_b << 5) | (char_class(cm.prev[0]) << 3) | bp;
             float em6 = mixer_mix(&cm.mx6[emx6], str);
-            int emx7 = ((cm.line_pos < 16 ? 0 : cm.line_pos < 40 ? 1 : cm.line_pos < 72 ? 2 : 3) << 4) | (bp << 1) | (cm.match.active ? 1 : 0);
-            float em7 = mixer_mix(&cm.mx7[emx7], str);
-            float mixed = squash((stretch(em1)*5 + stretch(em2) + stretch(em3) + stretch(em4)*2 + stretch(em5) + stretch(em6)*4 + stretch(em7)*2) / 16.0f);
+            float mixed = squash((stretch(em1)*5 + stretch(em2) + stretch(em3) + stretch(em4)*2 + stretch(em5) + stretch(em6)*3) / 13.0f);
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
@@ -950,9 +941,7 @@ size_t mcx_cm_decompress(uint8_t *dst, size_t cap,
             if (cm.match.active) { int ml = cm.match.mlen > 256 ? 256 : (int)cm.match.mlen; dmlen_b = (ml < 5) ? 1 : (ml < 17) ? 2 : 3; }
             int dmx6 = (dmlen_b << 5) | (char_class(cm.prev[0]) << 3) | bp;
             float dm6 = mixer_mix(&cm.mx6[dmx6], str);
-            int dmx7 = ((cm.line_pos < 16 ? 0 : cm.line_pos < 40 ? 1 : cm.line_pos < 72 ? 2 : 3) << 4) | (bp << 1) | (cm.match.active ? 1 : 0);
-            float dm7 = mixer_mix(&cm.mx7[dmx7], str);
-            float mixed = squash((stretch(dm1)*5 + stretch(dm2) + stretch(dm3) + stretch(dm4)*2 + stretch(dm5) + stretch(dm6)*4 + stretch(dm7)*2) / 16.0f);
+            float mixed = squash((stretch(dm1)*5 + stretch(dm2) + stretch(dm3) + stretch(dm4)*2 + stretch(dm5) + stretch(dm6)*3) / 13.0f);
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
