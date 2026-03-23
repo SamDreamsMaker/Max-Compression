@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 47
+#define N_MODELS 48
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -417,7 +417,8 @@ typedef struct {
     smap_t colmod3;
     smap_t nibcross;
     smap_t wposmod;
-    smap_t vcmod;  /* vowel/consonant pattern */
+    smap_t vcmod;
+    smap_t vcmod2;  /* V/C × word context */  /* vowel/consonant pattern */
     uint32_t vc_history; /* packed V/C history */  /* word-position model */
     int word_pos; /* position within current word */  /* top-nibble predicts bottom-nibble */         /* column model 3 */
     smap_t colmod4;
@@ -503,6 +504,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o3ind, 1<<lo_log);
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
+    smap_init(&cm->vcmod2, 1 << hi_log);
     smap_init(&cm->vcmod, 1 << hi_log);
     cm->vc_history = 0;
     smap_init(&cm->wposmod, 1 << hi_log);
@@ -699,6 +701,8 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     {
         uint32_t vc_ctx = h32(((cm->vc_history & 0xFF) << 8) | cm->prev[0]) ^ (cm->partial << 16);
         preds[46] = smap_get(&cm->vcmod, vc_ctx);
+        uint32_t vc2_ctx = h32(((cm->vc_history & 0xFF) << 16) | (cm->word_hash & 0xFFFF)) ^ (cm->partial << 24);
+        preds[47] = smap_get(&cm->vcmod2, vc2_ctx);
     }
     }
     preds[39] = smap_get(&cm->colmod4, ctx[38]);
@@ -811,6 +815,8 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     {
         uint32_t vc_ctx = h32(((cm->vc_history & 0xFF) << 8) | cm->prev[0]) ^ (cm->partial << 16);
         smap_update(&cm->vcmod, vc_ctx, bit);
+        uint32_t vc2_ctx = h32(((cm->vc_history & 0xFF) << 16) | (cm->word_hash & 0xFFFF)) ^ (cm->partial << 24);
+        smap_update(&cm->vcmod2, vc2_ctx, bit);
     }
     if (bp == 7) {
         uint8_t c = cm->prev[0] | 0x20; /* lowercase */
