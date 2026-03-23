@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 53
+#define N_MODELS 54
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -436,6 +436,11 @@ typedef struct {
     smap_t sentmod;
     smap_t wind2;
     match_t match;
+    /* Sparse match: hash of prev[1]×prev[2]×prev[3] to find matches */
+    uint32_t smatch_tab[1<<18];  /* hash → position */
+    int smatch_active;
+    uint32_t smatch_pos;
+    int smatch_len;
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
     sse_t apm3; /* fourth-stage APM — deepest in chain */
@@ -737,6 +742,15 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
                     {
                         uint32_t tw_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | cm->prev[2]) ^ (cm->word_hash << 4) ^ (cm->partial << 24);
                         preds[52] = smap_get(&cm->triwordmod, tw_ctx);
+                        { uint16_t sp = PROB_HALF;
+                          if (cm->smatch_active && cm->smatch_pos < pos) {
+                            int pred = (cm->match.data[cm->smatch_pos] >> (7 - bp)) & 1;
+                            int slen = cm->smatch_len > 64 ? 64 : cm->smatch_len;
+                            int delta = slen < 4 ? slen*200 : 800 + (slen-4)*20;
+                            if (delta > 1500) delta = 1500;
+                            sp = pred ? (PROB_HALF - delta) : (PROB_HALF + delta);
+                          }
+                          preds[53] = sp; }
                     }
                 }
             }
