@@ -789,7 +789,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     int wl_bucket = cm->word_length < 2 ? 0 : cm->word_length < 4 ? 1 : cm->word_length < 7 ? 2 : cm->word_length < 12 ? 3 : cm->word_length < 20 ? 4 : cm->word_length < 40 ? 5 : cm->word_length < 80 ? 6 : 7;
     int mx8_ctx = (wl_bucket << 3) | bp;
     float m8 = mixer_mix(&cm->mx8[mx8_ctx], str);
-    float mixed = squash((stretch(m1)*7 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2 + stretch(m8)*2) / 20.0f);
+    float mixed = squash((stretch(m1)*7 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2 + stretch(m8)*4) / 22.0f);
     
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
