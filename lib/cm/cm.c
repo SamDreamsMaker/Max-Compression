@@ -238,6 +238,7 @@ static inline float mixer_mix(mixer_t *mx, float * MCX_RESTRICT s) {
     for (; i < mx->n; i++)
         sum += w[i]*s[i];
     sum += mx->bias;
+    sum *= 1.15f;
     float r = squash(sum);
     if (r < 0.001f) r = 0.001f;
     if (r > 0.999f) r = 0.999f;
@@ -253,6 +254,7 @@ static inline void mixer_learn(mixer_t *mx, float * MCX_RESTRICT s, int bit, flo
     for (; i < mx->n; i++)
         sum += w[i]*s[i];
     sum += mx->bias;
+    sum *= 1.15f;
     float err_lr = ((1.0f - bit) - squash(sum)) * lr;
     for (i = 0; i + 3 < mx->n; i += 4) {
         w[i]   += err_lr * s[i];
@@ -722,7 +724,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     float m6 = mixer_mix(&cm->mx6[mx6_ctx], str);
     int mx7_ctx = ((cm->line_pos < 16 ? 0 : cm->line_pos < 40 ? 1 : cm->line_pos < 72 ? 2 : 3) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
     float m7 = mixer_mix(&cm->mx7[mx7_ctx], str);
-    float mixed = squash((stretch(m1)*5 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*3 + stretch(m7)) / 14.0f);
+    float mixed = squash((stretch(m1)*5 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2) / 16.0f);
     
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
@@ -902,7 +904,7 @@ size_t mcx_cm_compress(uint8_t *dst, size_t cap,
             float em6 = mixer_mix(&cm.mx6[emx6], str);
             int emx7 = ((cm.line_pos < 16 ? 0 : cm.line_pos < 40 ? 1 : cm.line_pos < 72 ? 2 : 3) << 4) | (bp << 1) | (cm.match.active ? 1 : 0);
             float em7 = mixer_mix(&cm.mx7[emx7], str);
-            float mixed = squash((stretch(em1)*5 + stretch(em2) + stretch(em3) + stretch(em4)*2 + stretch(em5) + stretch(em6)*3 + stretch(em7)) / 14.0f);
+            float mixed = squash((stretch(em1)*5 + stretch(em2) + stretch(em3) + stretch(em4)*2 + stretch(em5) + stretch(em6)*4 + stretch(em7)*2) / 16.0f);
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
@@ -950,7 +952,7 @@ size_t mcx_cm_decompress(uint8_t *dst, size_t cap,
             float dm6 = mixer_mix(&cm.mx6[dmx6], str);
             int dmx7 = ((cm.line_pos < 16 ? 0 : cm.line_pos < 40 ? 1 : cm.line_pos < 72 ? 2 : 3) << 4) | (bp << 1) | (cm.match.active ? 1 : 0);
             float dm7 = mixer_mix(&cm.mx7[dmx7], str);
-            float mixed = squash((stretch(dm1)*5 + stretch(dm2) + stretch(dm3) + stretch(dm4)*2 + stretch(dm5) + stretch(dm6)*3 + stretch(dm7)) / 14.0f);
+            float mixed = squash((stretch(dm1)*5 + stretch(dm2) + stretch(dm3) + stretch(dm4)*2 + stretch(dm5) + stretch(dm6)*4 + stretch(dm7)*2) / 16.0f);
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
