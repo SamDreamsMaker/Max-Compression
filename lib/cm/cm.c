@@ -520,10 +520,10 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->colmod3, 1<<lo_log); smap_init(&cm->colmod4, 1<<lo_log);
     smap_init(&cm->colmod5, 1<<lo_log); smap_init(&cm->wlenmod, 1<<lo_log);
     smap_init(&cm->sentmod, 1<<lo_log); smap_init(&cm->wind2, 1<<lo_log);
-    smap_init(&cm->nibcross, 1<<hi_log);
-    smap_init(&cm->wposmod, 1<<hi_log); smap_init(&cm->vcmod, 1<<hi_log);
-    smap_init(&cm->vcmod2, 1<<hi_log); smap_init(&cm->sylmod, 1<<hi_log);
-    smap_init(&cm->casemod, 1<<hi_log); smap_init(&cm->punctmod, 1<<hi_log);
+    smap_init(&cm->nibcross, 1<<hi_log); cm->nibcross.rate_n = 550;
+    smap_init(&cm->wposmod, 1<<hi_log); smap_init(&cm->vcmod, 1<<hi_log); cm->wposmod.rate_n = 550;
+    smap_init(&cm->vcmod2, 1<<hi_log); smap_init(&cm->sylmod, 1<<hi_log); cm->vcmod2.rate_n = 550;
+    smap_init(&cm->casemod, 1<<hi_log); smap_init(&cm->punctmod, 1<<hi_log); cm->casemod.rate_n = 550;
     cm->word_pos=0; cm->syl_count=0; cm->last_was_vowel=0;
     cm->vc_history=0; cm->case_history=0; cm->punct_history=0;
     cm->ictx5_size = 1 << 22;
@@ -736,7 +736,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     float m6 = mixer_mix(&cm->mx6[mx6_ctx], str);
     int lp_b = 0; { int lp = cm->line_pos & 0xFF; lp_b = (lp<2)?0:(lp<8)?1:(lp<20)?2:3; }
     float m7 = mixer_mix(&cm->mx7[(lp_b << 4) | (bp << 1) | (cm->match.active ? 1 : 0)], str);
-    float mixed = squash((stretch(m1)*6 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2) / 17.0f);
+    float mixed = squash((stretch(m1)*7 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2) / 18.0f);
     
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
@@ -757,7 +757,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     if (cm->match.active) {
         final = (apm_p * 1 + apm2_p * 1 + apm3_p * 1 + mp * 29) / 32;
     } else {
-        final = (apm_p * 2 + apm2_p * 2 + apm3_p * 2 + mp * 26) / 32;
+        final = (apm_p * 1 + apm2_p * 1 + apm3_p * 1 + mp * 29) / 32;
     }
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
@@ -939,7 +939,7 @@ size_t mcx_cm_compress(uint8_t *dst, size_t cap,
             float em6 = mixer_mix(&cmp->mx6[emx6], str);
             int elp_b = 0; { int elp = cmp->line_pos & 0xFF; elp_b = (elp<2)?0:(elp<8)?1:(elp<20)?2:3; }
             float em7 = mixer_mix(&cmp->mx7[(elp_b << 4) | (bp << 1) | (cmp->match.active ? 1 : 0)], str);
-            float mixed = squash((stretch(em1)*6 + stretch(em2) + stretch(em3) + stretch(em4)*2 + stretch(em5) + stretch(em6)*4 + stretch(em7)*2) / 17.0f);
+            float mixed = squash((stretch(em1)*7 + stretch(em2) + stretch(em3) + stretch(em4)*2 + stretch(em5) + stretch(em6)*4 + stretch(em7)*2) / 18.0f);
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
@@ -988,7 +988,7 @@ size_t mcx_cm_decompress(uint8_t *dst, size_t cap,
             float dm6 = mixer_mix(&cmp->mx6[dmx6], str);
             int dlp_b = 0; { int dlp = cmp->line_pos & 0xFF; dlp_b = (dlp<2)?0:(dlp<8)?1:(dlp<20)?2:3; }
             float dm7 = mixer_mix(&cmp->mx7[(dlp_b << 4) | (bp << 1) | (cmp->match.active ? 1 : 0)], str);
-            float mixed = squash((stretch(dm1)*6 + stretch(dm2) + stretch(dm3) + stretch(dm4)*2 + stretch(dm5) + stretch(dm6)*4 + stretch(dm7)*2) / 17.0f);
+            float mixed = squash((stretch(dm1)*7 + stretch(dm2) + stretch(dm3) + stretch(dm4)*2 + stretch(dm5) + stretch(dm6)*4 + stretch(dm7)*2) / 18.0f);
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
             if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
             
