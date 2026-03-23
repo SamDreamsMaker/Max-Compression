@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 52
+#define N_MODELS 53
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -422,7 +422,8 @@ typedef struct {
     smap_t sylmod;
     smap_t casemod;
     smap_t punctmod;
-    smap_t bigrammod;  /* bigram + word_pos context */  /* punctuation pattern */
+    smap_t bigrammod;
+    smap_t triwordmod;  /* trigram × word */  /* bigram + word_pos context */  /* punctuation pattern */
     uint32_t punct_history;  /* case transition model */
     uint32_t case_history;  /* syllable-aware model */
     int syl_count; /* syllables in current word */
@@ -512,6 +513,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o3ind, 1<<lo_log);
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
+    smap_init(&cm->triwordmod, 1 << hi_log);
     smap_init(&cm->bigrammod, 1 << hi_log);
     smap_init(&cm->punctmod, 1 << hi_log);
     cm->punct_history = 0;
@@ -732,6 +734,10 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
                     int wp_b = (cm->word_pos < 2) ? cm->word_pos : (cm->word_pos < 5) ? 2 : 3;
                     uint32_t bg_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | (wp_b << 4) | bp);
                     preds[51] = smap_get(&cm->bigrammod, bg_ctx);
+                    {
+                        uint32_t tw_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | cm->prev[2]) ^ (cm->word_hash << 4) ^ (cm->partial << 24);
+                        preds[52] = smap_get(&cm->triwordmod, tw_ctx);
+                    }
                 }
             }
         }
@@ -862,6 +868,10 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
                     int wp_b = (cm->word_pos < 2) ? cm->word_pos : (cm->word_pos < 5) ? 2 : 3;
                     uint32_t bg_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | (wp_b << 4) | bp);
                     smap_update(&cm->bigrammod, bg_ctx, bit);
+                    {
+                        uint32_t tw_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | cm->prev[2]) ^ (cm->word_hash << 4) ^ (cm->partial << 24);
+                        smap_update(&cm->triwordmod, tw_ctx, bit);
+                    }
                 }
             }
         }
