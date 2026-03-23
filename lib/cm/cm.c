@@ -442,7 +442,7 @@ typedef struct {
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
     sse_t apm3;  /* third-stage APM — deepest in chain */
-    mixer_t mx1[2048], mx2[64], mx3[8], mx4[1024], mx5[256], mx6[128];
+    mixer_t mx1[4096], mx2[64], mx3[8], mx4[1024], mx5[512], mx6[128];
     float lr;
     uint8_t prev[14];
     uint32_t word_hash;
@@ -522,11 +522,11 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
     sse_init(&cm->apm3);
-    for (int i = 0; i < 2048; i++) mixer_init(&cm->mx1[i], N_MODELS);
+    for (int i = 0; i < 4096; i++) mixer_init(&cm->mx1[i], N_MODELS);
     for (int i = 0; i < 64; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
     for (int i = 0; i < 1024; i++) mixer_init(&cm->mx4[i], N_MODELS);
-    for (int i = 0; i < 256; i++) mixer_init(&cm->mx5[i], N_MODELS);
+    for (int i = 0; i < 512; i++) mixer_init(&cm->mx5[i], N_MODELS);
     for (int i = 0; i < 128; i++) mixer_init(&cm->mx6[i], N_MODELS);
     cm->lr = 0.012f;
     cm->partial = 1;
@@ -705,12 +705,12 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
         str[i] = stretch_tab[preds[i]]; /* direct lookup, no float division */
     }
     
-    float m1 = mixer_mix(&cm->mx1[(cm->prev[0] << 3) | bp], str);
+    float m1 = mixer_mix(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str);
     float m2 = mixer_mix(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str);
     float m3 = mixer_mix(&cm->mx3[bp], str);
     int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
     float m4 = mixer_mix(&cm->mx4[mx4_ctx], str);
-    int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 8)) & 255;
+    int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
     float m5 = mixer_mix(&cm->mx5[mx5_ctx], str);
     int mx6_ctx = ((cm->match.active ? 1 : 0) << 6) | (char_class(cm->prev[0]) << 3) | bp;
     float m6 = mixer_mix(&cm->mx6[mx6_ctx], str);
@@ -731,7 +731,12 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     int apm3_ctx = ((cm->prev[0] >> 3) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 6)) & (SSE_CTXS-1);
     uint16_t apm3_p = sse_map(&cm->apm3, apm3_ctx, apm2_p);
     if (apm3_p < 1) apm3_p = 1; if (apm3_p > PROB_MAX-1) apm3_p = PROB_MAX-1;
-    uint16_t final = (apm_p * 2 + apm2_p * 2 + apm3_p * 2 + mp * 26) / 32;
+    uint16_t final;
+    if (cm->match.active) {
+        final = (apm_p * 1 + apm2_p * 1 + apm3_p * 1 + mp * 29) / 32;
+    } else {
+        final = (apm_p * 2 + apm2_p * 2 + apm3_p * 2 + mp * 26) / 32;
+    }
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
@@ -790,13 +795,13 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
     float lr = 0.002f + 0.024f / (1.0f + (float)cm->total_bits / 3000.0f);
     if (lr < 0.002f) lr = 0.002f;
-    mixer_learn(&cm->mx1[(cm->prev[0] << 3) | bp], str, bit, lr);
+    mixer_learn(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str, bit, lr);
     mixer_learn(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str, bit, lr);
     mixer_learn(&cm->mx3[bp], str, bit, lr);
     {
         int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
         mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr);
-        int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 8)) & 255;
+        int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
         mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr);
         int mx6_ctx = ((cm->match.active ? 1 : 0) << 6) | (char_class(cm->prev[0]) << 3) | bp;
         mixer_learn(&cm->mx6[mx6_ctx], str, bit, lr * 0.5f);
@@ -869,12 +874,12 @@ size_t mcx_cm_compress(uint8_t *dst, size_t cap,
             uint16_t prob = cm_predict(&cm, (uint32_t)i, bp, str);
             rcenc_bit(&rc, prob, b);
             
-            float em1 = mixer_mix(&cm.mx1[(cm.prev[0] << 3) | bp], str);
+            float em1 = mixer_mix(&cm.mx1[(cm.prev[0] << 4) | (cm.prev[1] >> 6 << 3) | bp], str);
             float em2 = mixer_mix(&cm.mx2[(char_class(cm.prev[0]) << 3) | bp], str);
             float em3 = mixer_mix(&cm.mx3[bp], str);
             int emx4 = (((cm.prev[0] >> 4) << 5) | ((cm.prev[1] >> 4) << 1) | bp/4) & 1023;
             float em4 = mixer_mix(&cm.mx4[emx4], str);
-            int emx5 = (cm.word_hash ^ (cm.word_hash >> 8)) & 255;
+            int emx5 = (cm.word_hash ^ (cm.word_hash >> 9)) & 511;
             float em5 = mixer_mix(&cm.mx5[emx5], str);
             int emx6 = ((cm.match.active ? 1 : 0) << 6) | (char_class(cm.prev[0]) << 3) | bp;
             float em6 = mixer_mix(&cm.mx6[emx6], str);
@@ -913,12 +918,12 @@ size_t mcx_cm_decompress(uint8_t *dst, size_t cap,
             uint16_t prob = cm_predict(&cm, (uint32_t)i, bp, str);
             int b = rcdec_bit(&rc, prob);
             
-            float dm1 = mixer_mix(&cm.mx1[(cm.prev[0] << 3) | bp], str);
+            float dm1 = mixer_mix(&cm.mx1[(cm.prev[0] << 4) | (cm.prev[1] >> 6 << 3) | bp], str);
             float dm2 = mixer_mix(&cm.mx2[(char_class(cm.prev[0]) << 3) | bp], str);
             float dm3 = mixer_mix(&cm.mx3[bp], str);
             int dmx4 = (((cm.prev[0] >> 4) << 5) | ((cm.prev[1] >> 4) << 1) | bp/4) & 1023;
             float dm4 = mixer_mix(&cm.mx4[dmx4], str);
-            int dmx5 = (cm.word_hash ^ (cm.word_hash >> 8)) & 255;
+            int dmx5 = (cm.word_hash ^ (cm.word_hash >> 9)) & 511;
             float dm5 = mixer_mix(&cm.mx5[dmx5], str);
             int dmx6 = ((cm.match.active ? 1 : 0) << 6) | (char_class(cm.prev[0]) << 3) | bp;
             float dm6 = mixer_mix(&cm.mx6[dmx6], str);
