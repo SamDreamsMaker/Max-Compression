@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 51
+#define N_MODELS 52
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -421,7 +421,8 @@ typedef struct {
     smap_t vcmod2;
     smap_t sylmod;
     smap_t casemod;
-    smap_t punctmod;  /* punctuation pattern */
+    smap_t punctmod;
+    smap_t bigrammod;  /* bigram + word_pos context */  /* punctuation pattern */
     uint32_t punct_history;  /* case transition model */
     uint32_t case_history;  /* syllable-aware model */
     int syl_count; /* syllables in current word */
@@ -511,6 +512,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o3ind, 1<<lo_log);
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
+    smap_init(&cm->bigrammod, 1 << hi_log);
     smap_init(&cm->punctmod, 1 << hi_log);
     cm->punct_history = 0;
     smap_init(&cm->casemod, 1 << hi_log);
@@ -726,6 +728,11 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
             {
                 uint32_t pnct_ctx = h32(((cm->punct_history & 0xFFF) << 8) | cm->prev[0]) ^ (cm->partial << 20);
                 preds[50] = smap_get(&cm->punctmod, pnct_ctx);
+                {
+                    int wp_b = (cm->word_pos < 2) ? cm->word_pos : (cm->word_pos < 5) ? 2 : 3;
+                    uint32_t bg_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | (wp_b << 4) | bp);
+                    preds[51] = smap_get(&cm->bigrammod, bg_ctx);
+                }
             }
         }
     }
@@ -851,6 +858,11 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
             {
                 uint32_t pnct_ctx = h32(((cm->punct_history & 0xFFF) << 8) | cm->prev[0]) ^ (cm->partial << 20);
                 smap_update(&cm->punctmod, pnct_ctx, bit);
+                {
+                    int wp_b = (cm->word_pos < 2) ? cm->word_pos : (cm->word_pos < 5) ? 2 : 3;
+                    uint32_t bg_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | (wp_b << 4) | bp);
+                    smap_update(&cm->bigrammod, bg_ctx, bit);
+                }
             }
         }
     }
