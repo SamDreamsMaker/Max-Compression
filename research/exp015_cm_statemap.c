@@ -424,7 +424,7 @@ typedef struct {
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
     sse_t apm3; /* fourth-stage APM — deepest in chain */
-    mixer_t mx1[4096], mx2[64], mx3[8], mx4[1024], mx5[512], mx6[128];
+    mixer_t mx1[4096], mx2[64], mx3[8], mx4[1024], mx5[512], mx6[128], mx7[64];
     float lr;
     uint8_t prev[14];
     uint32_t word_hash;
@@ -511,6 +511,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     for (int i = 0; i < 1024; i++) mixer_init(&cm->mx4[i], N_MODELS);
     for (int i = 0; i < 512; i++) mixer_init(&cm->mx5[i], N_MODELS);
     for (int i = 0; i < 128; i++) mixer_init(&cm->mx6[i], N_MODELS);
+    for (int i = 0; i < 64; i++) mixer_init(&cm->mx7[i], N_MODELS);
     cm->lr = 0.012f;
     cm->partial = 1;
     cm->ictx_size = 1 << 22;
@@ -704,7 +705,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     }
     int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
     float m6 = mixer_mix(&cm->mx6[mx6_ctx], str);
-    float mixed = squash((stretch(m1)*5 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*3) / 13.0f);
+    int mx7_ctx = ((cm->line_pos < 16 ? 0 : cm->line_pos < 40 ? 1 : cm->line_pos < 72 ? 2 : 3) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
+    float m7 = mixer_mix(&cm->mx7[mx7_ctx], str);
+    float mixed = squash((stretch(m1)*5 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*3 + stretch(m7)) / 14.0f);
     
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
@@ -803,6 +806,8 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         }
         int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
         mixer_learn(&cm->mx6[mx6_ctx], str, bit, lr * 0.5f);
+        int mx7_ctx = ((cm->line_pos < 16 ? 0 : cm->line_pos < 40 ? 1 : cm->line_pos < 72 ? 2 : 3) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
+        mixer_learn(&cm->mx7[mx7_ctx], str, bit, lr * 0.5f);
     }
     cm->total_bits++;
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
