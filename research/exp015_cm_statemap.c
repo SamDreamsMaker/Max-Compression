@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 54
+#define N_MODELS 55
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -441,6 +441,8 @@ typedef struct {
     int smatch_active;
     uint32_t smatch_pos;
     int smatch_len;
+    smap_t digram;
+    uint16_t digram_count[65536]; /* bigram frequency counts */
     uint32_t byte_pos; /* total bytes processed */
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
@@ -563,6 +565,8 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     cm->smatch_tab = (uint32_t*)malloc((1<<18) * sizeof(uint32_t));
     memset(cm->smatch_tab, 0xFF, (1<<18) * sizeof(uint32_t));
     cm->smatch_active = 0; cm->smatch_len = 0; cm->byte_pos = 0;
+    smap_init(&cm->digram, 1 << lo_log); cm->digram.rate_n = 550;
+    memset(cm->digram_count, 0, sizeof(cm->digram_count));
 }
 
 static void cm_free(cm_t *cm) {
@@ -574,7 +578,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->indirect); smap_free(&cm->o2_word); smap_free(&cm->o11);
     smap_free(&cm->o9); smap_free(&cm->o12);
     smap_free(&cm->o8);
-    smap_free(&cm->word2); smap_free(&cm->o14);
+    smap_free(&cm->word2); smap_free(&cm->o14); smap_free(&cm->digram);
     smap_free(&cm->word_cc); smap_free(&cm->o1_cc); smap_free(&cm->word_len); smap_free(&cm->prevword_byte);
     smap_free(&cm->upper2); smap_free(&cm->o10); smap_free(&cm->word3); smap_free(&cm->word4); smap_free(&cm->run);
     smap_free(&cm->cc_seq3);
@@ -758,6 +762,12 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
                             sp = pred ? (PROB_HALF - delta) : (PROB_HALF + delta);
                           }
                           preds[53] = sp; }
+                        /* digram frequency model */
+                        { uint16_t bg = ((uint16_t)cm->prev[0] << 8) | cm->partial;
+                          int freq = cm->digram_count[(cm->prev[1] << 8) | cm->prev[0]];
+                          int fb = freq < 2 ? 0 : freq < 8 ? 1 : freq < 32 ? 2 : 3;
+                          uint32_t dg_ctx = h32((fb << 16) | bg);
+                          preds[54] = smap_get(&cm->digram, dg_ctx); }
                     }
                 }
             }
@@ -896,6 +906,12 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
                         uint32_t tw_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | cm->prev[2]) ^ (cm->word_hash << 4) ^ (cm->partial << 24);
                         smap_update(&cm->triwordmod, tw_ctx, bit);
                     }
+                /* digram update */
+                { uint16_t bg = ((uint16_t)cm->prev[0] << 8) | cm->partial;
+                  int freq = cm->digram_count[(cm->prev[1] << 8) | cm->prev[0]];
+                  int fb = freq < 2 ? 0 : freq < 8 ? 1 : freq < 32 ? 2 : 3;
+                  uint32_t dg_ctx = h32((fb << 16) | bg);
+                  smap_update(&cm->digram, dg_ctx, bit); }
                 }
             }
         }
@@ -1012,6 +1028,7 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
         cm->run_length++;
     else
         cm->run_length = 1;
+    { uint16_t bg = ((uint16_t)cm->prev[0] << 8) | byte; if (cm->digram_count[bg] < 65535) cm->digram_count[bg]++; }
     
     for (int j = 13; j > 0; j--) cm->prev[j] = cm->prev[j-1];
     cm->prev[0] = byte;
