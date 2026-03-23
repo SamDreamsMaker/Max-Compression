@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 50
+#define N_MODELS 51
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -420,7 +420,9 @@ typedef struct {
     smap_t vcmod;
     smap_t vcmod2;
     smap_t sylmod;
-    smap_t casemod;  /* case transition model */
+    smap_t casemod;
+    smap_t punctmod;  /* punctuation pattern */
+    uint32_t punct_history;  /* case transition model */
     uint32_t case_history;  /* syllable-aware model */
     int syl_count; /* syllables in current word */
     int last_was_vowel;  /* V/C × word context */  /* vowel/consonant pattern */
@@ -509,6 +511,8 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o3ind, 1<<lo_log);
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
+    smap_init(&cm->punctmod, 1 << hi_log);
+    cm->punct_history = 0;
     smap_init(&cm->casemod, 1 << hi_log);
     cm->case_history = 0;
     smap_init(&cm->sylmod, 1 << hi_log);
@@ -719,6 +723,10 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
         {
             uint32_t case_ctx = h32(((cm->case_history & 0xFF) << 8) | cm->prev[0]) ^ (cm->partial << 16);
             preds[49] = smap_get(&cm->casemod, case_ctx);
+            {
+                uint32_t pnct_ctx = h32(((cm->punct_history & 0xFFF) << 8) | cm->prev[0]) ^ (cm->partial << 20);
+                preds[50] = smap_get(&cm->punctmod, pnct_ctx);
+            }
         }
     }
     }
@@ -840,6 +848,10 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         {
             uint32_t case_ctx = h32(((cm->case_history & 0xFF) << 8) | cm->prev[0]) ^ (cm->partial << 16);
             smap_update(&cm->casemod, case_ctx, bit);
+            {
+                uint32_t pnct_ctx = h32(((cm->punct_history & 0xFFF) << 8) | cm->prev[0]) ^ (cm->partial << 20);
+                smap_update(&cm->punctmod, pnct_ctx, bit);
+            }
         }
     }
     if (bp == 7) {
@@ -857,6 +869,13 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         if (c >= 'A' && c <= 'Z') case_v = 1;
         else if (c >= 'a' && c <= 'z') case_v = 2;
         cm->case_history = (cm->case_history << 2) | case_v;
+        /* Punct history */
+        int pv;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) pv = 0;
+        else if (c >= '0' && c <= '9') pv = 1;
+        else if (c == ' ' || c == '\n' || c == '\r' || c == '\t') pv = 2;
+        else pv = 3;
+        cm->punct_history = (cm->punct_history << 2) | pv;
     }
     }
     if (bp == 7) {
