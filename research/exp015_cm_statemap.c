@@ -218,7 +218,7 @@ typedef struct {
 
 static void mixer_init(mixer_t *mx, int n) {
     mx->n = n;
-    for (int i = 0; i < n; i++) mx->w[i] = 1.0f / n;
+    for (int i = 0; i < n; i++) mx->w[i] = 1.9f / n;
     mx->bias = 0.0f;
 }
 
