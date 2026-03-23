@@ -441,6 +441,7 @@ typedef struct {
     int smatch_active;
     uint32_t smatch_pos;
     int smatch_len;
+    uint32_t byte_pos; /* total bytes processed */
     sse_t apm;  /* second-stage APM with different context */
     sse_t apm2; /* third-stage APM with prev>>4 context */
     sse_t apm3; /* fourth-stage APM — deepest in chain */
@@ -559,6 +560,9 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     cm->ictx3 = (uint8_t*)calloc(cm->ictx3_size, 1);
     cm->ictx5_size = 1 << 22;
     cm->ictx5 = (uint16_t*)calloc(cm->ictx5_size, sizeof(uint16_t));
+    cm->smatch_tab = (uint32_t*)malloc((1<<18) * sizeof(uint32_t));
+    memset(cm->smatch_tab, 0xFF, (1<<18) * sizeof(uint32_t));
+    cm->smatch_active = 0; cm->smatch_len = 0; cm->byte_pos = 0;
 }
 
 static void cm_free(cm_t *cm) {
@@ -582,6 +586,7 @@ static void cm_free(cm_t *cm) {
     if (cm->ictx2) free(cm->ictx2);
     if (cm->ictx3) free(cm->ictx3);
     if (cm->ictx5) free(cm->ictx5);
+    if (cm->smatch_tab) free(cm->smatch_tab);
 }
 
 static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
@@ -970,6 +975,28 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
       if (cc == cm->run_class) cm->run_len++;
       else { cm->run_len = 1; cm->run_class = cc; }
     }
+    /* Sparse match: hash prev[1..3] */
+    if (cm->byte_pos >= 4) {
+        uint32_t sh = h32(((uint32_t)cm->prev[1] << 16) | ((uint32_t)cm->prev[2] << 8) | cm->prev[3]);
+        uint32_t si = sh & ((1<<18)-1);
+        uint32_t spos = cm->smatch_tab[si];
+        if (!cm->smatch_active && spos != 0xFFFFFFFF && spos + 3 < cm->byte_pos) {
+            if (cm->match.data[spos] == byte) {
+                cm->smatch_active = 1;
+                cm->smatch_pos = spos + 1;
+                cm->smatch_len = 4;
+            }
+        } else if (cm->smatch_active) {
+            if (cm->match.data[cm->smatch_pos - 1] == byte) {
+                cm->smatch_len++;
+            } else {
+                cm->smatch_active = 0;
+                cm->smatch_len = 0;
+            }
+        }
+        cm->smatch_tab[si] = cm->byte_pos;
+    }
+    cm->byte_pos++;
     if (byte == 10) { cm->last_line_len = cm->line_pos & 0xFF; cm->line_pos = 0; }
     else { cm->line_pos++; }
     uint32_t o2h = h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx_size - 1);
