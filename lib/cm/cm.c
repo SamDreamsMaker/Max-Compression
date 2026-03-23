@@ -209,7 +209,7 @@ static inline float squash(float x) {
 
 /* ── Mixer ─────────────────────────────────────────────────────── */
 
-#define MAX_INPUTS 48
+#define MAX_INPUTS 56
 
 typedef struct {
     float w[MAX_INPUTS];
@@ -406,7 +406,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 44
+#define N_MODELS 45
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -438,6 +438,10 @@ typedef struct {
     smap_t wlenmod;
     smap_t sentmod;
     smap_t wind2;
+    smap_t nibcross; smap_t wposmod; smap_t vcmod; smap_t vcmod2;
+    smap_t sylmod; smap_t casemod; smap_t punctmod;
+    int word_pos; int syl_count; int last_was_vowel;
+    uint32_t vc_history; uint32_t case_history; uint32_t punct_history;
     match_t match;
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
@@ -473,7 +477,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     /* Scale tables with file size to avoid OOM */
     int hi_log = 21; /* high-order models — default for large files */
     int lo_log = 20;
-    if (data_size <= 256*1024) { hi_log = 24; lo_log = 23; }
+    if (data_size <= 256*1024) { hi_log = 23; lo_log = 22; }
     else if (data_size <= 2*1024*1024) { hi_log = 23; lo_log = 22; }
     else if (data_size <= 16*1024*1024) { hi_log = 22; lo_log = 21; }
     smap_init(&cm->o0, 512);
@@ -516,6 +520,12 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->colmod3, 1<<lo_log); smap_init(&cm->colmod4, 1<<lo_log);
     smap_init(&cm->colmod5, 1<<lo_log); smap_init(&cm->wlenmod, 1<<lo_log);
     smap_init(&cm->sentmod, 1<<lo_log); smap_init(&cm->wind2, 1<<lo_log);
+    smap_init(&cm->nibcross, 1<<hi_log);
+    smap_init(&cm->wposmod, 1<<hi_log); smap_init(&cm->vcmod, 1<<hi_log);
+    smap_init(&cm->vcmod2, 1<<hi_log); smap_init(&cm->sylmod, 1<<hi_log);
+    smap_init(&cm->casemod, 1<<hi_log); smap_init(&cm->punctmod, 1<<hi_log);
+    cm->word_pos=0; cm->syl_count=0; cm->last_was_vowel=0;
+    cm->vc_history=0; cm->case_history=0; cm->punct_history=0;
     cm->ictx5_size = 1 << 22;
     cm->ictx5 = (uint16_t*)calloc(cm->ictx5_size, sizeof(uint16_t));
     match_init(&cm->match, data);
@@ -557,6 +567,9 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->o3ind); smap_free(&cm->colmod); smap_free(&cm->colmod2); smap_free(&cm->colmod3); smap_free(&cm->colmod4);
     smap_free(&cm->colmod5); smap_free(&cm->wlenmod);
     smap_free(&cm->sentmod); smap_free(&cm->wind2);
+    smap_free(&cm->nibcross); smap_free(&cm->wposmod);
+    smap_free(&cm->vcmod); smap_free(&cm->vcmod2);
+    smap_free(&cm->sylmod); smap_free(&cm->casemod); smap_free(&cm->punctmod);
     if (cm->ictx5) free(cm->ictx5);
     match_free(&cm->match);
     if (cm->ictx) free(cm->ictx);
@@ -700,6 +713,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[41] = smap_get(&cm->wlenmod, ctx[39]);
     preds[42] = smap_get(&cm->sentmod, ctx[40]);
     preds[43] = smap_get(&cm->wind2, ctx[41]);
+    {uint32_t nc; if(bp>=4) nc=h32(((uint32_t)cm->partial<<8)|cm->prev[0])^((uint32_t)cm->prev[1]<<16); else nc=h32(((uint32_t)cm->prev[0]<<12)|((uint32_t)cm->prev[1]>>4<<4)|bp); preds[44]=smap_get(&cm->nibcross,nc);}
     
     for (int i = 0; i < N_MODELS; i++) {
         str[i] = stretch_tab[preds[i]]; /* direct lookup, no float division */
@@ -795,6 +809,28 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     smap_update(&cm->wlenmod, ctx[39], bit);
     smap_update(&cm->sentmod, ctx[40], bit);
     smap_update(&cm->wind2, ctx[41], bit);
+    {uint32_t nc; if(bp>=4) nc=h32(((uint32_t)cm->partial<<8)|cm->prev[0])^((uint32_t)cm->prev[1]<<16); else nc=h32(((uint32_t)cm->prev[0]<<12)|((uint32_t)cm->prev[1]>>4<<4)|bp); smap_update(&cm->nibcross,nc,bit);}
+    {int wp=cm->word_pos; int wpb=(wp<2)?wp:(wp<5)?2:(wp<10)?3:4;
+     smap_update(&cm->wposmod,h32(((uint32_t)wpb<<16)|((uint32_t)cm->prev[0]<<8)|cm->prev[1])^(cm->partial<<20),bit);}
+    {uint32_t vc=h32(((cm->vc_history&0xFF)<<8)|cm->prev[0])^(cm->partial<<16);
+     smap_update(&cm->vcmod,vc,bit);
+     smap_update(&cm->vcmod2,h32(((cm->vc_history&0xFF)<<16)|(cm->word_hash&0xFFFF))^(cm->partial<<24),bit);}
+    {int sb=(cm->syl_count<4)?cm->syl_count:4;
+     smap_update(&cm->sylmod,h32(((uint32_t)sb<<16)|((uint32_t)cm->prev[0]<<8)|cm->prev[1])^(cm->partial<<20),bit);}
+    {smap_update(&cm->casemod,h32(((cm->case_history&0xFF)<<8)|cm->prev[0])^(cm->partial<<16),bit);}
+    {smap_update(&cm->punctmod,h32(((cm->punct_history&0xFFF)<<8)|cm->prev[0])^(cm->partial<<20),bit);}
+    if(bp==7){uint8_t lc=cm->prev[0]|0x20;
+     if((lc>='a'&&lc<='z')||cm->prev[0]=='\'') cm->word_pos++; else cm->word_pos=0;
+     int vc=0; if(lc=='a'||lc=='e'||lc=='i'||lc=='o'||lc=='u') vc=1; else if(lc>='a'&&lc<='z') vc=2;
+     cm->vc_history=(cm->vc_history<<2)|vc;
+     int iv=(vc==1); if(!iv&&cm->last_was_vowel) cm->syl_count++;
+     if(vc==0){cm->syl_count=0;cm->last_was_vowel=0;} else cm->last_was_vowel=iv;
+     int cv=0; if(cm->prev[0]>='A'&&cm->prev[0]<='Z') cv=1; else if(cm->prev[0]>='a'&&cm->prev[0]<='z') cv=2;
+     cm->case_history=(cm->case_history<<2)|cv;
+     int pv; if((cm->prev[0]>='a'&&cm->prev[0]<='z')||(cm->prev[0]>='A'&&cm->prev[0]<='Z')) pv=0;
+     else if(cm->prev[0]>='0'&&cm->prev[0]<='9') pv=1;
+     else if(cm->prev[0]==' '||cm->prev[0]=='\n') pv=2; else pv=3;
+     cm->punct_history=(cm->punct_history<<2)|pv;}
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
