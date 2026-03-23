@@ -229,7 +229,7 @@ static float mixer_mix(mixer_t *mx, float *s) {
     for (; i + 3 < mx->n; i += 4)
         sum += w[i]*s[i] + w[i+1]*s[i+1] + w[i+2]*s[i+2] + w[i+3]*s[i+3];
     for (; i < mx->n; i++) sum += w[i] * s[i];
-    sum += mx->bias; sum *= 1.15f;
+    sum += mx->bias; sum *= 1.17f;
     float r = squash(sum);
     if (r < 0.001f) r = 0.001f;
     if (r > 0.999f) r = 0.999f;
@@ -239,7 +239,7 @@ static float mixer_mix(mixer_t *mx, float *s) {
 static void mixer_learn(mixer_t *mx, float *s, int bit, float lr) {
     float sum = 0;
     for (int i = 0; i < mx->n; i++) sum += mx->w[i] * s[i];
-    sum += mx->bias; sum *= 1.15f;
+    sum += mx->bias; sum *= 1.17f;
     float err = (1.0f - bit) - squash(sum);
     for (int i = 0; i < mx->n; i++)
         mx->w[i] += lr * err * s[i];
