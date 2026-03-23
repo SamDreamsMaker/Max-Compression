@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 46
+#define N_MODELS 47
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -416,7 +416,9 @@ typedef struct {
     smap_t colmod2;         /* column model with line length */
     smap_t colmod3;
     smap_t nibcross;
-    smap_t wposmod;  /* word-position model */
+    smap_t wposmod;
+    smap_t vcmod;  /* vowel/consonant pattern */
+    uint32_t vc_history; /* packed V/C history */  /* word-position model */
     int word_pos; /* position within current word */  /* top-nibble predicts bottom-nibble */         /* column model 3 */
     smap_t colmod4;
     smap_t colmod5;
@@ -501,6 +503,8 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o3ind, 1<<lo_log);
     smap_init(&cm->colmod, 1<<lo_log);
     smap_init(&cm->colmod2, 1<<lo_log);
+    smap_init(&cm->vcmod, 1 << hi_log);
+    cm->vc_history = 0;
     smap_init(&cm->wposmod, 1 << hi_log);
     cm->word_pos = 0;
     smap_init(&cm->nibcross, 1 << hi_log);
@@ -692,6 +696,10 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
         int wp_bucket = (wp < 2) ? wp : (wp < 5) ? 2 : (wp < 10) ? 3 : 4;
         uint32_t wpos_ctx = h32(((uint32_t)wp_bucket << 16) | ((uint32_t)cm->prev[0] << 8) | cm->prev[1]) ^ (cm->partial << 20);
         preds[45] = smap_get(&cm->wposmod, wpos_ctx);
+    {
+        uint32_t vc_ctx = h32(((cm->vc_history & 0xFF) << 8) | cm->prev[0]) ^ (cm->partial << 16);
+        preds[46] = smap_get(&cm->vcmod, vc_ctx);
+    }
     }
     preds[39] = smap_get(&cm->colmod4, ctx[38]);
     preds[40] = smap_get(&cm->colmod5, ctx[39]);
@@ -800,6 +808,17 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         int wp_bucket = (wp < 2) ? wp : (wp < 5) ? 2 : (wp < 10) ? 3 : 4;
         uint32_t wpos_ctx = h32(((uint32_t)wp_bucket << 16) | ((uint32_t)cm->prev[0] << 8) | cm->prev[1]) ^ (cm->partial << 20);
         smap_update(&cm->wposmod, wpos_ctx, bit);
+    {
+        uint32_t vc_ctx = h32(((cm->vc_history & 0xFF) << 8) | cm->prev[0]) ^ (cm->partial << 16);
+        smap_update(&cm->vcmod, vc_ctx, bit);
+    }
+    if (bp == 7) {
+        uint8_t c = cm->prev[0] | 0x20; /* lowercase */
+        int vc = 0; /* other */
+        if (c=='a'||c=='e'||c=='i'||c=='o'||c=='u') vc = 1;
+        else if (c >= 'a' && c <= 'z') vc = 2;
+        cm->vc_history = (cm->vc_history << 2) | vc;
+    }
     }
     if (bp == 7) {
         uint8_t c = cm->prev[0]; /* just completed byte */
