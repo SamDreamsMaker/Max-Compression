@@ -768,7 +768,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     }
     int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
     float m6 = mixer_mix(&cm->mx6[mx6_ctx], str);
-    int mx7_ctx = ((cm->line_pos < 8 ? 0 : cm->line_pos < 24 ? 1 : cm->line_pos < 48 ? 2 : cm->line_pos < 80 ? 3 : 4) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
+    int mx7_ctx = ((cm->line_pos < 6 ? 0 : cm->line_pos < 18 ? 1 : cm->line_pos < 36 ? 2 : cm->line_pos < 72 ? 3 : 4) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
     float m7 = mixer_mix(&cm->mx7[mx7_ctx], str);
     float mixed = squash((stretch(m1)*6 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2) / 17.0f);
     
@@ -932,7 +932,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         }
         int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
         mixer_learn(&cm->mx6[mx6_ctx], str, bit, lr * 0.5f);
-        int mx7_ctx = ((cm->line_pos < 8 ? 0 : cm->line_pos < 24 ? 1 : cm->line_pos < 48 ? 2 : cm->line_pos < 80 ? 3 : 4) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
+        int mx7_ctx = ((cm->line_pos < 6 ? 0 : cm->line_pos < 18 ? 1 : cm->line_pos < 36 ? 2 : cm->line_pos < 72 ? 3 : 4) << 4) | (bp << 1) | (cm->match.active ? 1 : 0);
         mixer_learn(&cm->mx7[mx7_ctx], str, bit, lr * 0.5f);
     }
     cm->total_bits++;
