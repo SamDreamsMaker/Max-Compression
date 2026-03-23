@@ -712,7 +712,12 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     float m4 = mixer_mix(&cm->mx4[mx4_ctx], str);
     int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
     float m5 = mixer_mix(&cm->mx5[mx5_ctx], str);
-    int mx6_ctx = ((cm->match.active ? 1 : 0) << 6) | (char_class(cm->prev[0]) << 3) | bp;
+    int mlen_bucket = 0;
+    if (cm->match.active) {
+        int ml = cm->match.mlen > 256 ? 256 : (int)cm->match.mlen;
+        mlen_bucket = (ml < 5) ? 1 : (ml < 17) ? 2 : 3;
+    }
+    int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
     float m6 = mixer_mix(&cm->mx6[mx6_ctx], str);
     float mixed = squash((stretch(m1)*5 + stretch(m2) + stretch(m3) + stretch(m4)*2 + stretch(m5) + stretch(m6)*3) / 13.0f);
     
@@ -793,7 +798,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
-    float lr = 0.002f + 0.024f / (1.0f + (float)cm->total_bits / 3000.0f);
+    float lr = 0.002f + 0.024f / (1.0f + (float)cm->total_bits / 4000.0f);
     if (lr < 0.002f) lr = 0.002f;
     mixer_learn(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str, bit, lr);
     mixer_learn(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str, bit, lr);
@@ -803,7 +808,12 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr);
         int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
         mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr);
-        int mx6_ctx = ((cm->match.active ? 1 : 0) << 6) | (char_class(cm->prev[0]) << 3) | bp;
+        int mlen_bucket = 0;
+        if (cm->match.active) {
+            int ml = cm->match.mlen > 256 ? 256 : (int)cm->match.mlen;
+            mlen_bucket = (ml < 5) ? 1 : (ml < 17) ? 2 : 3;
+        }
+        int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
         mixer_learn(&cm->mx6[mx6_ctx], str, bit, lr * 0.5f);
     }
     cm->total_bits++;
@@ -881,7 +891,9 @@ size_t mcx_cm_compress(uint8_t *dst, size_t cap,
             float em4 = mixer_mix(&cm.mx4[emx4], str);
             int emx5 = (cm.word_hash ^ (cm.word_hash >> 9)) & 511;
             float em5 = mixer_mix(&cm.mx5[emx5], str);
-            int emx6 = ((cm.match.active ? 1 : 0) << 6) | (char_class(cm.prev[0]) << 3) | bp;
+            int emlen_b = 0;
+            if (cm.match.active) { int ml = cm.match.mlen > 256 ? 256 : (int)cm.match.mlen; emlen_b = (ml < 5) ? 1 : (ml < 17) ? 2 : 3; }
+            int emx6 = (emlen_b << 5) | (char_class(cm.prev[0]) << 3) | bp;
             float em6 = mixer_mix(&cm.mx6[emx6], str);
             float mixed = squash((stretch(em1)*5 + stretch(em2) + stretch(em3) + stretch(em4)*2 + stretch(em5) + stretch(em6)*3) / 13.0f);
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
@@ -925,7 +937,9 @@ size_t mcx_cm_decompress(uint8_t *dst, size_t cap,
             float dm4 = mixer_mix(&cm.mx4[dmx4], str);
             int dmx5 = (cm.word_hash ^ (cm.word_hash >> 9)) & 511;
             float dm5 = mixer_mix(&cm.mx5[dmx5], str);
-            int dmx6 = ((cm.match.active ? 1 : 0) << 6) | (char_class(cm.prev[0]) << 3) | bp;
+            int dmlen_b = 0;
+            if (cm.match.active) { int ml = cm.match.mlen > 256 ? 256 : (int)cm.match.mlen; dmlen_b = (ml < 5) ? 1 : (ml < 17) ? 2 : 3; }
+            int dmx6 = (dmlen_b << 5) | (char_class(cm.prev[0]) << 3) | bp;
             float dm6 = mixer_mix(&cm.mx6[dmx6], str);
             float mixed = squash((stretch(dm1)*5 + stretch(dm2) + stretch(dm3) + stretch(dm4)*2 + stretch(dm5) + stretch(dm6)*3) / 13.0f);
             uint16_t mp = (uint16_t)(mixed * PROB_MAX);
