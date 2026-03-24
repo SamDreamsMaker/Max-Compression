@@ -3563,7 +3563,11 @@ int main(int argc, char* argv[])
             return ret;
         }
         /* Enable per-phase profiling if --profile flag is set */
+#ifdef _WIN32
+        if (bench_profile) _putenv_s("MCX_PROFILE", "1");
+#else
         if (bench_profile) setenv("MCX_PROFILE", "1", 1);
+#endif
 
         if (bench_histogram) {
             int r = cmd_bench_histogram(bench_file, bench_level);

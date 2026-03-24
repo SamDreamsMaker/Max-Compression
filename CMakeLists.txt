@@ -25,7 +25,13 @@ else()
 endif()
 
 # ─── Build Options ───────────────────────────────────────────────────
-option(BUILD_SHARED_LIBS   "Build shared library (DLL/so/dylib)"   ON)
+# Shared lib disabled on Windows by default: MSVC produces an import .lib that
+# collides with the static .lib name, causing LNK2019 errors for internal symbols.
+if(WIN32)
+    option(BUILD_SHARED_LIBS "Build shared library (DLL/so/dylib)" OFF)
+else()
+    option(BUILD_SHARED_LIBS "Build shared library (DLL/so/dylib)" ON)
+endif()
 option(MCX_BUILD_CLI       "Build the mcx command-line tool"       ON)
 option(MCX_BUILD_TESTS     "Build unit tests"                      ON)
 option(MCX_BUILD_BENCHMARKS "Build benchmarks"                     ON)
