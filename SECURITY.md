@@ -13,7 +13,7 @@
 If you discover a security vulnerability in MaxCompression, please report it responsibly:
 
 1. **Do NOT** open a public GitHub issue.
-2. Email: `security@dreams-makers.com`
+2. Email: `contact@dreams-makers.com`
 3. Include: MCX version, steps to reproduce, impact assessment.
 
 We aim to respond within 48 hours and provide a fix within 7 days for critical issues.
