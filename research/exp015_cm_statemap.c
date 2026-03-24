@@ -445,7 +445,8 @@ typedef struct {
     uint16_t digram_count[65536]; /* bigram frequency counts */
     smap_t errmod;
     smap_t gapmod;
-    smap_t matchsm; /* match-length StateMap */
+    smap_t matchsm;
+    smap_t sparsesm; /* match-length StateMap */
     smap_t cimod; /* case-insensitive bigram */
     uint8_t err_history; /* last 8 bit prediction errors packed */
     uint32_t err_bits; /* running error count */
@@ -574,7 +575,8 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->digram, 1 << lo_log); cm->digram.rate_n = 550;
     smap_init(&cm->errmod, 1 << lo_log); cm->errmod.rate_n = 550;
     smap_init(&cm->gapmod, 1 << lo_log);
-    smap_init(&cm->matchsm, 1 << 16); cm->matchsm.rate_n = 900; /* 64K entries for match contexts */
+    smap_init(&cm->matchsm, 1 << 16); cm->matchsm.rate_n = 900;
+    smap_init(&cm->sparsesm, 1 << 14); cm->sparsesm.rate_n = 900; /* 64K entries for match contexts */
     smap_init(&cm->cimod, 1 << lo_log);
     cm->err_history = 0; cm->err_bits = 0;
     memset(cm->digram_count, 0, sizeof(cm->digram_count));
@@ -589,7 +591,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->indirect); smap_free(&cm->o2_word); smap_free(&cm->o11);
     smap_free(&cm->o9); smap_free(&cm->o12);
     smap_free(&cm->o8);
-    smap_free(&cm->word2); smap_free(&cm->o14); smap_free(&cm->digram); smap_free(&cm->errmod); smap_free(&cm->gapmod); smap_free(&cm->matchsm); smap_free(&cm->cimod);
+    smap_free(&cm->word2); smap_free(&cm->o14); smap_free(&cm->digram); smap_free(&cm->errmod); smap_free(&cm->gapmod); smap_free(&cm->matchsm); smap_free(&cm->sparsesm); smap_free(&cm->cimod);
     smap_free(&cm->word_cc); smap_free(&cm->o1_cc); smap_free(&cm->word_len); smap_free(&cm->prevword_byte);
     smap_free(&cm->upper2); smap_free(&cm->o10); smap_free(&cm->word3); smap_free(&cm->word4); smap_free(&cm->run);
     smap_free(&cm->cc_seq3);
@@ -776,9 +778,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
                           if (cm->smatch_active && cm->smatch_pos < pos) {
                             int pred = (cm->match.data[cm->smatch_pos] >> (7 - bp)) & 1;
                             int slen = cm->smatch_len > 64 ? 64 : cm->smatch_len;
-                            int delta = slen < 4 ? slen*200 : 800 + (slen-4)*20;
-                            if (delta > 1500) delta = 1500;
-                            sp = pred ? (PROB_HALF - delta) : (PROB_HALF + delta);
+                            int sl_b = slen < 4 ? slen : slen < 8 ? 4 : slen < 16 ? 5 : slen < 32 ? 6 : 7;
+                            uint32_t ssm_ctx = (pred << 13) | (sl_b << 10) | ((cm->prev[0] >> 5) << 7) | (cm->partial << 3) | bp;
+                            sp = smap_get(&cm->sparsesm, ssm_ctx);
                           }
                           preds[53] = sp; }
                         /* digram frequency model */
@@ -958,7 +960,14 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         int ml_b = ml < 4 ? ml : ml < 8 ? 4 : ml < 16 ? 5 : ml < 32 ? 6 : 7;
         int pred_bit = (cm->match.data[cm->match.mpos] >> (7 - bp)) & 1;
         uint32_t msm_ctx = (pred_bit << 15) | (ml_b << 12) | ((cm->prev[0] >> 4) << 8) | (cm->partial << 4) | bp;
-        smap_update(&cm->matchsm, msm_ctx, bit);
+        if (cm->smatch_active && cm->smatch_pos < pos) {
+                int pred = (cm->match.data[cm->smatch_pos] >> (7 - bp)) & 1;
+                int slen = cm->smatch_len > 64 ? 64 : cm->smatch_len;
+                int sl_b = slen < 4 ? slen : slen < 8 ? 4 : slen < 16 ? 5 : slen < 32 ? 6 : 7;
+                uint32_t ssm_ctx = (pred << 13) | (sl_b << 10) | ((cm->prev[0] >> 5) << 7) | (cm->partial << 3) | bp;
+                smap_update(&cm->sparsesm, ssm_ctx, bit);
+            }
+            smap_update(&cm->matchsm, msm_ctx, bit);
     }
             smap_update(&cm->gapmod, gap_ctx, bit); }
             smap_update(&cm->errmod, eh_ctx, bit);
