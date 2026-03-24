@@ -237,7 +237,7 @@ static inline float mixer_mix(mixer_t *mx, float * MCX_RESTRICT s) {
         sum += w[i]*s[i] + w[i+1]*s[i+1] + w[i+2]*s[i+2] + w[i+3]*s[i+3];
     for (; i < mx->n; i++)
         sum += w[i]*s[i];
-    sum += mx->bias;
+    sum += mx->bias; sum *= 1.10f;
     float r = squash(sum);
     if (r < 0.001f) r = 0.001f;
     if (r > 0.999f) r = 0.999f;
@@ -252,7 +252,7 @@ static inline void mixer_learn(mixer_t *mx, float * MCX_RESTRICT s, int bit, flo
         sum += w[i]*s[i] + w[i+1]*s[i+1] + w[i+2]*s[i+2] + w[i+3]*s[i+3];
     for (; i < mx->n; i++)
         sum += w[i]*s[i];
-    sum += mx->bias;
+    sum += mx->bias; sum *= 1.10f;
     float err_lr = ((1.0f - bit) - squash(sum)) * lr;
     for (i = 0; i + 3 < mx->n; i += 4) {
         w[i]   += err_lr * s[i];
@@ -541,7 +541,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     for (int i = 0; i < 512; i++) mixer_init(&cm->mx5[i], N_MODELS);
     for (int i = 0; i < 128; i++) mixer_init(&cm->mx6[i], N_MODELS);
     for (int i = 0; i < 64; i++) mixer_init(&cm->mx7[i], N_MODELS);
-    cm->lr = 0.012f;
+    cm->lr = 0.021f; /* initial; decays via 0.002 + 0.019/(1+bits/5000) */
     cm->partial = 1;
     cm->ictx_size = 1 << 22;
     cm->ictx = (uint8_t*)calloc(cm->ictx_size, 1);
@@ -767,9 +767,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     if (apm3_p < 1) apm3_p = 1; if (apm3_p > PROB_MAX-1) apm3_p = PROB_MAX-1;
     uint16_t final;
     if (cm->match.active) {
-        final = (apm_p * 1 + apm2_p * 1 + apm3_p * 1 + mp * 29) / 32;
+        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 2 + mp * 29) / 32;
     } else {
-        final = (apm_p * 1 + apm2_p * 1 + apm3_p * 1 + mp * 29) / 32;
+        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 2 + mp * 29) / 32;
     }
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
@@ -858,7 +858,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     
     /* Adaptive mixer learning rate: fast early, slow later */
     /* Smooth exponential decay: lr = 0.05 / (1 + total_bits/20000) */
-    float lr = 0.002f + 0.016f / (1.0f + (float)cm->total_bits / 4000.0f);
+    float lr = 0.002f + 0.019f / (1.0f + (float)cm->total_bits / 5000.0f);
     if (lr < 0.002f) lr = 0.002f;
     mixer_learn(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str, bit, lr);
     mixer_learn(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str, bit, lr);
