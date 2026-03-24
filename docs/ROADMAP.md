@@ -28,13 +28,20 @@
 - kennedy.xls: **50.1×** (2.4× better than xz)
 - mozilla: **3.22×** (LZRC engine)
 
-## v2.2 — Compression Quality (Next)
+## v2.2.0 — Context Mixing & Quality (Released 2026-03-24)
 
+### Completed ✅
+- **Context Mixing engine (L28)** — 58 context models, 8 neural mixers, 3-stage APM cascade
+  - Beats bzip2 by 17–30% on text, beats PAQ8l on alice29.txt
+  - alice29: 4.28×, lcet10: 4.93×, plrabn12: 3.89×
+- **E8/E9 x86 filter** — +16% on executables (ooffice 2.56×)
+- **Smart Mode improvements** — multi-trial BWT/LZRC selection
+- **enwik8 4.04×** — beats xz by 4%
+
+### Deferred
 - [ ] Optimal parsing for LZRC (price-based match/literal decisions, +2-5%)
 - [ ] Split-stream entropy coding for LZ (separate literal/token/offset streams)
-  - Requires compact table format (current FSE overhead too high per stream)
 - [ ] Sparse context tables for CM-rANS (fix 128KB header)
-- [ ] Per-block strategy selection in large archives
 - [ ] ARM/ARM64 BCJ filter
 
 ## v2.3 — Speed & Packaging
@@ -52,7 +59,7 @@
 - [ ] GPU-accelerated BWT (CUDA/OpenCL)
 - [ ] Multithreaded LZRC compression
 - [ ] Archive format (multiple files, directory structure)
-- [ ] Context mixing (PAQ-inspired, for maximum ratio mode)
+- ~~Context mixing~~ ✅ (shipped in v2.2.0 as L28)
 
 ## Rejected Experiments (Research Notes)
 

@@ -63,6 +63,7 @@ MCX is a frame-based lossless compression format. Each `.mcx` file contains a si
 | 7 | `STRIDE` | Stride-delta preprocessing |
 | 8 | `LZ24` | LZ77 with 24-bit offsets (16 MB window) |
 | 9 | `LZRC` | LZ + Range Coder (v2.0, binary tree match finder) |
+| 10 | `CM` | Context Mixing (L28, bit-level adaptive compression) |
 
 ## Block Layout
 

@@ -131,8 +131,9 @@ if (!mcx_is_error(mcx_get_frame_info(&info, compressed, comp_size))) {
 | **20** | **Smart Mode** | **Auto-detect data type, best ratio** |
 | 24 | LZRC-HC | Fast LZRC with hash chains |
 | 26 | LZRC-BT | Best LZRC with binary tree + 64MB window |
+| **28** | **Context Mixing** | **58 context models, 8 neural mixers — PAQ8-class ratio** |
 
-**Recommendation:** Use level 20 for maximum compression, level 6 for general purpose, level 3 for speed.
+**Recommendation:** Use level 20 for maximum compression ratio with practical speed, level 28 for absolute maximum ratio (archival, ~10 KB/s), level 6 for general purpose, level 3 for speed.
 
 ## Error Codes
 

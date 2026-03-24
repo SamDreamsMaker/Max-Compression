@@ -4,9 +4,9 @@
 
 | Version | Supported          |
 |---------|--------------------|
-| 2.1.x   | ✅ Current          |
-| 2.0.x   | ✅ Security fixes   |
-| < 2.0   | ❌ End of life      |
+| 2.2.x   | ✅ Current          |
+| 2.1.x   | ✅ Security fixes   |
+| < 2.1   | ❌ End of life      |
 
 ## Reporting a Vulnerability
 
