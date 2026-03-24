@@ -1,1 +1,0 @@
-/usr/bin/cc -g CMakeFiles/test_streaming_decompress.dir/test_streaming_decompress.c.o -o ../bin/test_streaming_decompress  ../lib/libmaxcomp.a -lm /usr/lib/gcc/x86_64-linux-gnu/9/libgomp.so /usr/lib/x86_64-linux-gnu/libpthread.so 

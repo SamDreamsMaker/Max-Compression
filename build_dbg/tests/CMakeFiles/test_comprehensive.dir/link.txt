@@ -1,1 +1,0 @@
-/usr/bin/cc -g CMakeFiles/test_comprehensive.dir/test_comprehensive.c.o -o ../bin/test_comprehensive  ../lib/libmaxcomp.a -lm /usr/lib/gcc/x86_64-linux-gnu/9/libgomp.so /usr/lib/x86_64-linux-gnu/libpthread.so 

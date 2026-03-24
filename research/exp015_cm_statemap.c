@@ -903,9 +903,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     if (par_p < 1) par_p = 1; if (par_p > PROB_MAX-1) par_p = PROB_MAX-1;
     uint16_t final;
     if (cm->match.active) {
-        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 1 + par_p * 1 + mp * 29) / 32;
+        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 3 + par_p * 1 + mp * 27) / 32;
     } else {
-        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 1 + par_p * 1 + mp * 29) / 32;
+        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 3 + par_p * 1 + mp * 27) / 32;
     }
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;

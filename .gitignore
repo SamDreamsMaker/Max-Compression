@@ -55,3 +55,26 @@ research/exp014/
 research/test_cm/
 core
 research/exp015
+
+# Build directories (debug, WASM, etc.)
+build_dbg/
+
+# Research compiled binaries
+research/exp001_pch
+research/exp002_babel_dict
+research/exp003_bitbwt
+research/exp004_approx
+research/exp005_approx_lzrc
+research/exp005b
+research/exp006_xor
+research/exp007_predbwt
+research/exp008_repair
+research/exp009
+research/exp011
+research/exp012
+research/exp013
+research/exp013b
+research/exp014
+research/test_cm
+bindings/python/libmaxcomp.so
+bindings/python/__pycache__/

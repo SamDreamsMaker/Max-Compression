@@ -1,1 +1,0 @@
-/usr/bin/cc -g CMakeFiles/bench_compress.dir/bench_compress.c.o -o ../bin/bench_compress  ../lib/libmaxcomp.a -lm /usr/lib/gcc/x86_64-linux-gnu/9/libgomp.so /usr/lib/x86_64-linux-gnu/libpthread.so 

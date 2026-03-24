@@ -1,1 +1,0 @@
-/usr/bin/cc -g CMakeFiles/test_fse.dir/test_fse.c.o CMakeFiles/test_fse.dir/__/lib/entropy/fse.c.o -o ../bin/test_fse 
