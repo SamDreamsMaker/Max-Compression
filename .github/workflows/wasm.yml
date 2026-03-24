@@ -55,7 +55,7 @@ jobs:
 
       - name: Roundtrip test in Node.js
         run: |
-          cat > /tmp/test_wasm.mjs << 'SCRIPT'
+          cat > test_wasm.mjs << 'SCRIPT'
           import { readFileSync } from 'fs';
           import { createRequire } from 'module';
           const require = createRequire(import.meta.url);
@@ -116,7 +116,7 @@ jobs:
 
           console.log('All WASM roundtrip tests passed!');
           SCRIPT
-          node /tmp/test_wasm.mjs
+          node test_wasm.mjs
 
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
