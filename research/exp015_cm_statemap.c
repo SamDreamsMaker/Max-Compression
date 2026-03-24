@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 60
+#define N_MODELS 61
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -450,6 +450,9 @@ typedef struct {
     smap_t cimod; /* case-insensitive bigram */
     smap_t o4ind;
     smap_t o5ind;
+    smap_t o6ind;
+    uint8_t *ictx7;
+    uint32_t ictx7_size;
     uint8_t *ictx6;
     uint32_t ictx6_size; /* order-4 indirect */
     uint8_t *ictx4; /* o4-indirect table */
@@ -581,6 +584,9 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     cm->ictx6_size = 1 << 18;
     cm->ictx6 = (uint8_t*)calloc(cm->ictx6_size, 1);
     smap_init(&cm->o5ind, 1<<lo_log);
+    cm->ictx7_size = 1 << 18;
+    cm->ictx7 = (uint8_t*)calloc(cm->ictx7_size, 1);
+    smap_init(&cm->o6ind, 1<<lo_log);
     cm->ictx5_size = 1 << 22;
     cm->ictx5 = (uint16_t*)calloc(cm->ictx5_size, sizeof(uint16_t));
     cm->smatch_tab = (uint32_t*)malloc((1<<18) * sizeof(uint32_t));
@@ -617,7 +623,7 @@ static void cm_free(cm_t *cm) {
     if (cm->ictx2) free(cm->ictx2);
     if (cm->ictx3) free(cm->ictx3);
     if (cm->ictx4) free(cm->ictx4);
-    smap_free(&cm->o4ind); smap_free(&cm->o5ind); if (cm->ictx6) free(cm->ictx6);
+    smap_free(&cm->o4ind); smap_free(&cm->o5ind); smap_free(&cm->o6ind); if (cm->ictx7) free(cm->ictx7); if (cm->ictx6) free(cm->ictx6);
     if (cm->ictx5) free(cm->ictx5);
     if (cm->smatch_tab) free(cm->smatch_tab);
 }
@@ -823,6 +829,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
                           { uint32_t o5h = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
                             o5h &= (cm->ictx6_size - 1);
                             preds[59] = smap_get(&cm->o5ind, h32(((uint32_t)cm->ictx6[o5h] << 8) | cm->partial)); }
+                          { uint32_t o6h = h32(((uint32_t)cm->prev[5]<<24)|((uint32_t)cm->prev[4]<<16)|((uint32_t)cm->prev[3]<<8)|cm->prev[2]) ^ h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]);
+                            o6h &= (cm->ictx7_size - 1);
+                            preds[60] = smap_get(&cm->o6ind, h32(((uint32_t)cm->ictx7[o6h] << 8) | cm->partial)); }
                     }
                 }
             }
@@ -987,6 +996,9 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
             { uint32_t o5h = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
               o5h &= (cm->ictx6_size - 1);
               smap_update(&cm->o5ind, h32(((uint32_t)cm->ictx6[o5h] << 8) | cm->partial), bit); }
+            { uint32_t o6h = h32(((uint32_t)cm->prev[5]<<24)|((uint32_t)cm->prev[4]<<16)|((uint32_t)cm->prev[3]<<8)|cm->prev[2]) ^ h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]);
+              o6h &= (cm->ictx7_size - 1);
+              smap_update(&cm->o6ind, h32(((uint32_t)cm->ictx7[o6h] << 8) | cm->partial), bit); }
             if (cm->match.active && cm->match.mpos < pos) {
         int ml = cm->match.mlen > 64 ? 64 : (int)cm->match.mlen;
         int ml_b = ml < 4 ? ml : ml < 8 ? 4 : ml < 16 ? 5 : ml < 32 ? 6 : 7;
@@ -1122,6 +1134,8 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
     { uint32_t o4h2 = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1); cm->ictx4[o4h2] = byte; }
     { uint32_t o5h2 = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
       o5h2 &= (cm->ictx6_size - 1); cm->ictx6[o5h2] = byte; }
+    { uint32_t o6h2 = h32(((uint32_t)cm->prev[5]<<24)|((uint32_t)cm->prev[4]<<16)|((uint32_t)cm->prev[3]<<8)|cm->prev[2]) ^ h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]);
+      o6h2 &= (cm->ictx7_size - 1); cm->ictx7[o6h2] = byte; }
     
     /* Update run length */
     if (byte == cm->prev[0] && cm->run_length < 255)
