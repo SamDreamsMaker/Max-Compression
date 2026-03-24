@@ -445,6 +445,7 @@ typedef struct {
     uint16_t digram_count[65536]; /* bigram frequency counts */
     smap_t errmod;
     smap_t gapmod;
+    smap_t matchsm; /* match-length StateMap */
     smap_t cimod; /* case-insensitive bigram */
     uint8_t err_history; /* last 8 bit prediction errors packed */
     uint32_t err_bits; /* running error count */
@@ -573,6 +574,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->digram, 1 << lo_log); cm->digram.rate_n = 550;
     smap_init(&cm->errmod, 1 << lo_log); cm->errmod.rate_n = 550;
     smap_init(&cm->gapmod, 1 << lo_log);
+    smap_init(&cm->matchsm, 1 << 16); /* 64K entries for match contexts */
     smap_init(&cm->cimod, 1 << lo_log);
     cm->err_history = 0; cm->err_bits = 0;
     memset(cm->digram_count, 0, sizeof(cm->digram_count));
@@ -587,7 +589,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->indirect); smap_free(&cm->o2_word); smap_free(&cm->o11);
     smap_free(&cm->o9); smap_free(&cm->o12);
     smap_free(&cm->o8);
-    smap_free(&cm->word2); smap_free(&cm->o14); smap_free(&cm->digram); smap_free(&cm->errmod); smap_free(&cm->gapmod); smap_free(&cm->cimod);
+    smap_free(&cm->word2); smap_free(&cm->o14); smap_free(&cm->digram); smap_free(&cm->errmod); smap_free(&cm->gapmod); smap_free(&cm->matchsm); smap_free(&cm->cimod);
     smap_free(&cm->word_cc); smap_free(&cm->o1_cc); smap_free(&cm->word_len); smap_free(&cm->prevword_byte);
     smap_free(&cm->upper2); smap_free(&cm->o10); smap_free(&cm->word3); smap_free(&cm->word4); smap_free(&cm->run);
     smap_free(&cm->cc_seq3);
@@ -728,6 +730,14 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     uint32_t run_ctx = h32(((uint32_t)cm->prev[0] << 8) | cm->run_length) ^ cm->partial;
     preds[30] = smap_get(&cm->run, run_ctx);
     preds[31] = match_predict(&cm->match, pos, bp);
+    /* Also predict via StateMap using match length + byte context */
+    if (cm->match.active && cm->match.mpos < pos) {
+        int ml = cm->match.mlen > 64 ? 64 : (int)cm->match.mlen;
+        int ml_b = ml < 4 ? ml : ml < 8 ? 4 : ml < 16 ? 5 : ml < 32 ? 6 : 7;
+        int pred_bit = (cm->match.data[cm->match.mpos] >> (7 - bp)) & 1;
+        uint32_t msm_ctx = (pred_bit << 15) | (ml_b << 12) | ((cm->prev[0] >> 4) << 8) | (cm->partial << 4) | bp;
+        preds[31] = smap_get(&cm->matchsm, msm_ctx);
+    }
     preds[32] = smap_get(&cm->cc_seq3, ctx[31]);
     preds[33] = smap_get(&cm->word_boundary, ctx[32]);
     preds[34] = smap_get(&cm->wind, ctx[33]);
@@ -943,6 +953,13 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
               if (p2 >= 'A' && p2 <= 'Z') p2 |= 0x20;
               uint32_t ci_ctx = h32(((uint32_t)p0 << 16) | ((uint32_t)p1 << 8) | p2) ^ (cm->partial << 20);
               smap_update(&cm->cimod, ci_ctx, bit); }
+            if (cm->match.active && cm->match.mpos < pos) {
+        int ml = cm->match.mlen > 64 ? 64 : (int)cm->match.mlen;
+        int ml_b = ml < 4 ? ml : ml < 8 ? 4 : ml < 16 ? 5 : ml < 32 ? 6 : 7;
+        int pred_bit = (cm->match.data[cm->match.mpos] >> (7 - bp)) & 1;
+        uint32_t msm_ctx = (pred_bit << 15) | (ml_b << 12) | ((cm->prev[0] >> 4) << 8) | (cm->partial << 4) | bp;
+        smap_update(&cm->matchsm, msm_ctx, bit);
+    }
             smap_update(&cm->gapmod, gap_ctx, bit); }
             smap_update(&cm->errmod, eh_ctx, bit);
                   /* track if prediction was wrong */
