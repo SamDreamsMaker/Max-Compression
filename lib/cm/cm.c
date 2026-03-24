@@ -1113,9 +1113,9 @@ size_t mcx_cm_compress(uint8_t *dst, size_t cap,
             float em5 = mixer_mix(&cmp->mx5[emx5], str);
             int emlen_b = 0;
             if (cmp->match.active) { int ml = cmp->match.mlen > 256 ? 256 : (int)cmp->match.mlen; emlen_b = (ml < 5) ? 1 : (ml < 17) ? 2 : 3; }
-            int emx6 = (emlen_b << 5) | (char_class(cmp->prev[0]) << 3) | bp;
+            int emx6 = ((cmp->line_pos < 8 ? 1 : 0) << 7) | (emlen_b << 5) | (char_class(cmp->prev[0]) << 3) | bp;
             float em6 = mixer_mix(&cmp->mx6[emx6], str);
-            int elp_b = 0; { int elp = cmp->line_pos & 0xFF; elp_b = (elp<2)?0:(elp<8)?1:(elp<20)?2:3; }
+            int elp_b = 0; { int elp = cmp->line_pos & 0xFF; elp_b = (elp<6)?0:(elp<18)?1:(elp<36)?2:(elp<72)?3:4; }
             float em7 = mixer_mix(&cmp->mx7[(elp_b << 4) | (bp << 1) | (cmp->match.active ? 1 : 0)], str);
             int ewl8=cmp->word_length; int ewl8_b=ewl8<2?0:ewl8<4?1:ewl8<6?2:ewl8<10?3:ewl8<16?4:ewl8<30?5:ewl8<60?6:7;
             int ecc8=(cmp->prev[0]>='a'&&cmp->prev[0]<='z')?0:(cmp->prev[0]>='A'&&cmp->prev[0]<='Z')?1:(cmp->prev[0]>='0'&&cmp->prev[0]<='9')?2:3;
@@ -1166,9 +1166,9 @@ size_t mcx_cm_decompress(uint8_t *dst, size_t cap,
             float dm5 = mixer_mix(&cmp->mx5[dmx5], str);
             int dmlen_b = 0;
             if (cmp->match.active) { int ml = cmp->match.mlen > 256 ? 256 : (int)cmp->match.mlen; dmlen_b = (ml < 5) ? 1 : (ml < 17) ? 2 : 3; }
-            int dmx6 = (dmlen_b << 5) | (char_class(cmp->prev[0]) << 3) | bp;
+            int dmx6 = ((cmp->line_pos < 8 ? 1 : 0) << 7) | (dmlen_b << 5) | (char_class(cmp->prev[0]) << 3) | bp;
             float dm6 = mixer_mix(&cmp->mx6[dmx6], str);
-            int dlp_b = 0; { int dlp = cmp->line_pos & 0xFF; dlp_b = (dlp<2)?0:(dlp<8)?1:(dlp<20)?2:3; }
+            int dlp_b = 0; { int dlp = cmp->line_pos & 0xFF; dlp_b = (dlp<6)?0:(dlp<18)?1:(dlp<36)?2:(dlp<72)?3:4; }
             float dm7 = mixer_mix(&cmp->mx7[(dlp_b << 4) | (bp << 1) | (cmp->match.active ? 1 : 0)], str);
             int dwl8=cmp->word_length; int dwl8_b=dwl8<2?0:dwl8<4?1:dwl8<6?2:dwl8<10?3:dwl8<16?4:dwl8<30?5:dwl8<60?6:7;
             int dcc8=(cmp->prev[0]>='a'&&cmp->prev[0]<='z')?0:(cmp->prev[0]>='A'&&cmp->prev[0]<='Z')?1:(cmp->prev[0]>='0'&&cmp->prev[0]<='9')?2:3;
