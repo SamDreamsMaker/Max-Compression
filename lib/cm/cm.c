@@ -443,6 +443,7 @@ typedef struct {
     int word_pos; int syl_count; int last_was_vowel;
     uint32_t vc_history; uint32_t case_history; uint32_t punct_history;
     match_t match;
+    smap_t matchsm;   /* learned match StateMap prediction */
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
     sse_t apm3;  /* third-stage APM — deepest in chain */
@@ -529,6 +530,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     cm->ictx5_size = 1 << 22;
     cm->ictx5 = (uint16_t*)calloc(cm->ictx5_size, sizeof(uint16_t));
     match_init(&cm->match, data);
+    smap_init(&cm->matchsm, 1 << 16); cm->matchsm.rate_n = 900;
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
     sse_init(&cm->apm3);
@@ -573,6 +575,7 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->sylmod); smap_free(&cm->casemod); smap_free(&cm->punctmod);
     if (cm->ictx5) free(cm->ictx5);
     match_free(&cm->match);
+    smap_free(&cm->matchsm);
     if (cm->ictx) free(cm->ictx);
     if (cm->ictx2) free(cm->ictx2);
     if (cm->ictx3) free(cm->ictx3);
@@ -702,6 +705,15 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     { uint32_t run_ctx = h32(((uint32_t)cm->prev[0] << 8) | cm->run_length) ^ cm->partial;
       preds[30] = smap_get(&cm->run, run_ctx); }
     preds[31] = match_predict(&cm->match, pos, bp);
+    /* Override with learned StateMap if match active */
+    if (cm->match.active && cm->match.mpos < pos) {
+        int ml = cm->match.mlen > 256 ? 256 : (int)cm->match.mlen;
+        int pred_bit = (cm->match.data[cm->match.mpos] >> (7 - bp)) & 1;
+        int ml_b = ml < 4 ? ml : ml < 8 ? 4 : ml < 16 ? 5 : ml < 32 ? 6 : 7;
+        int mcc = (cm->prev[0] >= 'a' && cm->prev[0] <= 'z') ? 0 : (cm->prev[0] >= 'A' && cm->prev[0] <= 'Z') ? 1 : (cm->prev[0] >= '0' && cm->prev[0] <= '9') ? 2 : 3;
+        uint32_t msm_ctx = (pred_bit << 15) | (ml_b << 12) | (mcc << 10) | ((cm->prev[0] >> 6) << 8) | (cm->partial << 4) | bp;
+        preds[31] = smap_get(&cm->matchsm, msm_ctx);
+    }
     preds[32] = smap_get(&cm->cc_seq3, ctx[30]);
     preds[33] = smap_get(&cm->word_boundary, ctx[31]);
     preds[34] = smap_get(&cm->wind, ctx[32]);
@@ -801,6 +813,15 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     { uint32_t run_ctx = h32(((uint32_t)cm->prev[0] << 8) | cm->run_length) ^ cm->partial;
       smap_update(&cm->run, run_ctx, bit); }
     smap_update(&cm->cc_seq3, ctx[30], bit);
+    /* Match StateMap update */
+    if (cm->match.active && cm->match.mpos < pos) {
+        int ml = cm->match.mlen > 256 ? 256 : (int)cm->match.mlen;
+        int pred_bit = (cm->match.data[cm->match.mpos] >> (7 - bp)) & 1;
+        int ml_b = ml < 4 ? ml : ml < 8 ? 4 : ml < 16 ? 5 : ml < 32 ? 6 : 7;
+        int mcc = (cm->prev[0] >= 'a' && cm->prev[0] <= 'z') ? 0 : (cm->prev[0] >= 'A' && cm->prev[0] <= 'Z') ? 1 : (cm->prev[0] >= '0' && cm->prev[0] <= '9') ? 2 : 3;
+        uint32_t msm_ctx = (pred_bit << 15) | (ml_b << 12) | (mcc << 10) | ((cm->prev[0] >> 6) << 8) | (cm->partial << 4) | bp;
+        smap_update(&cm->matchsm, msm_ctx, bit);
+    }
     smap_update(&cm->word_boundary, ctx[31], bit);
     smap_update(&cm->wind, ctx[32], bit);
     smap_update(&cm->o3ind, ctx[33], bit);
