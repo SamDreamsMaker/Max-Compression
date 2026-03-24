@@ -388,7 +388,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 59
+#define N_MODELS 60
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -448,7 +448,10 @@ typedef struct {
     smap_t matchsm;
     smap_t sparsesm; /* match-length StateMap */
     smap_t cimod; /* case-insensitive bigram */
-    smap_t o4ind; /* order-4 indirect */
+    smap_t o4ind;
+    smap_t o5ind;
+    uint8_t *ictx6;
+    uint32_t ictx6_size; /* order-4 indirect */
     uint8_t *ictx4; /* o4-indirect table */
     uint32_t ictx4_size;
     uint8_t err_history; /* last 8 bit prediction errors packed */
@@ -575,6 +578,9 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     cm->ictx4_size = 1 << 22;
     cm->ictx4 = (uint8_t*)calloc(cm->ictx4_size, 1);
     smap_init(&cm->o4ind, 1<<lo_log);
+    cm->ictx6_size = 1 << 18;
+    cm->ictx6 = (uint8_t*)calloc(cm->ictx6_size, 1);
+    smap_init(&cm->o5ind, 1<<lo_log);
     cm->ictx5_size = 1 << 22;
     cm->ictx5 = (uint16_t*)calloc(cm->ictx5_size, sizeof(uint16_t));
     cm->smatch_tab = (uint32_t*)malloc((1<<18) * sizeof(uint32_t));
@@ -611,7 +617,7 @@ static void cm_free(cm_t *cm) {
     if (cm->ictx2) free(cm->ictx2);
     if (cm->ictx3) free(cm->ictx3);
     if (cm->ictx4) free(cm->ictx4);
-    smap_free(&cm->o4ind);
+    smap_free(&cm->o4ind); smap_free(&cm->o5ind); if (cm->ictx6) free(cm->ictx6);
     if (cm->ictx5) free(cm->ictx5);
     if (cm->smatch_tab) free(cm->smatch_tab);
 }
@@ -814,6 +820,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
                           /* o4-indirect: h(prev[0..3]) → predicted byte → context */
                           { uint32_t o4h = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1);
                             preds[58] = smap_get(&cm->o4ind, h32(((uint32_t)cm->ictx4[o4h] << 8) | cm->partial)); }
+                          { uint32_t o5h = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
+                            o5h &= (cm->ictx6_size - 1);
+                            preds[59] = smap_get(&cm->o5ind, h32(((uint32_t)cm->ictx6[o5h] << 8) | cm->partial)); }
                     }
                 }
             }
@@ -975,6 +984,9 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
             /* o4-indirect update */
             { uint32_t o4h = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1);
               smap_update(&cm->o4ind, h32(((uint32_t)cm->ictx4[o4h] << 8) | cm->partial), bit); }
+            { uint32_t o5h = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
+              o5h &= (cm->ictx6_size - 1);
+              smap_update(&cm->o5ind, h32(((uint32_t)cm->ictx6[o5h] << 8) | cm->partial), bit); }
             if (cm->match.active && cm->match.mpos < pos) {
         int ml = cm->match.mlen > 64 ? 64 : (int)cm->match.mlen;
         int ml_b = ml < 4 ? ml : ml < 8 ? 4 : ml < 16 ? 5 : ml < 32 ? 6 : 7;
@@ -1108,6 +1120,8 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
     { uint32_t wh5 = cm->word_hash & (cm->ictx5_size - 1); cm->ictx5[wh5] = (uint16_t)((cm->prev[0] << 8) | byte); }
     { uint32_t o3h2 = h32(((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx3_size - 1); cm->ictx3[o3h2] = byte; }
     { uint32_t o4h2 = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1); cm->ictx4[o4h2] = byte; }
+    { uint32_t o5h2 = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
+      o5h2 &= (cm->ictx6_size - 1); cm->ictx6[o5h2] = byte; }
     
     /* Update run length */
     if (byte == cm->prev[0] && cm->run_length < 255)
