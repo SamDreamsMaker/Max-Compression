@@ -3535,7 +3535,7 @@ int main(int argc, char* argv[])
                 double ratio = (double)agg_total_input / (double)agg_total_output;
                 double saving = (1.0 - (double)agg_total_output / (double)agg_total_input) * 100.0;
                 if (!bench_csv && !bench_json)
-                    printf("\n=== AGGREGATE (%zu files, L%d) ===\n"
+                    printf("\n=== AGGREGATE (%d files, L%d) ===\n"
                            "  Total input:      %12zu bytes (%.1f MB)\n"
                            "  Total compressed:  %12zu bytes (%.1f MB)\n"
                            "  Overall ratio:     %8.2fx (%.1f%% smaller)\n",
@@ -3544,13 +3544,13 @@ int main(int argc, char* argv[])
                            agg_total_output, (double)agg_total_output / (1024.0 * 1024.0),
                            ratio, saving);
                 else if (bench_json)
-                    printf(",\n  \"aggregate\": { \"files\": %zu, \"level\": %d, \"total_input\": %zu, \"total_compressed\": %zu, \"ratio\": %.4f, \"saving_pct\": %.1f }\n",
+                    printf(",\n  \"aggregate\": { \"files\": %d, \"level\": %d, \"total_input\": %zu, \"total_compressed\": %zu, \"ratio\": %.4f, \"saving_pct\": %.1f }\n",
                            fl.count, lvl, agg_total_input, agg_total_output, ratio, saving);
                 else if (bench_csv == 2)
                     printf("\n| **TOTAL** | **%zu** | **%.2fx** | **%.1f%%** | | |\n",
                            agg_total_output, ratio, saving);
                 else
-                    printf("TOTAL,%zu,%zu,L%d,%zu,%.4f,%.1f\n",
+                    printf("TOTAL,%d,%zu,L%d,%zu,%.4f,%.1f\n",
                            fl.count, agg_total_input, lvl, agg_total_output, ratio, saving);
             }
             file_list_free(&fl);

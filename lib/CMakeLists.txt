@@ -90,7 +90,7 @@ if(BUILD_SHARED_LIBS)
         OUTPUT_NAME maxcomp
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared"
     )
     if(UNIX)
         target_link_libraries(maxcomp_shared PRIVATE m)
