@@ -1,18 +1,16 @@
 ---
 name: Feature Request
-about: Suggest a new feature or improvement
+about: Suggest an improvement for MaxCompression
 title: '[FEATURE] '
 labels: enhancement
+assignees: ''
 ---
 
-## Summary
-Brief description of the feature.
+**Describe the feature**
+A clear description of what you'd like.
 
-## Motivation
-Why is this needed? What problem does it solve?
+**Use case**
+Why is this useful? What problem does it solve?
 
-## Proposed Solution
-How should it work?
-
-## Alternatives Considered
-Any other approaches you've thought about.
+**Alternatives considered**
+Any alternative solutions or workarounds.
