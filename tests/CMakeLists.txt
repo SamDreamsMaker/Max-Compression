@@ -37,6 +37,11 @@ add_test(NAME comprehensive COMMAND test_comprehensive)
 
 # RLE2 (RUNA/RUNB) encoder/decoder tests
 add_executable(test_rle2 test_rle2.c)
+if(MSVC)
+    # MSVC linker only pulls referenced .obj from static libs; test_rle2 uses
+    # internal symbols not reachable from the public API, so we need /WHOLEARCHIVE.
+    target_link_options(test_rle2 PRIVATE /WHOLEARCHIVE:maxcomp)
+endif()
 target_link_libraries(test_rle2 PRIVATE maxcomp_static)
 if(UNIX)
     target_link_libraries(test_rle2 PRIVATE m)
