@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maxcomp"
-version = "2.1.1"
+version = "2.2.0"
 description = "High-ratio lossless data compression library"
 readme = "README.md"
 license = {text = "GPL-3.0"}

@@ -20,7 +20,7 @@ __all__ = [
     "MaxCompressionError",
 ]
 
-__version__ = "2.1.1"
+__version__ = "2.2.0"
 
 # Platform-specific library extension
 if sys.platform.startswith('win32'):

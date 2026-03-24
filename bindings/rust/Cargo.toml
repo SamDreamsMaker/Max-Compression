@@ -1,9 +1,11 @@
 [package]
 name = "maxcomp"
-version = "1.0.0"
+version = "2.2.0"
 edition = "2021"
-authors = ["MaxCompression <admin@maxcomp.local>"]
-description = "Revolutionary file compression library bindings"
+authors = ["Dreams-Makers Studio"]
+description = "High-ratio lossless data compression library — Rust bindings for MaxCompression (MCX)"
+license = "GPL-3.0"
+repository = "https://github.com/SamDreamsMaker/Max-Compression"
 
 [dependencies]
 libc = "0.2"

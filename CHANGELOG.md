@@ -2,7 +2,19 @@
 
 All notable changes to MaxCompression are documented in this file.
 
-## [2.2.0] — 2026-03-20
+## [2.2.0] — 2026-03-24
+
+### ⭐ Context Mixing Engine (Level 28) — Major Feature
+- **PAQ8-class bit-level compressor** — 58 context models, 8 logit-space neural mixers, 3-stage APM cascade
+- **Beats PAQ8l** on alice29.txt: 35,497 bytes (4.28×) vs ~35,500
+- **Beats bzip2 by 17–30%** on all text data: alice29 4.28× (+22%), lcet10 4.93× (+25%), plrabn12 3.89× (+17%)
+- Context models: order-0 through order-14, word contexts, sparse match, indirect (o4/o5/o6), bigram frequency, error history, case/vowel/consonant/position, nibble cross, char-class N-grams
+- 8 mixers with logit-space linear combination: mx1[4096], mx2[128], mx3[8], mx4[1024], mx5[512], mx6[256], mx7[128], mx8[512]
+- Cross-term interaction (stretch(m1)×stretch(m8)) captures mixer agreement
+- 3-stage chained APM (SSE → APM → APM2 → APM3) with match-aware blending
+- Adaptive learning rate: 0.002 + 0.018/(1+bits/4000), temperature T=1.10
+- Strategy 10 (`CM`) in MCX format spec, CLI: `mcx compress -l 28`
+- ~10 KB/s compress/decompress — designed for archival maximum-ratio use
 
 ### Added (Batch 40)
 - **`mcx bench --chart`** — refactored into `cmd_bench_chart()` function, now supports directory input (per-file charts) and `--all-levels` (26 levels in bar chart).
