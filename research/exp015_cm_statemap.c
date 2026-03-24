@@ -739,7 +739,8 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
         int ml = cm->match.mlen > 64 ? 64 : (int)cm->match.mlen;
         int ml_b = ml < 4 ? ml : ml < 8 ? 4 : ml < 16 ? 5 : ml < 32 ? 6 : 7;
         int pred_bit = (cm->match.data[cm->match.mpos] >> (7 - bp)) & 1;
-        uint32_t msm_ctx = (pred_bit << 15) | (ml_b << 12) | ((cm->prev[0] >> 4) << 8) | (cm->partial << 4) | bp;
+        uint32_t msm_ctx = ({int mcc = (cm->prev[0] >= 'a' && cm->prev[0] <= 'z') ? 0 : (cm->prev[0] >= 'A' && cm->prev[0] <= 'Z') ? 1 : (cm->prev[0] >= '0' && cm->prev[0] <= '9') ? 2 : 3;
+                            (pred_bit << 15) | (ml_b << 12) | (mcc << 10) | ((cm->prev[0] >> 6) << 8) | (cm->partial << 4) | bp;});
         preds[31] = smap_get(&cm->matchsm, msm_ctx);
     }
     preds[32] = smap_get(&cm->cc_seq3, ctx[31]);
@@ -964,7 +965,8 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         int ml = cm->match.mlen > 64 ? 64 : (int)cm->match.mlen;
         int ml_b = ml < 4 ? ml : ml < 8 ? 4 : ml < 16 ? 5 : ml < 32 ? 6 : 7;
         int pred_bit = (cm->match.data[cm->match.mpos] >> (7 - bp)) & 1;
-        uint32_t msm_ctx = (pred_bit << 15) | (ml_b << 12) | ((cm->prev[0] >> 4) << 8) | (cm->partial << 4) | bp;
+        uint32_t msm_ctx = ({int mcc = (cm->prev[0] >= 'a' && cm->prev[0] <= 'z') ? 0 : (cm->prev[0] >= 'A' && cm->prev[0] <= 'Z') ? 1 : (cm->prev[0] >= '0' && cm->prev[0] <= '9') ? 2 : 3;
+                            (pred_bit << 15) | (ml_b << 12) | (mcc << 10) | ((cm->prev[0] >> 6) << 8) | (cm->partial << 4) | bp;});
         if (cm->smatch_active && cm->smatch_pos < pos) {
                 int pred = (cm->match.data[cm->smatch_pos] >> (7 - bp)) & 1;
                 int slen = cm->smatch_len > 64 ? 64 : cm->smatch_len;
