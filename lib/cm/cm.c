@@ -461,6 +461,7 @@ typedef struct {
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
     sse_t apm3;  /* third-stage APM — deepest in chain */
+    sse_t apm_par; /* parallel APM with word_hash context */
     mixer_t mx1[4096], mx2[128], mx3[8], mx4[1024], mx5[512], mx6[256], mx7[128];
     mixer_t mx8[512]; /* word_length(8) × bp(8) × char_class(4) × match(2) */
     float lr;
@@ -561,6 +562,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
     sse_init(&cm->apm3);
+    sse_init(&cm->apm_par);
     for (int i = 0; i < 4096; i++) mixer_init(&cm->mx1[i], N_MODELS);
     for (int i = 0; i < 128; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
@@ -850,11 +852,14 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     int apm3_ctx = ((cm->prev[0] >> 3) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 6)) & (SSE_CTXS-1);
     uint16_t apm3_p = sse_map(&cm->apm3, apm3_ctx, apm2_p);
     if (apm3_p < 1) apm3_p = 1; if (apm3_p > PROB_MAX-1) apm3_p = PROB_MAX-1;
+    int par_ctx = ((cm->word_hash & 0x1F) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
+    uint16_t par_p = sse_map(&cm->apm_par, par_ctx, mp);
+    if (par_p < 1) par_p = 1; if (par_p > PROB_MAX-1) par_p = PROB_MAX-1;
     uint16_t final;
     if (cm->match.active) {
-        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 2 + mp * 29) / 32;
+        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 2 + par_p * 1 + mp * 28) / 32;
     } else {
-        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 2 + mp * 29) / 32;
+        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 2 + par_p * 1 + mp * 28) / 32;
     }
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
@@ -1009,6 +1014,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
     sse_update(&cm->apm2, ((cm->prev[0] >> 4) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     sse_update(&cm->apm3, ((cm->prev[0] >> 3) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 6)) & (SSE_CTXS-1), mp, bit);
+    sse_update(&cm->apm_par, ((cm->word_hash & 0x1F) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     
     cm->partial = (cm->partial << 1) | bit;
 }
