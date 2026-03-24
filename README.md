@@ -4,13 +4,14 @@
     <strong>High-ratio lossless data compression library and CLI</strong>
   </p>
   <p align="center">
-    <a href="https://github.com/SamDreamsMaker/Max-Compression/actions"><img src="https://img.shields.io/github/actions/workflow/status/SamDreamsMaker/Max-Compression/ci.yml?style=flat-square&label=CI" alt="CI"></a>
-    <a href="https://github.com/SamDreamsMaker/Max-Compression/releases"><img src="https://img.shields.io/github/v/tag/SamDreamsMaker/Max-Compression?style=flat-square&label=version" alt="Version"></a>
+    <a href="https://github.com/SamDreamsMaker/Max-Compression/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/SamDreamsMaker/Max-Compression/ci.yml?style=flat-square&label=CI" alt="CI"></a>
+    <a href="https://github.com/SamDreamsMaker/Max-Compression/releases/latest"><img src="https://img.shields.io/github/v/release/SamDreamsMaker/Max-Compression?style=flat-square&label=release" alt="Release"></a>
     <a href="#benchmarks"><img src="https://img.shields.io/badge/Silesia_corpus-4.35×-blue?style=flat-square" alt="Silesia"></a>
+    <a href="#context-mixing-level-28--maximum-compression"><img src="https://img.shields.io/badge/alice29_CM-4.28×_(beats_PAQ8l)-brightgreen?style=flat-square" alt="CM"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="License"></a>
+    <img src="https://img.shields.io/badge/tests-21_passing-brightgreen?style=flat-square" alt="Tests">
     <img src="https://img.shields.io/badge/language-C99-orange?style=flat-square" alt="C99">
     <img src="https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-lightgrey?style=flat-square" alt="Platform">
-    <img src="https://img.shields.io/badge/version-2.2.0-purple?style=flat-square" alt="Version">
   </p>
 </p>
 
@@ -292,6 +293,30 @@ The CM engine uses 58 context models (order-0 through order-14, word, sparse, in
 | enwik8 | 95.4 MB | 3.89× | **4.04×** | Wikipedia — **beats xz by 4%** |
 | enwik9 | 953 MB | 4.12× | **4.28×** | 1 GB Wikipedia dump |
 
+### Reproducing Benchmarks
+
+All benchmarks are reproducible. Download the standard corpora and run:
+
+```bash
+# Canterbury Corpus
+mkdir -p /tmp/cantrbry && cd /tmp/cantrbry
+wget -q https://corpus.canterbury.ac.nz/resources/cantrbry.tar.gz
+tar xzf cantrbry.tar.gz
+
+# Benchmark with comparison against system compressors
+mcx bench --compare /tmp/cantrbry/
+
+# Silesia Corpus (download from https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia)
+mcx bench --compare --format markdown /path/to/silesia/
+
+# Context Mixing (Level 28) — warning: very slow (~10 KB/s)
+mcx compress -l 28 /tmp/cantrbry/alice29.txt -o /tmp/alice.mcx
+mcx decompress /tmp/alice.mcx -o /tmp/alice.dec
+diff /tmp/cantrbry/alice29.txt /tmp/alice.dec  # verify roundtrip
+```
+
+Baseline compressors for comparison: `gzip -9`, `bzip2 -9`, `xz -9` (system packages).
+
 ## Architecture
 
 ```
@@ -320,12 +345,31 @@ Adaptive AC  rANS                  Range RC   Range RC   Mixers+APM
 
 MCX uses a frame-based format with a 20-byte header and variable-size blocks (up to 64 MB). See [`docs/FORMAT.md`](docs/FORMAT.md) for the full specification.
 
+## Quality & Safety
+
+MaxCompression is built with production-grade engineering practices:
+
+| Practice | Status |
+|----------|--------|
+| **Continuous Integration** | GitHub Actions — every push triggers build + test on Linux (GCC + Clang, Release + Debug), macOS, and Windows |
+| **Test Suites** | 21 test suites — unit, roundtrip, fuzz, stress, regression, integration, streaming, edge cases, malformed input |
+| **Memory Safety** | Valgrind memcheck runs in CI — leak-check, track-origins, error-exitcode on every level |
+| **Code Coverage** | lcov + Codecov integration in CI pipeline |
+| **Roundtrip Verification** | Canterbury corpus roundtrip at all compression levels (L1–L26) in CI |
+| **Cross-Platform** | CI builds and tests on Linux, macOS, Windows with multiple compilers |
+| **WASM** | Emscripten build + Node.js roundtrip test in CI |
+| **Python Bindings** | Automated binding test in CI (build .so, compress/decompress, verify) |
+| **pkg-config** | Integration test: install, discover via pkg-config, build+link external program |
+| **API Documentation** | Doxygen generation + undocumented symbol check in CI |
+| **Security** | [SECURITY.md](SECURITY.md) — vulnerability reporting policy, supported versions |
+| **Releases** | Semantic versioning, prebuilt binaries (Linux/macOS/Windows) on every tagged release |
+
 ## Project Stats
 
 - **~17,400 lines** of C code
-- **478+ commits** across the project
+- **770+ commits** across the project
 - **21 test suites** — unit tests, roundtrip, fuzz, stress, regression, integration
-- **CI** — Linux (GCC + Clang), macOS, Windows, Valgrind, coverage, Python bindings
+- **CI** — Linux (GCC + Clang), macOS, Windows, Valgrind, WASM, coverage, Python bindings
 
 ## Project Structure
 

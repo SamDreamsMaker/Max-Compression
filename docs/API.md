@@ -4,6 +4,14 @@
 
 MaxCompression provides a simple C API with two primary functions for one-shot compression and decompression. The library handles all format details internally.
 
+**Guarantees:**
+- All functions are **reentrant** and **thread-safe** (no global state)
+- All error conditions return error codes (never crash on invalid input)
+- Decompressor validates frame headers, CRC32, and block integrity
+- Malformed/corrupted input is handled gracefully (returns `MCX_ERR_CORRUPT`)
+- Memory allocation failures are reported (returns `MCX_ERR_ALLOC_FAILED`)
+- Verified with Valgrind memcheck (zero leaks, zero errors) in CI
+
 ## Header
 
 ```c
