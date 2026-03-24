@@ -574,7 +574,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->digram, 1 << lo_log); cm->digram.rate_n = 550;
     smap_init(&cm->errmod, 1 << lo_log); cm->errmod.rate_n = 550;
     smap_init(&cm->gapmod, 1 << lo_log);
-    smap_init(&cm->matchsm, 1 << 16); /* 64K entries for match contexts */
+    smap_init(&cm->matchsm, 1 << 16); cm->matchsm.rate_n = 900; /* 64K entries for match contexts */
     smap_init(&cm->cimod, 1 << lo_log);
     cm->err_history = 0; cm->err_bits = 0;
     memset(cm->digram_count, 0, sizeof(cm->digram_count));
