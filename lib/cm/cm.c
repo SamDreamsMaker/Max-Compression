@@ -209,7 +209,7 @@ static inline float squash(float x) {
 
 /* ── Mixer ─────────────────────────────────────────────────────── */
 
-#define MAX_INPUTS 56
+#define MAX_INPUTS 64
 
 typedef struct {
     float w[MAX_INPUTS];
@@ -406,7 +406,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 45
+#define N_MODELS 58
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -440,6 +440,20 @@ typedef struct {
     smap_t wind2;
     smap_t nibcross; smap_t wposmod; smap_t vcmod; smap_t vcmod2;
     smap_t sylmod; smap_t casemod; smap_t punctmod;
+    smap_t bigrammod;
+    smap_t triwordmod;
+    smap_t sparsesm;    /* sparse match StateMap */
+    smap_t digram;      /* digram frequency model */
+    smap_t errmod;      /* error history model */
+    smap_t gapmod;      /* XOR byte-diff model */
+    smap_t cimod;       /* case-insensitive trigram */
+    uint16_t digram_count[65536]; /* bigram frequency counts */
+    uint8_t err_history; /* last 8 bit prediction errors packed */
+    uint32_t byte_pos;   /* total bytes processed */
+    uint32_t *smatch_tab; /* sparse match hash → position */
+    int smatch_active;
+    uint32_t smatch_pos;
+    int smatch_len;
     int word_pos; int syl_count; int last_was_vowel;
     uint32_t vc_history; uint32_t case_history; uint32_t punct_history;
     match_t match;
@@ -447,7 +461,7 @@ typedef struct {
     sse_t apm;
     sse_t apm2;  /* second-stage APM with different context */
     sse_t apm3;  /* third-stage APM — deepest in chain */
-    mixer_t mx1[4096], mx2[64], mx3[8], mx4[1024], mx5[512], mx6[128], mx7[64];
+    mixer_t mx1[4096], mx2[128], mx3[8], mx4[1024], mx5[512], mx6[256], mx7[128];
     mixer_t mx8[512]; /* word_length(8) × bp(8) × char_class(4) × match(2) */
     float lr;
     uint8_t prev[14];
@@ -526,6 +540,18 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->wposmod, 1<<hi_log); smap_init(&cm->vcmod, 1<<hi_log); cm->wposmod.rate_n = 550;
     smap_init(&cm->vcmod2, 1<<hi_log); smap_init(&cm->sylmod, 1<<hi_log); cm->vcmod2.rate_n = 550;
     smap_init(&cm->casemod, 1<<hi_log); smap_init(&cm->punctmod, 1<<hi_log); cm->casemod.rate_n = 550;
+    smap_init(&cm->bigrammod, 1<<hi_log); cm->bigrammod.rate_n = 550;
+    smap_init(&cm->triwordmod, 1<<hi_log); cm->triwordmod.rate_n = 550;
+    smap_init(&cm->sparsesm, 1<<14); cm->sparsesm.rate_n = 900;
+    smap_init(&cm->digram, 1<<lo_log); cm->digram.rate_n = 550;
+    smap_init(&cm->errmod, 1<<lo_log); cm->errmod.rate_n = 550;
+    smap_init(&cm->gapmod, 1<<lo_log);
+    smap_init(&cm->cimod, 1<<lo_log);
+    memset(cm->digram_count, 0, sizeof(cm->digram_count));
+    cm->err_history = 0; cm->byte_pos = 0;
+    cm->smatch_tab = (uint32_t*)malloc((1<<18) * sizeof(uint32_t));
+    memset(cm->smatch_tab, 0xFF, (1<<18) * sizeof(uint32_t));
+    cm->smatch_active = 0; cm->smatch_len = 0;
     cm->word_pos=0; cm->syl_count=0; cm->last_was_vowel=0;
     cm->vc_history=0; cm->case_history=0; cm->punct_history=0;
     cm->ictx5_size = 1 << 22;
@@ -536,12 +562,12 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     sse_init(&cm->apm2);
     sse_init(&cm->apm3);
     for (int i = 0; i < 4096; i++) mixer_init(&cm->mx1[i], N_MODELS);
-    for (int i = 0; i < 64; i++) mixer_init(&cm->mx2[i], N_MODELS);
+    for (int i = 0; i < 128; i++) mixer_init(&cm->mx2[i], N_MODELS);
     for (int i = 0; i < 8; i++) mixer_init(&cm->mx3[i], N_MODELS);
     for (int i = 0; i < 1024; i++) mixer_init(&cm->mx4[i], N_MODELS);
     for (int i = 0; i < 512; i++) mixer_init(&cm->mx5[i], N_MODELS);
-    for (int i = 0; i < 128; i++) mixer_init(&cm->mx6[i], N_MODELS);
-    for (int i = 0; i < 64; i++) mixer_init(&cm->mx7[i], N_MODELS);
+    for (int i = 0; i < 256; i++) mixer_init(&cm->mx6[i], N_MODELS);
+    for (int i = 0; i < 128; i++) mixer_init(&cm->mx7[i], N_MODELS);
     for (int i = 0; i < 512; i++) mixer_init(&cm->mx8[i], N_MODELS);
     cm->lr = 0.021f; /* initial; decays via 0.002 + 0.019/(1+bits/5000) */
     cm->partial = 1;
@@ -575,6 +601,10 @@ static void cm_free(cm_t *cm) {
     smap_free(&cm->nibcross); smap_free(&cm->wposmod);
     smap_free(&cm->vcmod); smap_free(&cm->vcmod2);
     smap_free(&cm->sylmod); smap_free(&cm->casemod); smap_free(&cm->punctmod);
+    smap_free(&cm->bigrammod); smap_free(&cm->triwordmod);
+    smap_free(&cm->sparsesm); smap_free(&cm->digram);
+    smap_free(&cm->errmod); smap_free(&cm->gapmod); smap_free(&cm->cimod);
+    if (cm->smatch_tab) free(cm->smatch_tab);
     if (cm->ictx5) free(cm->ictx5);
     match_free(&cm->match);
     smap_free(&cm->matchsm);
@@ -729,13 +759,58 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
     preds[42] = smap_get(&cm->sentmod, ctx[40]);
     preds[43] = smap_get(&cm->wind2, ctx[41]);
     {uint32_t nc; if(bp>=4) nc=h32(((uint32_t)cm->partial<<8)|cm->prev[0])^((uint32_t)cm->prev[1]<<16); else nc=h32(((uint32_t)cm->prev[0]<<12)|((uint32_t)cm->prev[1]>>4<<4)|bp); preds[44]=smap_get(&cm->nibcross,nc);}
+    /* preds[45]-[57]: models ported from research exp015 */
+    { int wp = cm->word_pos;
+      int wp_bucket = (wp < 2) ? wp : (wp < 5) ? 2 : (wp < 10) ? 3 : 4;
+      uint32_t wpos_ctx = h32(((uint32_t)wp_bucket << 16) | ((uint32_t)cm->prev[0] << 8) | cm->prev[1]) ^ (cm->partial << 20);
+      preds[45] = smap_get(&cm->wposmod, wpos_ctx); }
+    { uint32_t vc_ctx = h32(((cm->vc_history & 0xFF) << 8) | cm->prev[0]) ^ (cm->partial << 16);
+      preds[46] = smap_get(&cm->vcmod, vc_ctx); }
+    { uint32_t vc2_ctx = h32(((cm->vc_history & 0xFF) << 16) | (cm->word_hash & 0xFFFF)) ^ (cm->partial << 24);
+      preds[47] = smap_get(&cm->vcmod2, vc2_ctx); }
+    { int syl_b = (cm->syl_count < 4) ? cm->syl_count : 4;
+      uint32_t syl_ctx = h32(((uint32_t)syl_b << 16) | ((uint32_t)cm->prev[0] << 8) | cm->prev[1]) ^ (cm->partial << 20);
+      preds[48] = smap_get(&cm->sylmod, syl_ctx); }
+    { uint32_t case_ctx = h32(((cm->case_history & 0xFF) << 8) | cm->prev[0]) ^ (cm->partial << 16);
+      preds[49] = smap_get(&cm->casemod, case_ctx); }
+    { uint32_t pnct_ctx = h32(((cm->punct_history & 0xFFF) << 8) | cm->prev[0]) ^ (cm->partial << 20);
+      preds[50] = smap_get(&cm->punctmod, pnct_ctx); }
+    { int wp_b = (cm->word_pos < 2) ? cm->word_pos : (cm->word_pos < 5) ? 2 : 3;
+      uint32_t bg_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | (wp_b << 4) | bp);
+      preds[51] = smap_get(&cm->bigrammod, bg_ctx); }
+    { uint32_t tw_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | cm->prev[2]) ^ (cm->word_hash << 4) ^ (cm->partial << 24);
+      preds[52] = smap_get(&cm->triwordmod, tw_ctx); }
+    { uint16_t sp = PROB_HALF;
+      if (cm->smatch_active && cm->smatch_pos < pos) {
+          int pred = (cm->match.data[cm->smatch_pos] >> (7 - bp)) & 1;
+          int slen = cm->smatch_len > 64 ? 64 : cm->smatch_len;
+          int sl_b = slen < 4 ? slen : slen < 8 ? 4 : slen < 16 ? 5 : slen < 32 ? 6 : 7;
+          uint32_t ssm_ctx = (pred << 13) | (sl_b << 10) | ((cm->prev[0] >> 5) << 7) | (cm->partial << 3) | bp;
+          sp = smap_get(&cm->sparsesm, ssm_ctx);
+      }
+      preds[53] = sp; }
+    { uint16_t bg = ((uint16_t)cm->prev[0] << 8) | cm->partial;
+      int freq = cm->digram_count[(cm->prev[1] << 8) | cm->prev[0]];
+      int fb = freq < 2 ? 0 : freq < 8 ? 1 : freq < 32 ? 2 : 3;
+      uint32_t dg_ctx = h32((fb << 16) | bg);
+      preds[54] = smap_get(&cm->digram, dg_ctx); }
+    { uint32_t eh_ctx = h32((cm->err_history << 16) | ((uint16_t)cm->prev[0] << 8) | cm->partial);
+      preds[55] = smap_get(&cm->errmod, eh_ctx); }
+    { uint32_t gap_ctx = h32(((uint32_t)(cm->prev[0] ^ cm->prev[1]) << 8) | cm->prev[2]) ^ (cm->partial << 20);
+      preds[56] = smap_get(&cm->gapmod, gap_ctx); }
+    { uint8_t p0 = cm->prev[0], p1 = cm->prev[1], p2 = cm->prev[2];
+      if (p0 >= 'A' && p0 <= 'Z') p0 |= 0x20;
+      if (p1 >= 'A' && p1 <= 'Z') p1 |= 0x20;
+      if (p2 >= 'A' && p2 <= 'Z') p2 |= 0x20;
+      uint32_t ci_ctx = h32(((uint32_t)p0 << 16) | ((uint32_t)p1 << 8) | p2) ^ (cm->partial << 20);
+      preds[57] = smap_get(&cm->cimod, ci_ctx); }
     
     for (int i = 0; i < N_MODELS; i++) {
         str[i] = stretch_tab[preds[i]]; /* direct lookup, no float division */
     }
     
     float m1 = mixer_mix(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str);
-    float m2 = mixer_mix(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str);
+    float m2 = mixer_mix(&cm->mx2[((char_class(cm->prev[0]) << 4) | (bp << 1) | (cm->prev[1] >> 7)) & 127], str);
     float m3 = mixer_mix(&cm->mx3[bp], str);
     int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
     float m4 = mixer_mix(&cm->mx4[mx4_ctx], str);
@@ -746,9 +821,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
         int ml = cm->match.mlen > 256 ? 256 : (int)cm->match.mlen;
         mlen_bucket = (ml < 5) ? 1 : (ml < 17) ? 2 : 3;
     }
-    int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
+    int mx6_ctx = ((cm->line_pos < 8 ? 1 : 0) << 7) | (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
     float m6 = mixer_mix(&cm->mx6[mx6_ctx], str);
-    int lp_b = 0; { int lp = cm->line_pos & 0xFF; lp_b = (lp<2)?0:(lp<8)?1:(lp<20)?2:3; }
+    int lp_b = 0; { int lp = cm->line_pos & 0xFF; lp_b = (lp<6)?0:(lp<18)?1:(lp<36)?2:(lp<72)?3:4; }
     float m7 = mixer_mix(&cm->mx7[(lp_b << 4) | (bp << 1) | (cm->match.active ? 1 : 0)], str);
     /* mx8: word_length(8) × bp(8) × char_class(4) × match(2) = 512 */
     int wl8 = cm->word_length;
@@ -853,6 +928,43 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
      smap_update(&cm->sylmod,h32(((uint32_t)sb<<16)|((uint32_t)cm->prev[0]<<8)|cm->prev[1])^(cm->partial<<20),bit);}
     {smap_update(&cm->casemod,h32(((cm->case_history&0xFF)<<8)|cm->prev[0])^(cm->partial<<16),bit);}
     {smap_update(&cm->punctmod,h32(((cm->punct_history&0xFFF)<<8)|cm->prev[0])^(cm->partial<<20),bit);}
+    /* bigrammod (51) */
+    { int wp_b = (cm->word_pos < 2) ? cm->word_pos : (cm->word_pos < 5) ? 2 : 3;
+      uint32_t bg_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | (wp_b << 4) | bp);
+      smap_update(&cm->bigrammod, bg_ctx, bit); }
+    /* triwordmod (52) */
+    { uint32_t tw_ctx = h32(((uint32_t)cm->prev[0] << 16) | ((uint32_t)cm->prev[1] << 8) | cm->prev[2]) ^ (cm->word_hash << 4) ^ (cm->partial << 24);
+      smap_update(&cm->triwordmod, tw_ctx, bit); }
+    /* sparsesm (53) */
+    if (cm->smatch_active && cm->smatch_pos < pos) {
+        int pred = (cm->match.data[cm->smatch_pos] >> (7 - bp)) & 1;
+        int slen = cm->smatch_len > 64 ? 64 : cm->smatch_len;
+        int sl_b = slen < 4 ? slen : slen < 8 ? 4 : slen < 16 ? 5 : slen < 32 ? 6 : 7;
+        uint32_t ssm_ctx = (pred << 13) | (sl_b << 10) | ((cm->prev[0] >> 5) << 7) | (cm->partial << 3) | bp;
+        smap_update(&cm->sparsesm, ssm_ctx, bit);
+    }
+    /* digram (54) */
+    { uint16_t bg = ((uint16_t)cm->prev[0] << 8) | cm->partial;
+      int freq = cm->digram_count[(cm->prev[1] << 8) | cm->prev[0]];
+      int fb = freq < 2 ? 0 : freq < 8 ? 1 : freq < 32 ? 2 : 3;
+      uint32_t dg_ctx = h32((fb << 16) | bg);
+      smap_update(&cm->digram, dg_ctx, bit); }
+    /* errmod (55) */
+    { uint32_t eh_ctx = h32((cm->err_history << 16) | ((uint16_t)cm->prev[0] << 8) | cm->partial);
+      smap_update(&cm->errmod, eh_ctx, bit);
+      int predicted = (mp > (PROB_MAX/2)) ? 1 : 0;
+      int err = (predicted != bit) ? 1 : 0;
+      cm->err_history = ((cm->err_history << 1) | err) & 0xFF; }
+    /* gapmod (56) */
+    { uint32_t gap_ctx = h32(((uint32_t)(cm->prev[0] ^ cm->prev[1]) << 8) | cm->prev[2]) ^ (cm->partial << 20);
+      smap_update(&cm->gapmod, gap_ctx, bit); }
+    /* cimod (57) */
+    { uint8_t p0 = cm->prev[0], p1 = cm->prev[1], p2 = cm->prev[2];
+      if (p0 >= 'A' && p0 <= 'Z') p0 |= 0x20;
+      if (p1 >= 'A' && p1 <= 'Z') p1 |= 0x20;
+      if (p2 >= 'A' && p2 <= 'Z') p2 |= 0x20;
+      uint32_t ci_ctx = h32(((uint32_t)p0 << 16) | ((uint32_t)p1 << 8) | p2) ^ (cm->partial << 20);
+      smap_update(&cm->cimod, ci_ctx, bit); }
     if(bp==7){uint8_t lc=cm->prev[0]|0x20;
      if((lc>='a'&&lc<='z')||cm->prev[0]=='\'') cm->word_pos++; else cm->word_pos=0;
      int vc=0; if(lc=='a'||lc=='e'||lc=='i'||lc=='o'||lc=='u') vc=1; else if(lc>='a'&&lc<='z') vc=2;
@@ -871,7 +983,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     float lr = 0.002f + 0.019f / (1.0f + (float)cm->total_bits / 5000.0f);
     if (lr < 0.002f) lr = 0.002f;
     mixer_learn(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str, bit, lr);
-    mixer_learn(&cm->mx2[(char_class(cm->prev[0]) << 3) | bp], str, bit, lr);
+    mixer_learn(&cm->mx2[((char_class(cm->prev[0]) << 4) | (bp << 1) | (cm->prev[1] >> 7)) & 127], str, bit, lr);
     mixer_learn(&cm->mx3[bp], str, bit, lr);
     {
         int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
@@ -883,9 +995,9 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
             int ml = cm->match.mlen > 256 ? 256 : (int)cm->match.mlen;
             mlen_bucket = (ml < 5) ? 1 : (ml < 17) ? 2 : 3;
         }
-        int mx6_ctx = (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
+        int mx6_ctx = ((cm->line_pos < 8 ? 1 : 0) << 7) | (mlen_bucket << 5) | (char_class(cm->prev[0]) << 3) | bp;
         mixer_learn(&cm->mx6[mx6_ctx], str, bit, lr * 0.5f);
-    { int lp = cm->line_pos & 0xFF; int lp_b = (lp<2)?0:(lp<8)?1:(lp<20)?2:3;
+    { int lp = cm->line_pos & 0xFF; int lp_b = (lp<6)?0:(lp<18)?1:(lp<36)?2:(lp<72)?3:4;
       mixer_learn(&cm->mx7[(lp_b << 4) | (bp << 1) | (cm->match.active ? 1 : 0)], str, bit, lr * 0.5f); }
     { int wl8 = cm->word_length;
       int wl8_b = wl8<2?0:wl8<4?1:wl8<6?2:wl8<10?3:wl8<16?4:wl8<30?5:wl8<60?6:7;
@@ -920,6 +1032,30 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
         cm->run_length++;
     else
         cm->run_length = 1;
+    /* Sparse match: hash prev[1..3] */
+    if (cm->byte_pos >= 4) {
+        uint32_t sh = h32(((uint32_t)cm->prev[1] << 16) | ((uint32_t)cm->prev[2] << 8) | cm->prev[3]);
+        uint32_t si = sh & ((1<<18)-1);
+        uint32_t spos = cm->smatch_tab[si];
+        if (!cm->smatch_active && spos != 0xFFFFFFFF && spos + 3 < cm->byte_pos) {
+            if (cm->match.data[spos] == byte) {
+                cm->smatch_active = 1;
+                cm->smatch_pos = spos + 1;
+                cm->smatch_len = 4;
+            }
+        } else if (cm->smatch_active) {
+            if (cm->match.data[cm->smatch_pos - 1] == byte) {
+                cm->smatch_len++;
+            } else {
+                cm->smatch_active = 0;
+                cm->smatch_len = 0;
+            }
+        }
+        cm->smatch_tab[si] = cm->byte_pos;
+    }
+    cm->byte_pos++;
+    /* Digram frequency update */
+    { uint16_t bg = ((uint16_t)cm->prev[0] << 8) | byte; if (cm->digram_count[bg] < 65535) cm->digram_count[bg]++; }
     for (int j = 13; j > 0; j--) cm->prev[j] = cm->prev[j-1];
     cm->prev[0] = byte;
     cm->partial = 1;
@@ -963,7 +1099,7 @@ size_t mcx_cm_compress(uint8_t *dst, size_t cap,
             rcenc_bit(&rc, prob, b);
             
             float em1 = mixer_mix(&cmp->mx1[(cmp->prev[0] << 4) | (cmp->prev[1] >> 6 << 3) | bp], str);
-            float em2 = mixer_mix(&cmp->mx2[(char_class(cmp->prev[0]) << 3) | bp], str);
+            float em2 = mixer_mix(&cmp->mx2[((char_class(cmp->prev[0]) << 4) | (bp << 1) | (cmp->prev[1] >> 7)) & 127], str);
             float em3 = mixer_mix(&cmp->mx3[bp], str);
             int emx4 = (((cmp->prev[0] >> 4) << 5) | ((cmp->prev[1] >> 4) << 1) | bp/4) & 1023;
             float em4 = mixer_mix(&cmp->mx4[emx4], str);
@@ -1016,7 +1152,7 @@ size_t mcx_cm_decompress(uint8_t *dst, size_t cap,
             int b = rcdec_bit(&rc, prob);
             
             float dm1 = mixer_mix(&cmp->mx1[(cmp->prev[0] << 4) | (cmp->prev[1] >> 6 << 3) | bp], str);
-            float dm2 = mixer_mix(&cmp->mx2[(char_class(cmp->prev[0]) << 3) | bp], str);
+            float dm2 = mixer_mix(&cmp->mx2[((char_class(cmp->prev[0]) << 4) | (bp << 1) | (cmp->prev[1] >> 7)) & 127], str);
             float dm3 = mixer_mix(&cmp->mx3[bp], str);
             int dmx4 = (((cmp->prev[0] >> 4) << 5) | ((cmp->prev[1] >> 4) << 1) | bp/4) & 1023;
             float dm4 = mixer_mix(&cmp->mx4[dmx4], str);
