@@ -229,7 +229,7 @@ static float mixer_mix(mixer_t *mx, float *s) {
     for (; i + 3 < mx->n; i += 4)
         sum += w[i]*s[i] + w[i+1]*s[i+1] + w[i+2]*s[i+2] + w[i+3]*s[i+3];
     for (; i < mx->n; i++) sum += w[i] * s[i];
-    sum += mx->bias; sum *= 1.10f;
+    sum += mx->bias; sum *= 1.12f;
     float r = squash(sum);
     if (r < 0.001f) r = 0.001f;
     if (r > 0.999f) r = 0.999f;
@@ -239,7 +239,7 @@ static float mixer_mix(mixer_t *mx, float *s) {
 static void mixer_learn(mixer_t *mx, float *s, int bit, float lr) {
     float sum = 0;
     for (int i = 0; i < mx->n; i++) sum += mx->w[i] * s[i];
-    sum += mx->bias; sum *= 1.10f;
+    sum += mx->bias; sum *= 1.12f;
     float err = (1.0f - bit) - squash(sum);
     for (int i = 0; i < mx->n; i++)
         mx->w[i] += lr * err * s[i];
@@ -458,7 +458,7 @@ typedef struct {
     uint32_t ictx7_size;
     uint8_t *ictx6;
     uint32_t ictx6_size; /* order-4 indirect */
-    uint8_t *ictx4; /* o4-indirect table */
+    uint16_t *ictx4; /* o4-indirect 2-byte table */
     uint32_t ictx4_size;
     uint8_t err_history; /* last 8 bit prediction errors packed */
     uint32_t err_bits; /* running error count */
@@ -582,7 +582,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     cm->ictx3_size = 1 << 22;
     cm->ictx3 = (uint8_t*)calloc(cm->ictx3_size, 1);
     cm->ictx4_size = 1 << 22;
-    cm->ictx4 = (uint8_t*)calloc(cm->ictx4_size, 1);
+    cm->ictx4 = (uint16_t*)calloc(cm->ictx4_size, 2);
     smap_init(&cm->o4ind, 1<<lo_log);
     cm->ictx6_size = 1 << 18;
     cm->ictx6 = (uint8_t*)calloc(cm->ictx6_size, 1);
@@ -831,7 +831,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str) {
                             preds[57] = smap_get(&cm->cimod, ci_ctx); }
                           /* o4-indirect: h(prev[0..3]) → predicted byte → context */
                           { uint32_t o4h = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1);
-                            preds[58] = smap_get(&cm->o4ind, h32(((uint32_t)cm->ictx4[o4h] << 8) | cm->partial)); }
+                            { uint16_t iv4 = cm->ictx4[o4h]; preds[58] = smap_get(&cm->o4ind, h32(((uint32_t)iv4 << 8) | cm->partial)); } }
                           { uint32_t o5h = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
                             o5h &= (cm->ictx6_size - 1);
                             preds[59] = smap_get(&cm->o5ind, h32(((uint32_t)cm->ictx6[o5h] << 8) | cm->partial)); }
@@ -1141,7 +1141,7 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
     { uint32_t wh2 = cm->word_hash & (cm->ictx2_size - 1); cm->ictx2[wh2] = byte; }
     { uint32_t wh5 = cm->word_hash & (cm->ictx5_size - 1); cm->ictx5[wh5] = (uint16_t)((cm->prev[0] << 8) | byte); }
     { uint32_t o3h2 = h32(((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx3_size - 1); cm->ictx3[o3h2] = byte; }
-    { uint32_t o4h2 = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1); cm->ictx4[o4h2] = byte; }
+    { uint32_t o4h2 = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1); cm->ictx4[o4h2] = (uint16_t)((cm->prev[0] << 8) | byte); }
     { uint32_t o5h2 = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
       o5h2 &= (cm->ictx6_size - 1); cm->ictx6[o5h2] = byte; }
     { uint32_t o6h2 = h32(((uint32_t)cm->prev[5]<<24)|((uint32_t)cm->prev[4]<<16)|((uint32_t)cm->prev[3]<<8)|cm->prev[2]) ^ h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]);
