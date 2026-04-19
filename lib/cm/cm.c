@@ -881,9 +881,9 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str, uint16_t 
     int cc8 = (cm->prev[0]>='a'&&cm->prev[0]<='z')?0:(cm->prev[0]>='A'&&cm->prev[0]<='Z')?1:(cm->prev[0]>='0'&&cm->prev[0]<='9')?2:3;
     int mx8_ctx = (cm->match.active?1:0)*256 + wl8_b*32 + bp*4 + cc8;
     float m8 = mixer_mix(&cm->mx8[mx8_ctx], str);
-    float s1 = stretch(m1), s8 = stretch(m8);
-    float cross = s1 * s8 * 0.005f;
-    float mixed = squash((s1*7 + stretch(m2) + stretch(m3) + stretch(m4)*3 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2 + s8*8 + cross) / 27.0f);
+    float s4 = stretch(m4); float s1 = stretch(m1), s8 = stretch(m8);
+    float cross = s1 * s8 * 0.005f + s4 * s8 * 0.003f;
+    float mixed = squash((s1*7 + stretch(m2) + stretch(m3) + s4*3 + stretch(m5) + stretch(m6)*4 + stretch(m7)*2 + s8*8 + cross) / 27.0f);
     
     uint16_t mp = (uint16_t)(mixed * PROB_MAX);
     if (mp < 1) mp = 1; if (mp > PROB_MAX-1) mp = PROB_MAX-1;
