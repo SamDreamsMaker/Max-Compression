@@ -594,7 +594,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     /* New indirect-context smaps: capped smaller than lo_log to stay in 3.9GB
        budget when lo_log=23 (small-file tier). Research used 1<<lo_log on a
        machine with more RAM; on this Atom we trade some precision for fit. */
-    int ind_log = lo_log > 21 ? 21 : lo_log;
+    int ind_log = lo_log > 22 ? 22 : lo_log;
     cm->ictx4_size = 1 << 22;
     cm->ictx4 = (uint16_t*)calloc(cm->ictx4_size, sizeof(uint16_t));
     smap_init(&cm->o4ind, 1<<ind_log);
