@@ -570,7 +570,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     cm->ictx5_size = 1 << 22;
     cm->ictx5 = (uint16_t*)calloc(cm->ictx5_size, sizeof(uint16_t));
     match_init(&cm->match, data);
-    smap_init(&cm->matchsm, 1 << 16); cm->matchsm.rate_n = 900;
+    smap_init(&cm->matchsm, 1 << 16); cm->matchsm.rate_n = 1000;
     sse_init(&cm->apm);
     sse_init(&cm->apm2);
     sse_init(&cm->apm3);
