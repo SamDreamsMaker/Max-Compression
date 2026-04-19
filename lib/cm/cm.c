@@ -550,7 +550,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->colmod5, 1<<lo_log); smap_init(&cm->wlenmod, 1<<lo_log);
     smap_init(&cm->sentmod, 1<<lo_log); smap_init(&cm->wind2, 1<<lo_log);
     smap_init(&cm->nibcross, 1<<hi_log); cm->nibcross.rate_n = 550;
-    smap_init(&cm->wposmod, 1<<hi_log); smap_init(&cm->vcmod, 1<<hi_log); cm->wposmod.rate_n = 550;
+    smap_init(&cm->wposmod, 1<<hi_log); smap_init(&cm->vcmod, 1<<hi_log); cm->wposmod.rate_n = 550; cm->vcmod.rate_n = 550;
     smap_init(&cm->vcmod2, 1<<hi_log); smap_init(&cm->sylmod, 1<<hi_log); cm->vcmod2.rate_n = 550;
     smap_init(&cm->casemod, 1<<hi_log); smap_init(&cm->punctmod, 1<<hi_log); cm->casemod.rate_n = 550;
     smap_init(&cm->bigrammod, 1<<hi_log); cm->bigrammod.rate_n = 550;
