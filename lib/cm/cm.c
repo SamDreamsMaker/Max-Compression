@@ -406,7 +406,7 @@ static inline uint8_t char_class(uint8_t c) {
 
 /* ── CM Engine (with StateMap) ─────────────────────────────────── */
 
-#define N_MODELS 58
+#define N_MODELS 62
 
 typedef struct {
     smap_t o0, o1, o2, o3, o4, o5, o6, o7;
@@ -447,6 +447,10 @@ typedef struct {
     smap_t errmod;      /* error history model */
     smap_t gapmod;      /* XOR byte-diff model */
     smap_t cimod;       /* case-insensitive trigram */
+    smap_t o4ind;       /* order-4 indirect (2-byte table) */
+    smap_t o5ind;       /* order-5 indirect (1<<18 table) */
+    smap_t o6ind;       /* order-6 indirect (1<<18 table) */
+    smap_t o3ind2;      /* raw order-3 indirect with char_class */
     uint16_t digram_count[65536]; /* bigram frequency counts */
     uint8_t err_history; /* last 8 bit prediction errors packed */
     uint32_t byte_pos;   /* total bytes processed */
@@ -487,6 +491,14 @@ typedef struct {
     uint32_t sent_pos;
     uint16_t *ictx5;
     uint32_t ictx5_size;
+    uint16_t *ictx4;    /* o4-indirect 2-byte table */
+    uint32_t ictx4_size;
+    uint8_t *ictx6;     /* o5-indirect (1<<18) */
+    uint32_t ictx6_size;
+    uint8_t *ictx7;     /* o6-indirect (1<<18) */
+    uint32_t ictx7_size;
+    uint8_t *ictx8;     /* o3-indirect2 (1<<18) */
+    uint32_t ictx8_size;
 } cm_t;
 
 static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
@@ -579,6 +591,22 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     cm->ictx2 = (uint8_t*)calloc(cm->ictx2_size, 1);
     cm->ictx3_size = 1 << 22;
     cm->ictx3 = (uint8_t*)calloc(cm->ictx3_size, 1);
+    /* New indirect-context smaps: capped smaller than lo_log to stay in 3.9GB
+       budget when lo_log=23 (small-file tier). Research used 1<<lo_log on a
+       machine with more RAM; on this Atom we trade some precision for fit. */
+    int ind_log = lo_log > 21 ? 21 : lo_log;
+    cm->ictx4_size = 1 << 22;
+    cm->ictx4 = (uint16_t*)calloc(cm->ictx4_size, sizeof(uint16_t));
+    smap_init(&cm->o4ind, 1<<ind_log);
+    cm->ictx6_size = 1 << 18;
+    cm->ictx6 = (uint8_t*)calloc(cm->ictx6_size, 1);
+    smap_init(&cm->o5ind, 1<<ind_log);
+    cm->ictx7_size = 1 << 18;
+    cm->ictx7 = (uint8_t*)calloc(cm->ictx7_size, 1);
+    smap_init(&cm->o6ind, 1<<ind_log);
+    cm->ictx8_size = 1 << 18;
+    cm->ictx8 = (uint8_t*)calloc(cm->ictx8_size, 1);
+    smap_init(&cm->o3ind2, 1<<ind_log);
 }
 
 static void cm_free(cm_t *cm) {
@@ -613,6 +641,11 @@ static void cm_free(cm_t *cm) {
     if (cm->ictx) free(cm->ictx);
     if (cm->ictx2) free(cm->ictx2);
     if (cm->ictx3) free(cm->ictx3);
+    if (cm->ictx4) free(cm->ictx4);
+    if (cm->ictx6) free(cm->ictx6);
+    if (cm->ictx7) free(cm->ictx7);
+    if (cm->ictx8) free(cm->ictx8);
+    smap_free(&cm->o4ind); smap_free(&cm->o5ind); smap_free(&cm->o6ind); smap_free(&cm->o3ind2);
 }
 
 static void cm_contexts(cm_t *cm, uint32_t pos, int bp, uint32_t *ctx) {
@@ -806,7 +839,22 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str, uint16_t 
       if (p2 >= 'A' && p2 <= 'Z') p2 |= 0x20;
       uint32_t ci_ctx = h32(((uint32_t)p0 << 16) | ((uint32_t)p1 << 8) | p2) ^ (cm->partial << 20);
       preds[57] = smap_get(&cm->cimod, ci_ctx); }
-    
+    /* o4-indirect: h(prev[0..3]) → predicted 2-byte → context */
+    { uint32_t o4h = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1);
+      uint16_t iv4 = cm->ictx4[o4h];
+      preds[58] = smap_get(&cm->o4ind, h32(((uint32_t)iv4 << 8) | cm->partial)); }
+    /* o5-indirect */
+    { uint32_t o5h = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
+      o5h &= (cm->ictx6_size - 1);
+      preds[59] = smap_get(&cm->o5ind, h32(((uint32_t)cm->ictx6[o5h] << 8) | cm->partial)); }
+    /* o6-indirect */
+    { uint32_t o6h = h32(((uint32_t)cm->prev[5]<<24)|((uint32_t)cm->prev[4]<<16)|((uint32_t)cm->prev[3]<<8)|cm->prev[2]) ^ h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]);
+      o6h &= (cm->ictx7_size - 1);
+      preds[60] = smap_get(&cm->o6ind, h32(((uint32_t)cm->ictx7[o6h] << 8) | cm->partial)); }
+    /* o3-indirect2: raw o3 with char_class enrichment */
+    { uint32_t o3h2 = h32(((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx8_size - 1);
+      preds[61] = smap_get(&cm->o3ind2, h32(((uint32_t)cm->ictx8[o3h2] << 11) | ((uint32_t)char_class(cm->prev[0]) << 8) | cm->partial)); }
+
     for (int i = 0; i < N_MODELS; i++) {
         str[i] = stretch_tab[preds[i]]; /* direct lookup, no float division */
     }
@@ -971,6 +1019,17 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
       if (p2 >= 'A' && p2 <= 'Z') p2 |= 0x20;
       uint32_t ci_ctx = h32(((uint32_t)p0 << 16) | ((uint32_t)p1 << 8) | p2) ^ (cm->partial << 20);
       smap_update(&cm->cimod, ci_ctx, bit); }
+    /* o4-indirect update */
+    { uint32_t o4h = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1);
+      smap_update(&cm->o4ind, h32(((uint32_t)cm->ictx4[o4h] << 8) | cm->partial), bit); }
+    { uint32_t o5h = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
+      o5h &= (cm->ictx6_size - 1);
+      smap_update(&cm->o5ind, h32(((uint32_t)cm->ictx6[o5h] << 8) | cm->partial), bit); }
+    { uint32_t o6h = h32(((uint32_t)cm->prev[5]<<24)|((uint32_t)cm->prev[4]<<16)|((uint32_t)cm->prev[3]<<8)|cm->prev[2]) ^ h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]);
+      o6h &= (cm->ictx7_size - 1);
+      smap_update(&cm->o6ind, h32(((uint32_t)cm->ictx7[o6h] << 8) | cm->partial), bit); }
+    { uint32_t o3h2i = h32(((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx8_size - 1);
+      smap_update(&cm->o3ind2, h32(((uint32_t)cm->ictx8[o3h2i] << 11) | ((uint32_t)char_class(cm->prev[0]) << 8) | cm->partial), bit); }
     if(bp==7){uint8_t lc=cm->prev[0]|0x20;
      if((lc>='a'&&lc<='z')||cm->prev[0]=='\'') cm->word_pos++; else cm->word_pos=0;
      int vc=0; if(lc=='a'||lc=='e'||lc=='i'||lc=='o'||lc=='u') vc=1; else if(lc>='a'&&lc<='z') vc=2;
@@ -1034,7 +1093,13 @@ static void cm_byte_done(cm_t *cm, uint8_t byte) {
     cm->ictx[o2h] = byte;
     { uint32_t wh2 = cm->word_hash & (cm->ictx2_size - 1); cm->ictx2[wh2] = byte; }
     { uint32_t o3h2 = h32(((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx3_size - 1); cm->ictx3[o3h2] = byte; }
-    
+    { uint32_t o4h2 = h32(((uint32_t)cm->prev[3]<<24)|((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx4_size - 1); cm->ictx4[o4h2] = (uint16_t)((cm->prev[0] << 8) | byte); }
+    { uint32_t o5h2 = h32(((uint32_t)cm->prev[4]<<24)|((uint32_t)cm->prev[3]<<16)|((uint32_t)cm->prev[2]<<8)|cm->prev[1]) ^ h32(cm->prev[0]);
+      o5h2 &= (cm->ictx6_size - 1); cm->ictx6[o5h2] = byte; }
+    { uint32_t o6h2 = h32(((uint32_t)cm->prev[5]<<24)|((uint32_t)cm->prev[4]<<16)|((uint32_t)cm->prev[3]<<8)|cm->prev[2]) ^ h32(((uint32_t)cm->prev[1]<<8)|cm->prev[0]);
+      o6h2 &= (cm->ictx7_size - 1); cm->ictx7[o6h2] = byte; }
+    { uint32_t o3h3 = h32(((uint32_t)cm->prev[2]<<16)|((uint32_t)cm->prev[1]<<8)|cm->prev[0]) & (cm->ictx8_size - 1); cm->ictx8[o3h3] = byte; }
+
     if (byte == cm->prev[0] && cm->run_length < 255)
         cm->run_length++;
     else
