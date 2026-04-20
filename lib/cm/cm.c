@@ -906,7 +906,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str, uint16_t 
     if (par_p < 1) par_p = 1; if (par_p > PROB_MAX-1) par_p = PROB_MAX-1;
     uint16_t final;
     if (cm->match.active) {
-        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 2 + par_p * 1 + mp * 28) / 32;
+        final = (apm_p * 0 + apm2_p * 1 + apm3_p * 2 + par_p * 1 + mp * 52) / 56;
     } else {
         final = (apm_p * 0 + apm2_p * 1 + apm3_p * 2 + par_p * 1 + mp * 28) / 32;
     }
