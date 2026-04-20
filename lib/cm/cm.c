@@ -513,7 +513,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o1, 256*256);
     smap_init(&cm->o2, 1<<hi_log);
     smap_init(&cm->o3, 1<<hi_log);
-    smap_init(&cm->o4, 1<<hi_log);
+    smap_init(&cm->o4, 1<<hi_log); cm->o4.rate_n = 520;
     smap_init(&cm->o5, 1<<hi_log);
     smap_init(&cm->o6, 1<<hi_log);
     smap_init(&cm->o7, 1<<hi_log);
