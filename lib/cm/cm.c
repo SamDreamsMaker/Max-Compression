@@ -507,7 +507,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     int hi_log = 21; /* high-order models — default for large files */
     int lo_log = 20;
     if (data_size <= 256*1024) { hi_log = 24; lo_log = 23; }
-    else if (data_size <= 2*1024*1024) { hi_log = 23; lo_log = 22; }
+    else if (data_size <= 2*1024*1024) { hi_log = 23; lo_log = 23; }
     else if (data_size <= 16*1024*1024) { hi_log = 22; lo_log = 21; }
     smap_init(&cm->o0, 512);
     smap_init(&cm->o1, 256*256);
