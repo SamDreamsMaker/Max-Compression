@@ -534,7 +534,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->word_cc, 1<<lo_log);
     smap_init(&cm->o1_cc, 1<<lo_log);
     smap_init(&cm->word_len, 1<<lo_log); cm->word_len.rate_n = 210;
-    smap_init(&cm->prevword_byte, 1<<lo_log);
+    smap_init(&cm->prevword_byte, 1<<lo_log); cm->prevword_byte.rate_n = 280;
     smap_init(&cm->upper2, 1<<lo_log);
     smap_init(&cm->word3, 1<<lo_log);
     smap_init(&cm->word4, 1<<lo_log);
