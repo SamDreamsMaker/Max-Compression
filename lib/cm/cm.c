@@ -1049,7 +1049,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     if (lr < 0.002f) lr = 0.002f;
     mixer_learn(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str, bit, lr * 1.5f);
     mixer_learn(&cm->mx2[((char_class(cm->prev[0]) << 4) | (bp << 1) | (cm->prev[1] >> 7)) & 127], str, bit, lr);
-    mixer_learn(&cm->mx3[bp], str, bit, lr);
+    mixer_learn(&cm->mx3[bp], str, bit, lr * 0.7f);
     {
         int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
         mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr);
