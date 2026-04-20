@@ -904,7 +904,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str, uint16_t 
     int par_ctx = ((cm->word_hash & 0x1F) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
     uint16_t par_p = sse_map(&cm->apm_par, par_ctx, mp);
     if (par_p < 1) par_p = 1; if (par_p > PROB_MAX-1) par_p = PROB_MAX-1;
-    uint16_t final = (apm2_p * 1 + apm3_p * 2 + par_p * 1 + mp * 52) / 56;
+    uint16_t final = (apm2_p * 1 + apm3_p * 2 + par_p * 2 + mp * 52) / 57;
     if (final < 1) final = 1; if (final > PROB_MAX-1) final = PROB_MAX-1;
     return final;
 }
