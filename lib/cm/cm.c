@@ -517,7 +517,7 @@ static void cm_init(cm_t *cm, const uint8_t *data, size_t data_size) {
     smap_init(&cm->o5, 1<<hi_log);
     smap_init(&cm->o6, 1<<hi_log);
     smap_init(&cm->o7, 1<<hi_log);
-    smap_init(&cm->word, 1<<lo_log);
+    smap_init(&cm->word, 1<<lo_log); cm->word.rate_n = 780;
     smap_init(&cm->sparse13, 1<<lo_log); cm->sparse13.rate_n = 500;
     smap_init(&cm->sparse14, 1<<lo_log); cm->sparse14.rate_n = 360;
     smap_init(&cm->sparse24, 1<<lo_log);
