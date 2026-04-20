@@ -1054,7 +1054,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
         int mx4_ctx = (((cm->prev[0] >> 4) << 5) | ((cm->prev[1] >> 4) << 1) | bp/4) & 1023;
         mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr);
         int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
-        mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr);
+        mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr * 3.0f);
         int mlen_bucket = 0;
         if (cm->match.active) {
             int ml = cm->match.mlen > 256 ? 256 : (int)cm->match.mlen;
