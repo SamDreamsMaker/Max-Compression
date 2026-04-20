@@ -355,7 +355,7 @@ static void match_update(match_t *m, uint32_t pos) {
 
 /* ── SSE ───────────────────────────────────────────────────────── */
 
-#define SSE_CTXS 2048
+#define SSE_CTXS 4096
 #define SSE_BUCKETS 256
 
 typedef struct {
