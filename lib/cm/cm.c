@@ -1047,7 +1047,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     mixer_learn(&cm->mx3[bp], str, bit, lr * 0.7f);
     {
         int mx4_ctx = (((cm->prev[0] >> 3) << 5) | (cm->prev[1] >> 3)) & 1023;
-        mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr);
+        mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr * 2.0f);
         int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
         mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr * 3.0f);
         int mlen_bucket = 0;
