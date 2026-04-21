@@ -864,7 +864,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str, uint16_t 
     float m3 = mixer_mix(&cm->mx3[bp], str);
     int mx4_ctx = (((cm->prev[0] >> 3) << 5) | (cm->prev[1] >> 3)) & 1023;
     float m4 = mixer_mix(&cm->mx4[mx4_ctx], str);
-    int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
+    int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9) ^ cm->prev[1]) & 511;
     float m5 = mixer_mix(&cm->mx5[mx5_ctx], str);
     int mlen_bucket = 0;
     if (cm->match.active) {
@@ -1048,7 +1048,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     {
         int mx4_ctx = (((cm->prev[0] >> 3) << 5) | (cm->prev[1] >> 3)) & 1023;
         mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr * 2.0f);
-        int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
+        int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9) ^ cm->prev[1]) & 511;
         mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr * 2.5f);
         int mlen_bucket = 0;
         if (cm->match.active) {
