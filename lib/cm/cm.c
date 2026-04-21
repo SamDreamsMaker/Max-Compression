@@ -1063,7 +1063,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
       int wl8_b = wl8<2?0:wl8<4?1:wl8<6?2:wl8<10?3:wl8<16?4:wl8<30?5:wl8<60?6:7;
       int cc8 = (cm->prev[0]>='a'&&cm->prev[0]<='z')?0:(cm->prev[0]>='A'&&cm->prev[0]<='Z')?1:(cm->prev[0]>='0'&&cm->prev[0]<='9')?2:3;
       int mx8_ctx = (cm->match.active?1:0)*256 + wl8_b*32 + bp*4 + cc8;
-      mixer_learn(&cm->mx8[mx8_ctx], str, bit, lr * 0.5f); }
+      mixer_learn(&cm->mx8[mx8_ctx], str, bit, lr * 0.6f); }
     }
     cm->total_bits++;
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
