@@ -862,7 +862,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str, uint16_t 
     float m1 = mixer_mix(&cm->mx1[(cm->prev[0] << 4) | (cm->prev[1] >> 6 << 3) | bp], str);
     float m2 = mixer_mix(&cm->mx2[((char_class(cm->prev[0]) << 4) | (bp << 1) | (cm->prev[1] >> 7)) & 127], str);
     float m3 = mixer_mix(&cm->mx3[bp], str);
-    int mx4_ctx = (((cm->prev[0] >> 3) << 4) | (cm->prev[1] >> 4)) & 1023;
+    int mx4_ctx = (((cm->prev[0] >> 3) << 5) | (cm->prev[1] >> 3)) & 1023;
     float m4 = mixer_mix(&cm->mx4[mx4_ctx], str);
     int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
     float m5 = mixer_mix(&cm->mx5[mx5_ctx], str);
@@ -1046,7 +1046,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     mixer_learn(&cm->mx2[((char_class(cm->prev[0]) << 4) | (bp << 1) | (cm->prev[1] >> 7)) & 127], str, bit, lr);
     mixer_learn(&cm->mx3[bp], str, bit, lr * 0.7f);
     {
-        int mx4_ctx = (((cm->prev[0] >> 3) << 4) | (cm->prev[1] >> 4)) & 1023;
+        int mx4_ctx = (((cm->prev[0] >> 3) << 5) | (cm->prev[1] >> 3)) & 1023;
         mixer_learn(&cm->mx4[mx4_ctx], str, bit, lr);
         int mx5_ctx = (cm->word_hash ^ (cm->word_hash >> 9)) & 511;
         mixer_learn(&cm->mx5[mx5_ctx], str, bit, lr * 3.0f);
