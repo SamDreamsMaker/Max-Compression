@@ -895,7 +895,7 @@ static uint16_t cm_predict(cm_t *cm, uint32_t pos, int bp, float *str, uint16_t 
     if (apm_p < 1) apm_p = 1; if (apm_p > PROB_MAX-1) apm_p = PROB_MAX-1;
     
     /* Blend: 0 SSE + 5 APM + 2 APM2 + 25 mixer = 32 */
-    int apm2_ctx = ((cm->prev[0] >> 3) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1);
+    int apm2_ctx = ((cm->prev[0] >> 4) << 8 | (cm->partial & 0x1F) << 3 | bp) & (SSE_CTXS-1);
     uint16_t apm2_p = sse_map(&cm->apm2, apm2_ctx, apm_p);
     if (apm2_p < 1) apm2_p = 1; if (apm2_p > PROB_MAX-1) apm2_p = PROB_MAX-1;
     int apm3_ctx = ((cm->prev[0] >> 3) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 6)) & (SSE_CTXS-1);
@@ -1067,7 +1067,7 @@ static void cm_update(cm_t *cm, uint32_t pos, int bp, int bit,
     }
     cm->total_bits++;
     sse_update(&cm->apm, ((cm->match.active ? 1 : 0) << 11 | (cm->prev[0] >> 5) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 7)) & (SSE_CTXS-1), mp, bit);
-    sse_update(&cm->apm2, ((cm->prev[0] >> 3) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
+    sse_update(&cm->apm2, ((cm->prev[0] >> 4) << 8 | (cm->partial & 0x1F) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     sse_update(&cm->apm3, ((cm->prev[0] >> 3) << 8 | (cm->partial & 0xF) << 4 | bp << 1 | (cm->prev[1] >> 6)) & (SSE_CTXS-1), mp, bit);
     sse_update(&cm->apm_par, ((cm->word_hash & 0x1F) << 7 | (cm->partial & 0xF) << 3 | bp) & (SSE_CTXS-1), mp, bit);
     
